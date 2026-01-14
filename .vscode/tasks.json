@@ -1,0 +1,68 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build AXIS (ELF64)",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "${workspaceFolder}/compilation_pipeline.py",
+        "${file}",
+        "-o",
+        "${fileDirname}/${fileBasenameNoExtension}",
+        "--elf"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": false,
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build AXIS (Raw Binary)",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "${workspaceFolder}/compilation_pipeline.py",
+        "${file}",
+        "-o",
+        "${fileDirname}/${fileBasenameNoExtension}.bin"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": false,
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build AXIS (Verbose)",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "${workspaceFolder}/compilation_pipeline.py",
+        "${file}",
+        "-o",
+        "${fileDirname}/${fileBasenameNoExtension}",
+        "--elf",
+        "-v"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

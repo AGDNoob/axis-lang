@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# AXIS compiled outputs
+*.bin
+*.o
+*.elf
+tests/*.bin
+tests/*_test
+tests/test_*
+!tests/*.axis
+
+# Temporary files
+*.tmp
+/tmp/
+.axis_cache/
+
+# IDE
+.vscode/*
+!.vscode/tasks.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# VS Code Extension
+axis-vscode/node_modules/
+axis-vscode/*.vsix
+axis-vscode/out/
+
+# Debug
+*.log
+debug/

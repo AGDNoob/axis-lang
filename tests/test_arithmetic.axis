@@ -1,0 +1,8 @@
+// AXIS Test 1: Simple Arithmetic
+// Expected: return 30 (10 + 20)
+
+fn main() -> i32 {
+    let x: i32 = 10;
+    let y: i32 = 20;
+    return x + y;
+}

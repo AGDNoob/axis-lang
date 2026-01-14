@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+#
+# AXIS Language CLI Wrapper
+# Version: 1.0.1-beta
+#
+
+# This will be updated by install.sh
+AXIS_LIB_DIR="$HOME/.local/lib/axis"
+
+# Find Python 3
+if command -v python3 &> /dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    PYTHON_CMD="python"
+else
+    echo "Error: Python 3 not found" >&2
+    exit 1
+fi
+
+# Check if library directory exists
+if [ ! -d "$AXIS_LIB_DIR" ]; then
+    echo "Error: AXIS library not found at $AXIS_LIB_DIR" >&2
+    echo "Please reinstall AXIS" >&2
+    exit 1
+fi
+
+# Version information
+VERSION="1.0.1-beta"
+
+# Show help
+show_help() {
+    cat << EOF
+AXIS Language Compiler (Beta $VERSION)
+
+Usage:
+    axis build <file.axis> [options]     Compile AXIS source to executable
+    axis run <file.axis>                 Compile and run (exit code only)
+    axis --version                       Show version information
+    axis --help                          Show this help message
+
+Build Options:
+    -o, --output <file>                  Output file name
+    --elf                                Generate ELF64 executable (default)
+    --raw                                Generate raw machine code
+    -v, --verbose                        Show assembly output
+
+Examples:
+    axis build program.axis -o program --elf
+    axis build program.axis --raw -v
+    axis run test.axis
+
+For more information: https://github.com/AGDNoob/axis-lang
+EOF
+}
+
+# Show version
+show_version() {
+    cat << EOF
+AXIS Language Compiler
+Version: $VERSION
+Platform: Linux x86-64
+Python: $($PYTHON_CMD --version 2>&1)
+
+Compiler location: $AXIS_LIB_DIR
+EOF
+}
+
+# Build command
+cmd_build() {
+    if [ -z "$1" ]; then
+        echo "Error: No input file specified" >&2
+        echo "Usage: axis build <file.axis> [options]" >&2
+        exit 1
+    fi
+    
+    INPUT_FILE="$1"
+    shift
+    
+    if [ ! -f "$INPUT_FILE" ]; then
+        echo "Error: File not found: $INPUT_FILE" >&2
+        exit 1
+    fi
+    
+    # Check if .axis extension
+    if [[ "$INPUT_FILE" != *.axis ]]; then
+        echo "Warning: File does not have .axis extension" >&2
+    fi
+    
+    # Build argument list
+    ARGS=("$INPUT_FILE")
+    OUTPUT_SET=0
+    ELF_SET=0
+    
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -o|--output)
+                if [ -z "$2" ]; then
+                    echo "Error: --output requires an argument" >&2
+                    exit 1
+                fi
+                ARGS+=("-o" "$2")
+                OUTPUT_SET=1
+                shift 2
+                ;;
+            --elf)
+                ARGS+=("--elf")
+                ELF_SET=1
+                shift
+                ;;
+            --raw)
+                ARGS+=("--raw")
+                shift
+                ;;
+            -v|--verbose)
+                ARGS+=("-v")
+                shift
+                ;;
+            *)
+                echo "Error: Unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Add --elf by default if no format specified and output is set
+    if [ $OUTPUT_SET -eq 1 ] && [ $ELF_SET -eq 0 ] && [[ ! " ${ARGS[@]} " =~ " --raw " ]]; then
+        ARGS+=("--elf")
+    fi
+    
+    # Run compiler
+    cd "$AXIS_LIB_DIR"
+    exec $PYTHON_CMD compilation_pipeline.py "${ARGS[@]}"
+}
+
+# Run command (compile and check exit code)
+cmd_run() {
+    if [ -z "$1" ]; then
+        echo "Error: No input file specified" >&2
+        echo "Usage: axis run <file.axis>" >&2
+        exit 1
+    fi
+    
+    INPUT_FILE="$1"
+    
+    if [ ! -f "$INPUT_FILE" ]; then
+        echo "Error: File not found: $INPUT_FILE" >&2
+        exit 1
+    fi
+    
+    # Create temporary executable
+    TEMP_EXE=$(mktemp /tmp/axis_run_XXXXXX)
+    
+    # Cleanup on exit
+    trap "rm -f '$TEMP_EXE'" EXIT
+    
+    # Compile
+    echo "Compiling $INPUT_FILE..."
+    cd "$AXIS_LIB_DIR"
+    if ! $PYTHON_CMD compilation_pipeline.py "$INPUT_FILE" -o "$TEMP_EXE" --elf > /dev/null 2>&1; then
+        echo "Compilation failed" >&2
+        exit 1
+    fi
+    
+    # Make executable
+    chmod +x "$TEMP_EXE"
+    
+    # Run and capture exit code
+    echo "Running..."
+    "$TEMP_EXE"
+    EXIT_CODE=$?
+    
+    echo ""
+    echo "Program exited with code: $EXIT_CODE"
+    exit $EXIT_CODE
+}
+
+# Main dispatcher
+case "$1" in
+    build)
+        shift
+        cmd_build "$@"
+        ;;
+    run)
+        shift
+        cmd_run "$@"
+        ;;
+    --version|-v)
+        show_version
+        ;;
+    --help|-h|help)
+        show_help
+        ;;
+    "")
+        echo "Error: No command specified" >&2
+        echo "Run 'axis --help' for usage information" >&2
+        exit 1
+        ;;
+    *)
+        echo "Error: Unknown command: $1" >&2
+        echo "Run 'axis --help' for usage information" >&2
+        exit 1
+        ;;
+esac

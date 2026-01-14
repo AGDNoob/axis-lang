@@ -1,0 +1,46 @@
+{
+  "name": "axis-language",
+  "displayName": "AXIS Language Support",
+  "description": "Syntax highlighting for AXIS system programming language",
+  "version": "0.1.0",
+  "publisher": "axis-lang",
+  "engines": {
+    "vscode": "^1.70.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "axis",
+    "systems",
+    "compiler",
+    "x86-64"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "axis",
+        "aliases": [
+          "AXIS",
+          "axis"
+        ],
+        "extensions": [
+          ".axis"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "axis",
+        "scopeName": "source.axis",
+        "path": "./syntaxes/axis.tmLanguage.json"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/axis-lang"
+  },
+  "license": "MIT"
+}

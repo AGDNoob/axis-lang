@@ -1,0 +1,29 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code
+*.py text eol=lf
+*.axis text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+
+# JSON files
+*.json text eol=lf
+
+# VS Code files
+*.tmLanguage.json text eol=lf
+
+# Scripts
+*.bash text eol=lf
+axis text eol=lf
+
+# Windows scripts
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files
+*.bin binary
+*.elf binary
+*.o binary
+*.so binary
