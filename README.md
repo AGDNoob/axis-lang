@@ -12,11 +12,33 @@ AXIS compiles directly to x86-64 machine code without requiring external linkers
 
 ## 🚀 Quick Start
 
+### One-Line Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/standalone_install.sh | bash
+```
+
+This will:
+- ✅ Install AXIS compiler to `~/.local/bin`
+- ✅ Set up the `axis` command
+- ✅ Optionally install VS Code extension
+- ✅ Configure your PATH automatically
+
+### Or: Manual Installation
+
 ```bash
 # Clone repository
-git clone https://github.com/agdnoob/axis-lang
+git clone https://github.com/AGDNoob/axis-lang
 cd axis-lang
 
+# Install
+cd installer
+./install.sh --user
+```
+
+### Your First Program
+
+```bash
 # Write your first program
 cat > hello.axis << 'EOF'
 fn main() -> i32 {
@@ -25,10 +47,9 @@ fn main() -> i32 {
 EOF
 
 # Compile to executable
-python compilation_pipeline.py hello.axis -o hello --elf
+axis build hello.axis -o hello --elf
 
 # Run
-chmod +x hello
 ./hello
 echo $?  # Output: 42
 ```
