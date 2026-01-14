@@ -5,6 +5,123 @@ All notable changes to the AXIS programming language will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+---
+
+## GitHub Release Template (Copy & Paste for v1.0.1-beta)
+
+```markdown
+# AXIS v1.0.1-beta - First Beta Release
+
+First beta release of AXIS programming language.
+
+## 🚀 Installation
+
+### Quick Install (Recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/standalone_install.sh | bash
+```
+
+### Or: Download and Install Manually
+```bash
+# Download source code (see Assets below)
+tar -xzf axis-lang-1.0.1-beta.tar.gz
+cd axis-lang-*/installer
+./install.sh --user
+```
+
+## ✨ Features
+
+### Core Language
+- **Type System**: Full support for hardware-native integer types
+  - Signed: `i8`, `i16`, `i32`, `i64`
+  - Unsigned: `u8`, `u16`, `u32`, `u64`
+  - Pointer: `ptr`, Boolean: `bool`
+- **Variables**: Immutable by default with `let`, mutable with `let mut`
+- **Control Flow**: `if/else`, `while`, `break`, `continue`
+- **Functions**: Function definitions with typed parameters and return values
+- **Operators**: Arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`)
+
+### Compiler
+- Complete source-to-machine-code compilation pipeline
+  - Phase 1: Tokenization (Lexer)
+  - Phase 2: Syntactic Analysis (Parser with AST)
+  - Phase 3: Semantic Analysis (Type checking)
+  - Phase 4: Code Generation (x86-64 assembly)
+  - Phase 5: Assembly (Machine code generation)
+- ELF64 executable generation for Linux x86-64
+- Raw binary machine code output
+- No external assembler or linker required
+- Zero-dependency runtime (no libc)
+- Direct Linux syscalls
+
+### Tooling
+- VS Code extension with syntax highlighting
+- Integrated build tasks
+- Linux installer (user and system-wide)
+
+## 🧪 Quick Start
+
+```bash
+# Create your first program
+cat > hello.axis << 'EOF'
+fn main() -> i32 {
+    return 42;
+}
+EOF
+
+# Compile and run
+axis build hello.axis -o hello --elf
+./hello
+echo $?  # Output: 42
+```
+
+## 📚 Test Programs Included
+
+- `test_return42.axis` - Basic return value
+- `test_arithmetic.axis` - Arithmetic operations
+- `test_control_flow.axis` - While loops and conditionals
+- `test_complex.axis` - Complex multi-feature program
+
+## ⚠️ Known Limitations
+
+- **Platform**: Linux x86-64 only (ELF64 format)
+- **Windows/macOS**: Not supported in this release
+- **Function Parameters**: Limited implementation
+- **Standard Library**: Not yet available
+- **Optimization**: No optimization passes yet
+- **Debugging**: No DWARF debug info generation
+
+## 🔧 Technical Details
+
+- **Compiler**: Python 3.7+
+- **Target**: Linux x86-64
+- **Output Format**: ELF64 executables
+- **Code Generation**: Direct x86-64 machine code
+- **License**: MIT
+
+## 📋 Future Roadmap
+
+- Function parameter passing
+- Arrays and structs
+- Pointers and references
+- Memory operations
+- Standard library
+- Optimization passes
+- More platforms (ARM64, Windows PE format)
+
+## 📚 Documentation
+
+- [README](https://github.com/AGDNoob/axis-lang#readme)
+- [Test Programs](https://github.com/AGDNoob/axis-lang/tree/main/tests)
+- [Language Reference](https://github.com/AGDNoob/axis-lang#-language-reference)
+
+---
+
+**Note**: This is a BETA release. The language and compiler are under active development. Breaking changes may occur between versions. Not recommended for production use.
+```
+
+---
+
 ## [1.0.1-beta] - 2026-01-14
 
 ### ✨ Features
