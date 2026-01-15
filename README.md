@@ -1,6 +1,6 @@
 # AXIS
 
-![Version](https://img.shields.io/badge/version-1.0.1--beta-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86--64-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-1.0.2--beta-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86--64-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
 
 **A minimalist system programming language with Python-like syntax and C-level performance.**
 
@@ -41,9 +41,8 @@ cd installer
 ```bash
 # Write your first program
 cat > hello.axis << 'EOF'
-fn main() -> i32 {
-    return 42;
-}
+func main() -> i32:
+    give 42
 EOF
 
 # Compile to executable
@@ -57,6 +56,29 @@ echo $?  # Output: 42
 ---
 
 ## 📖 Language Overview
+
+### Syntax at a Glance
+
+AXIS uses Python-like syntax with unique keywords:
+
+| AXIS | Traditional | Description |
+|------|-------------|-------------|
+| `func` | `fn`/`function` | Define a function |
+| `give` | `return` | Return a value |
+| `when` | `if` | Conditional branch |
+| `else` | `else` | Else branch |
+| `while` | `while` | Conditional loop |
+| `loop`/`repeat` | `loop` | Infinite loop |
+| `True`/`False` | `true`/`false` | Boolean literals |
+
+```python
+func main() -> i32:
+    x: i32 = 42
+    when x > 0:
+        give x
+    else:
+        give -x
+```
 
 ### Philosophy
 
@@ -82,58 +104,58 @@ AXIS follows four core principles:
 
 AXIS provides hardware-native integer types with explicit sizing:
 
-```rust
-// Signed integers
-i8      // -128 to 127
-i16     // -32,768 to 32,767
-i32     // -2,147,483,648 to 2,147,483,647
-i64     // -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
+```python
+# Signed integers
+i8      # -128 to 127
+i16     # -32,768 to 32,767
+i32     # -2,147,483,648 to 2,147,483,647
+i64     # -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
 
-// Unsigned integers
-u8      // 0 to 255
-u16     // 0 to 65,535
-u32     // 0 to 4,294,967,295
-u64     // 0 to 18,446,744,073,709,551,615
+# Unsigned integers
+u8      # 0 to 255
+u16     # 0 to 65,535
+u32     # 0 to 4,294,967,295
+u64     # 0 to 18,446,744,073,709,551,615
 
-// Other types
-bool    // 0 or 1 (u8)
-ptr     // 64-bit pointer
+# Other types
+bool    # True or False
+ptr     # 64-bit pointer
 ```
 
 **Type safety:** All variables must be explicitly typed. No implicit conversions.
 
 ### Variables
 
-```rust
-// Immutable by default
-let x: i32 = 10;
+```python
+# Variable declaration with type annotation
+x: i32 = 10
 
-// Mutable variables
-let mut y: i32 = 20;
-y = y + 5;  // OK
+# Variables can be reassigned
+y: i32 = 20
+y = y + 5  # y is now 25
 
-// Initialization is optional
-let z: i32;  // Uninitialized (use with care)
+# Different integer sizes
+small: i8 = 127
+medium: i16 = 32767
+large: i64 = 9000000000000000000
 ```
 
 ### Functions
 
-```rust
-// Basic function
-fn add(a: i32, b: i32) -> i32 {
-    return a + b;
-}
+```python
+# Basic function with return type
+func add(a: i32, b: i32) -> i32:
+    give a + b
 
-// No return value
-fn print_something() {
-    // ...
-}
-
-// Entry point (must return i32)
-fn main() -> i32 {
-    return 0;
-}
+# Entry point (must return i32)
+func main() -> i32:
+    result: i32 = add(10, 20)
+    give result
 ```
+
+**Keywords:**
+- `func` – Define a function
+- `give` – Return a value (like `return`)
 
 **Calling convention:** System V AMD64 (Linux)
 - First 6 arguments: `rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`
@@ -141,127 +163,158 @@ fn main() -> i32 {
 
 ### Control Flow
 
-#### If/Else
+#### Conditionals (when/else)
 
-```rust
-fn abs(x: i32) -> i32 {
-    if x < 0 {
-        return -x;
-    } else {
-        return x;
-    }
-}
+```python
+func abs(x: i32) -> i32:
+    when x < 0:
+        give -x
+    else:
+        give x
 
-// Without else
-fn positive_check(x: i32) -> bool {
-    if x > 0 {
-        return 1;
-    }
-    return 0;
-}
+# Without else
+func positive_check(x: i32) -> bool:
+    when x > 0:
+        give True
+    give False
 ```
 
-#### While Loops
+**Keywords:**
+- `when` – Conditional branch (like `if`)
+- `else` – Else branch
 
-```rust
-fn count() -> i32 {
-    let mut i: i32 = 0;
-    
-    while i < 10 {
-        i = i + 1;
-    }
-    
-    return i;  // 10
-}
+#### Loops (while/loop/repeat)
+
+```python
+# while loop
+func count() -> i32:
+    i: i32 = 0
+    while i < 10:
+        i = i + 1
+    give i  # 10
+
+# repeat loop (infinite loop, use break to exit)
+func find_value() -> i32:
+    i: i32 = 0
+    repeat:
+        i = i + 1
+        when i >= 10:
+            break
+    give i
 ```
+
+**Keywords:**
+- `while` – Conditional loop
+- `loop` / `repeat` – Infinite loop (requires `break` to exit)
 
 #### Break and Continue
 
-```rust
-fn find_even() -> i32 {
-    let mut i: i32 = 0;
+```python
+func find_value() -> i32:
+    i: i32 = 0
     
-    while i < 100 {
-        i = i + 1;
+    while i < 100:
+        i = i + 1
         
-        if i == 50 {
-            break;  // Exit loop
-        }
+        when i == 50:
+            break      # Exit loop
         
-        if i < 10 {
-            continue;  // Skip to next iteration
-        }
-    }
+        when i < 10:
+            continue   # Skip to next iteration
     
-    return i;
-}
+    give i
 ```
 
 ### Operators
 
 #### Arithmetic
 
-```rust
-let a: i32 = 10 + 5;   // Addition
-let b: i32 = 10 - 5;   // Subtraction
-let c: i32 = 10 * 5;   // Multiplication (MVP: not implemented)
-let d: i32 = 10 / 5;   // Division (MVP: not implemented)
-let e: i32 = -10;      // Negation
+```python
+a: i32 = 10 + 5    # Addition: 15
+b: i32 = 10 - 5    # Subtraction: 5
+c: i32 = 10 * 5    # Multiplication: 50
+d: i32 = 10 / 5    # Division: 2
+e: i32 = 10 % 3    # Modulo: 1
+f: i32 = -10       # Negation (unary minus)
+```
+
+#### Bitwise
+
+```python
+a: i32 = 5 & 3     # AND: 1
+b: i32 = 5 | 3     # OR: 7
+c: i32 = 5 ^ 3     # XOR: 6
+d: i32 = 5 << 2    # Left shift: 20
+e: i32 = 20 >> 2   # Right shift (arithmetic): 5
 ```
 
 #### Comparison
 
-```rust
-x == y    // Equal
-x != y    // Not equal
-x < y     // Less than
-x <= y    // Less than or equal
-x > y     // Greater than
-x >= y    // Greater than or equal
+```python
+x == y    # Equal
+x != y    # Not equal
+x < y     # Less than
+x <= y    # Less than or equal
+x > y     # Greater than
+x >= y    # Greater than or equal
 ```
 
-All comparisons return `bool` (0 or 1).
+All comparisons return `bool` (True or False).
+
+#### Boolean
+
+```python
+a: bool = True     # Boolean true literal
+b: bool = False    # Boolean false literal
+c: bool = !a       # Boolean NOT: False
+```
 
 #### Assignment
 
-```rust
-x = y     // Simple assignment
-x = x + 1 // Compound expression
+```python
+x = y       # Simple assignment
+x = x + 1   # Compound expression
 ```
 
 ### Literals
 
-```rust
-// Decimal
-let dec: i32 = 42;
+```python
+# Decimal
+dec: i32 = 42
 
-// Hexadecimal
-let hex: i32 = 0xFF;      // 255
-let hex2: i32 = 0x1A2B;   // 6699
+# Hexadecimal
+hex_val: i32 = 0xFF       # 255
+hex2: i32 = 0x1A2B        # 6699
 
-// Binary
-let bin: i32 = 0b1010;    // 10
-let bin2: i32 = 0b11111111; // 255
+# Binary
+bin_val: i32 = 0b1010     # 10
+bin2: i32 = 0b11111111    # 255
 
-// Negative
-let neg: i32 = -100;
+# Negative
+neg: i32 = -100
 
-// Underscores for readability (ignored)
-let big: i32 = 1_000_000;
+# Boolean
+flag: bool = True
+done: bool = False
 ```
 
 ### Comments
 
 ```rust
-// Single-line comments only
-// Multi-line comments: use multiple single-line comments
+// C-style single-line comments
+# Python-style single-line comments
 
-fn example() -> i32 {
-    // This is a comment
-    let x: i32 = 10;  // Inline comment
-    return x;
-}
+func example() -> i32:
+    // This is a C-style comment
+    x: i32 = 10  # This is a Python-style comment
+    
+    # Both styles work anywhere
+    // Use whichever you prefer
+    
+    give x
 ```
+
+**Note:** AXIS supports both `//` and `#` for comments. Multi-line comments use multiple single-line comments.
 
 ---
 
@@ -411,10 +464,9 @@ AXIS includes a VS Code extension for syntax highlighting.
 
 ### Hello World (Exit Code)
 
-```rust
-fn main() -> i32 {
-    return 42;
-}
+```python
+func main() -> i32:
+    give 42
 ```
 
 ```bash
@@ -426,91 +478,75 @@ $ echo $?
 
 ### Arithmetic
 
-```rust
-fn main() -> i32 {
-    let x: i32 = 10;
-    let y: i32 = 20;
-    let z: i32 = x + y;
-    return z;  // 30
-}
+```python
+func main() -> i32:
+    x: i32 = 10
+    y: i32 = 20
+    z: i32 = x + y
+    give z  # 30
 ```
 
 ### Loops
 
-```rust
-fn factorial(n: i32) -> i32 {
-    let mut result: i32 = 1;
-    let mut i: i32 = 1;
+```python
+func factorial(n: i32) -> i32:
+    result: i32 = 1
+    i: i32 = 1
     
-    while i <= n {
-        result = result * i;
-        i = i + 1;
-    }
+    while i <= n:
+        result = result * i
+        i = i + 1
     
-    return result;
-}
+    give result
 
-fn main() -> i32 {
-    return factorial(5);  // 120
-}
+func main() -> i32:
+    give factorial(5)  # 120
 ```
 
 ### Conditionals
 
-```rust
-fn max(a: i32, b: i32) -> i32 {
-    if a > b {
-        return a;
-    }
-    return b;
-}
+```python
+func max(a: i32, b: i32) -> i32:
+    when a > b:
+        give a
+    give b
 
-fn clamp(x: i32, min: i32, max: i32) -> i32 {
-    if x < min {
-        return min;
-    }
-    if x > max {
-        return max;
-    }
-    return x;
-}
+func clamp(x: i32, min_val: i32, max_val: i32) -> i32:
+    when x < min_val:
+        give min_val
+    when x > max_val:
+        give max_val
+    give x
 ```
 
 ### Complex Example
 
-```rust
-fn is_prime(n: i32) -> bool {
-    if n <= 1 {
-        return 0;
-    }
+```python
+func is_prime(n: i32) -> bool:
+    when n <= 1:
+        give False
     
-    let mut i: i32 = 2;
-    while i < n {
-        // Note: modulo operator not implemented in MVP
-        // This is pseudocode for demonstration
-        i = i + 1;
-    }
+    i: i32 = 2
+    while i < n:
+        when n % i == 0:
+            give False
+        i = i + 1
     
-    return 1;
-}
+    give True
 
-fn count_primes(limit: i32) -> i32 {
-    let mut count: i32 = 0;
-    let mut i: i32 = 2;
+func count_primes(limit: i32) -> i32:
+    count: i32 = 0
+    i: i32 = 2
     
-    while i < limit {
-        if is_prime(i) == 1 {
-            count = count + 1;
-        }
-        i = i + 1;
-    }
+    while i < limit:
+        when is_prime(i):
+            count = count + 1
+        i = i + 1
     
-    return count;
-}
+    give count
 
-fn main() -> i32 {
-    return count_primes(100);
-}
+func main() -> i32:
+    give count_primes(100)
 ```
 
 ---
@@ -563,7 +599,6 @@ Planned:
 
 ### Not Yet Implemented
 
-- [ ] Multiplication (`*`) and Division (`/`) operators
 - [ ] Function parameters (only `main()` without args works)
 - [ ] More than 6 function arguments
 - [ ] Structs and arrays
@@ -580,22 +615,20 @@ Planned:
 
 - [x] ELF64 executable format
 - [x] Stack-based local variables
-- [x] Control flow (if/else, while, break, continue)
-- [x] Arithmetic (`+`, `-`)
+- [x] Control flow (`when`/`else`, `while`, `loop`/`repeat`, `break`, `continue`)
+- [x] Arithmetic (`+`, `-`, `*`, `/`, `%`)
+- [x] Bitwise (`&`, `|`, `^`, `<<`, `>>`)
 - [x] Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`)
+- [x] Boolean type with `True`/`False` literals
+- [x] Unary operators (`-`, `!`)
+- [x] Comments (`//` and `#`)
 - [x] Function calls (basic)
-- [x] Integer types (i8-i64, u8-u64)
-- [x] Mutable/immutable variables
+- [x] All integer types (i8-i64, u8-u64)
 - [x] VS Code syntax highlighting
 
 ---
 
 ## 🗺️ Roadmap
-
-### Phase 5: Essential Operations
-- [ ] Multiplication and division (`imul`, `idiv`)
-- [ ] Modulo operator (`%`)
-- [ ] Bitwise operations (`&`, `|`, `^`, `<<`, `>>`)
 
 ### Phase 6: I/O
 - [ ] `write` syscall (stdout)

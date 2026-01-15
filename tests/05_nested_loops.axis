@@ -1,0 +1,17 @@
+// AXIS Example 05: Nested Loops
+// Demonstrates nested while loops (multiplication table logic)
+// Expected exit code: 42 (6 * 7)
+
+func main() -> i32:
+    # Find 6 * 7 using nested loops (counting)
+    outer: i32 = 0
+    result: i32 = 0
+    
+    while outer < 6:
+        inner: i32 = 0
+        while inner < 7:
+            result = result + 1
+            inner = inner + 1
+        outer = outer + 1
+    
+    give result  # 6 * 7 = 42

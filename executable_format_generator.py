@@ -22,7 +22,7 @@ class ELF64Writer:
     Entry Point: 0x400000 + 0x1000 (_start)
     """
     
-    # Constants
+    # elf magic numbers und constants
     ELF_MAGIC = b'\x7fELF'
     ELFCLASS64 = 2
     ELFDATA2LSB = 1  # Little Endian
@@ -45,6 +45,7 @@ class ELF64Writer:
             user_code: Machine Code für main() und andere Funktionen
             verbose: Debug-Output
         """
+        # setup für elf generation
         self.user_code = user_code
         self.verbose = verbose
         
@@ -79,13 +80,12 @@ class ELF64Writer:
         # main starts at 16, so offset = 16 - 7 = 9
         call_main = bytes([0xE8]) + struct.pack('<i', 9)
         
-        # mov edi, eax
+        # return value von main in edi für exit code
         mov_edi_eax = bytes([0x89, 0xC7])
         
-        # mov eax, 60
+        # exit syscall number
         mov_eax_60 = bytes([0xB8, 0x3C, 0x00, 0x00, 0x00])
         
-        # syscall
         syscall = bytes([0x0F, 0x05])
         
         return xor_edi + call_main + mov_edi_eax + mov_eax_60 + syscall
@@ -101,15 +101,16 @@ class ELF64Writer:
         Returns:
             64 bytes ELF Header
         """
+        # construct elf header byte by byte
         header = bytearray()
         
-        # e_ident[16]
-        header.extend(self.ELF_MAGIC)  # 0x00: Magic
-        header.append(self.ELFCLASS64)  # 0x04: Class (64-bit)
-        header.append(self.ELFDATA2LSB)  # 0x05: Data (Little Endian)
-        header.append(self.EV_CURRENT)  # 0x06: Version
-        header.append(self.ELFOSABI_SYSV)  # 0x07: OS/ABI
-        header.extend(bytes(8))  # 0x08-0x0F: Padding
+        # magic number und basic info
+        header.extend(self.ELF_MAGIC)
+        header.append(self.ELFCLASS64)
+        header.append(self.ELFDATA2LSB)
+        header.append(self.EV_CURRENT)
+        header.append(self.ELFOSABI_SYSV)
+        header.extend(bytes(8))
         
         # e_type (2 bytes)
         header.extend(struct.pack('<H', self.ET_EXEC))  # 0x10
@@ -164,10 +165,11 @@ class ELF64Writer:
         Returns:
             56 bytes Program Header
         """
+        # program header für das loadable segment
         header = bytearray()
         
-        # p_type (4 bytes)
-        header.extend(struct.pack('<I', self.PT_LOAD))  # 0x00
+        # segment type und flags
+        header.extend(struct.pack('<I', self.PT_LOAD))
         
         # p_flags (4 bytes) - R+X
         flags = self.PF_R | self.PF_X
@@ -249,11 +251,6 @@ class ELF64Writer:
         
         return executable
 
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
 def write_elf_executable(machine_code: bytes, output_path: str, verbose: bool = False):
     """
     Schreibt Machine Code als ELF64 Executable.
@@ -277,11 +274,6 @@ def write_elf_executable(machine_code: bytes, output_path: str, verbose: bool = 
     if verbose:
         print(f"[ELF64] Written executable to: {output_path}")
         print(f"[ELF64] Run with: ./{output_path}")
-
-
-# ============================================================================
-# Test
-# ============================================================================
 
 if __name__ == '__main__':
     # Test: Minimales Programm (ret 0)

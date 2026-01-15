@@ -1,12 +1,3 @@
-"""
-AXIS Compilation Pipeline
-End-to-End Compiler: Source → Machine Code
-
-Usage:
-    python compilation_pipeline.py <source.axis>
-    python compilation_pipeline.py <source.axis> -o output.bin
-"""
-
 import sys
 import argparse
 from pathlib import Path
@@ -23,45 +14,31 @@ from tets import Assembler
 
 
 class CompilationPipeline:
-    """
-    Vollständige Compilation Pipeline für AXIS
-    """
-    
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
     
     def log(self, msg: str):
-        """Logging wenn verbose"""
+        # logging nur wenn verbose mode an ist
         if self.verbose:
             print(f"[PIPELINE] {msg}")
     
     def compile(self, source_code: str) -> bytes:
-        """
-        Compiles Source-Code zu Machine-Code
-        
-        Returns:
-            bytes: Ausführbarer machine code
-        """
-        
-        # Phase 1: Lexical Analysis
+        # komplette compilation pipeline von source zu machine code
         self.log("Phase 1: Tokenization...")
         lexer = Lexer(source_code)
         tokens = lexer.tokenize()
         self.log(f"  Generated {len(tokens)} tokens")
         
-        # Phase 2: Syntactic Analysis
         self.log("Phase 2: Parsing...")
         parser = Parser(tokens)
         ast = parser.parse()
         self.log(f"  Parsed {len(ast.functions)} functions")
         
-        # Phase 3: Semantic Analysis
         self.log("Phase 3: Semantic Analysis...")
         analyzer = SemanticAnalyzer()
         analyzer.analyze(ast)
         self.log("  Type checking complete")
         
-        # Phase 4: Code Generation
         self.log("Phase 4: Code Generation...")
         codegen = CodeGenerator()
         assembly = codegen.compile(ast)
@@ -71,7 +48,6 @@ class CompilationPipeline:
             print(assembly)
             print("--- End Assembly ---\n")
         
-        # Phase 5: Assembly
         self.log("Phase 5: Assembling to machine code...")
         assembler = Assembler()
         machine_code = assembler.assemble_code(assembly)
@@ -84,17 +60,6 @@ class CompilationPipeline:
         return bytes(machine_code)
     
     def compile_file(self, input_path: str, output_path: str = None, dump_hex: bool = True, elf_format: bool = False):
-        """
-        Compiles Source-Datei
-        
-        Args:
-            input_path: Pfad zur Source-Datei
-            output_path: Pfad zur Output-Binary (optional)
-            dump_hex: Hex-Dump ausgeben
-            elf_format: ELF64 Executable generieren (Linux)
-        """
-        
-        # Read source
         self.log(f"Reading source: {input_path}")
         with open(input_path, 'r', encoding='utf-8') as f:
             source_code = f.read()
@@ -128,7 +93,6 @@ class CompilationPipeline:
                 if not self.verbose:
                     print(f"Run with: chmod +x {output_path} && ./{output_path}")
             else:
-                # Raw machine code
                 with open(output_path, 'wb') as f:
                     f.write(machine_code)
                 print(f"Binary written to: {output_path}")
@@ -156,15 +120,11 @@ Examples:
     
     args = parser.parse_args()
     
-    # Check input file
     if not Path(args.input).exists():
         print(f"Error: Input file not found: {args.input}", file=sys.stderr)
         return 1
     
-    # Create pipeline
     pipeline = CompilationPipeline(verbose=args.verbose)
-    
-    # Compile
     success = pipeline.compile_file(
         args.input,
         output_path=args.output,

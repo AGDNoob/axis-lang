@@ -1,0 +1,6 @@
+// AXIS Example 01: Hello World
+// The simplest AXIS program - returns an exit code
+// Expected exit code: 42
+
+func main() -> i32:
+    give 42

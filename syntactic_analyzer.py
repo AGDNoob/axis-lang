@@ -8,33 +8,23 @@ from dataclasses import dataclass
 from typing import Optional, List
 from tokenization_engine import Lexer, Token, TokenType
 
-
-# ============================================================================
-# AST Nodes
-# ============================================================================
-
 @dataclass
 class ASTNode:
     """Base class für alle AST-Knoten"""
     pass
-
-
-# Program
 @dataclass
 class Program(ASTNode):
     functions: List['Function']
 
 
-# Function
 @dataclass
 class Function(ASTNode):
     name: str
-    params: List[tuple[str, str]]  # (name, type)
+    params: List[tuple[str, str]]
     return_type: Optional[str]
     body: 'Block'
 
 
-# Statements
 @dataclass
 class Block(ASTNode):
     statements: List['Statement']
@@ -89,11 +79,9 @@ class Continue(Statement):
 
 @dataclass
 class ExprStatement(Statement):
-    """Statement That only consists only of expression (z.B. Funktionsaufruf)"""
     expression: 'Expression'
 
 
-# Expressions
 @dataclass
 class Expression(ASTNode):
     pass
@@ -115,7 +103,7 @@ class UnaryOp(Expression):
 @dataclass
 class Literal(Expression):
     value: str
-    type: str  # 'int' für jetzt
+    type: str
 
 
 @dataclass
@@ -131,15 +119,11 @@ class Call(Expression):
 
 @dataclass
 class Deref(Expression):
-    """Pointer-Dereferenzierung: *ptr"""
     operand: Expression
 
 
-# ============================================================================
-# Parser
-# ============================================================================
-
 class Parser:
+    # recursive descent parser - LL(1) mit einem lookahead
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
         self.pos = 0
@@ -152,7 +136,6 @@ class Parser:
             raise SyntaxError(f"Parse Error: {msg}")
     
     def advance(self):
-        """Moves Position um one token forward"""
         self.pos += 1
         if self.pos < len(self.tokens):
             self.current = self.tokens[self.pos]
@@ -160,7 +143,6 @@ class Parser:
             self.current = None
     
     def expect(self, token_type: TokenType) -> Token:
-        """Erwartet specific Token-Typ"""
         if not self.current or self.current.type != token_type:
             self.error(f"Expected {token_type.name}, got {self.current.type.name if self.current else 'EOF'}")
         token = self.current
@@ -168,60 +150,52 @@ class Parser:
         return token
     
     def match(self, *token_types: TokenType) -> bool:
-        """Checks ob aktueller Token einem der Typen entspricht"""
         if not self.current:
             return False
         return self.current.type in token_types
     
-    # ========================================================================
-    # Grammar Rules
-    # ========================================================================
+    def skip_newlines(self):
+        # newlines überspringen - wichtig vor/nach blocks
+        while self.match(TokenType.NEWLINE):
+            self.advance()
     
     def parse(self) -> Program:
-        """
-        program := function*
-        """
         functions = []
+        self.skip_newlines()  # skip initial newlines
         while self.current and self.current.type != TokenType.EOF:
             functions.append(self.parse_function())
+            self.skip_newlines()  # skip newlines between functions
         return Program(functions)
     
     def parse_function(self) -> Function:
-        """
-        function := 'fn' IDENTIFIER '(' params? ')' ('->' type)? block
-        """
-        self.expect(TokenType.FN)
+        self.expect(TokenType.FUNC)
         name = self.expect(TokenType.IDENTIFIER).value
         
         self.expect(TokenType.LPAREN)
         params = self.parse_params()
         self.expect(TokenType.RPAREN)
         
-        # Return-Type
         return_type = None
         if self.match(TokenType.ARROW):
             self.advance()
             return_type = self.parse_type()
         
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
         body = self.parse_block()
         
         return Function(name, params, return_type, body)
     
     def parse_params(self) -> List[tuple[str, str]]:
-        """
-        params := param (',' param)*
-        param := IDENTIFIER ':' type
-        """
+        # parameter list parsen - name: type, name: type, ...
         params = []
         
         if not self.match(TokenType.RPAREN):
-            # Erster Parameter
             name = self.expect(TokenType.IDENTIFIER).value
             self.expect(TokenType.COLON)
             type_name = self.parse_type()
             params.append((name, type_name))
             
-            # Weitere Parameter
             while self.match(TokenType.COMMA):
                 self.advance()
                 name = self.expect(TokenType.IDENTIFIER).value
@@ -232,9 +206,7 @@ class Parser:
         return params
     
     def parse_type(self) -> str:
-        """
-        type := I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | PTR | BOOL
-        """
+        # type names - i8, i32, i64, u32, etc
         type_tokens = [
             TokenType.I8, TokenType.I16, TokenType.I32, TokenType.I64,
             TokenType.U8, TokenType.U16, TokenType.U32, TokenType.U64,
@@ -249,77 +221,65 @@ class Parser:
         return type_token.value
     
     def parse_block(self) -> Block:
-        """
-        block := '{' statement* '}'
-        """
-        self.expect(TokenType.LBRACE)
+        self.expect(TokenType.INDENT)
         statements = []
         
-        while not self.match(TokenType.RBRACE):
+        while not self.match(TokenType.DEDENT):
             if not self.current:
                 self.error("Unexpected EOF in block")
+            # newlines zwischen statements erlauben
+            if self.match(TokenType.NEWLINE):
+                self.advance()
+                continue
             statements.append(self.parse_statement())
         
-        self.expect(TokenType.RBRACE)
+        self.expect(TokenType.DEDENT)
         return Block(statements)
     
     def parse_statement(self) -> Statement:
-        """
-        statement := var_decl | assignment | return | if | while | break | continue | expr_stmt
-        """
-        # Variable Declaration
-        if self.match(TokenType.LET):
-            return self.parse_var_decl()
+        # keine variable declaration mehr - direkt assignment
+        # check for identifier mit colon (type annotation)
+        if self.match(TokenType.IDENTIFIER):
+            # lookahead für assignment vs declaration
+            if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].type == TokenType.COLON:
+                return self.parse_var_decl()
         
-        # Return
-        if self.match(TokenType.RETURN):
+        if self.match(TokenType.GIVE):
             return self.parse_return()
         
-        # If
-        if self.match(TokenType.IF):
+        if self.match(TokenType.WHEN):
             return self.parse_if()
         
-        # While
         if self.match(TokenType.WHILE):
             return self.parse_while()
         
-        # Break
+        if self.match(TokenType.LOOP, TokenType.REPEAT):
+            return self.parse_loop()
+        
         if self.match(TokenType.BREAK):
             self.advance()
-            self.expect(TokenType.SEMICOLON)
+            self.skip_newlines()
             return Break()
         
-        # Continue
         if self.match(TokenType.CONTINUE):
             self.advance()
-            self.expect(TokenType.SEMICOLON)
+            self.skip_newlines()
             return Continue()
         
-        # Assignment oder Expression Statement
-        # Wir müssen Expression parsen und dann prüfen ob '=' folgt
         expr = self.parse_expression()
         
         if self.match(TokenType.ASSIGN):
             self.advance()
             value = self.parse_expression()
-            self.expect(TokenType.SEMICOLON)
+            self.skip_newlines()
             return Assignment(expr, value)
         
-        # Expression Statement
-        self.expect(TokenType.SEMICOLON)
+        self.skip_newlines()
         return ExprStatement(expr)
     
     def parse_var_decl(self) -> VarDecl:
-        """
-        var_decl := 'let' 'mut'? IDENTIFIER ':' type ('=' expression)? ';'
-        """
-        self.expect(TokenType.LET)
-        
-        mutable = False
-        if self.match(TokenType.MUT):
-            mutable = True
-            self.advance()
-        
+        # Python-style: name: type = value
+        # alles ist mutable by default
         name = self.expect(TokenType.IDENTIFIER).value
         self.expect(TokenType.COLON)
         type_name = self.parse_type()
@@ -329,69 +289,110 @@ class Parser:
             self.advance()
             init = self.parse_expression()
         
-        self.expect(TokenType.SEMICOLON)
-        return VarDecl(name, type_name, mutable, init)
+        self.skip_newlines()
+        return VarDecl(name, type_name, True, init)  # always mutable
     
     def parse_return(self) -> Return:
-        """
-        return := 'return' expression? ';'
-        """
-        self.expect(TokenType.RETURN)
+        self.expect(TokenType.GIVE)
         
         value = None
-        if not self.match(TokenType.SEMICOLON):
+        if not self.match(TokenType.NEWLINE, TokenType.DEDENT):
             value = self.parse_expression()
         
-        self.expect(TokenType.SEMICOLON)
+        self.skip_newlines()
         return Return(value)
     
     def parse_if(self) -> If:
-        """
-        if := 'if' expression block ('else' (if | block))?
-        """
-        self.expect(TokenType.IF)
+        self.expect(TokenType.WHEN)
         condition = self.parse_expression()
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
         then_block = self.parse_block()
         
         else_block = None
         if self.match(TokenType.ELSE):
             self.advance()
-            # else if
-            if self.match(TokenType.IF):
-                # Wandle 'else if' in 'else { if ... }' um
+            if self.match(TokenType.WHEN):
+                # 'else when' handling
                 else_if = self.parse_if()
                 else_block = Block([else_if])
             else:
+                self.expect(TokenType.COLON)
+                self.skip_newlines()
                 else_block = self.parse_block()
         
         return If(condition, then_block, else_block)
     
     def parse_while(self) -> While:
-        """
-        while := 'while' expression block
-        """
         self.expect(TokenType.WHILE)
         condition = self.parse_expression()
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
         body = self.parse_block()
         return While(condition, body)
     
-    # ========================================================================
-    # Expression Parsing mit Operator-Präzedenz
-    # ========================================================================
+    def parse_loop(self) -> While:
+        # infinite loop: loop: oder repeat:
+        # wird als 'while True' behandelt
+        self.advance()  # LOOP oder REPEAT
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
+        body = self.parse_block()
+        # True literal erzeugen für infinite loop
+        true_literal = Literal('1', 'bool')
+        return While(true_literal, body)
     
     def parse_expression(self) -> Expression:
-        """
-        expression := comparison
-        """
-        return self.parse_comparison()
+        return self.parse_bitwise_or()
+    
+    def parse_bitwise_or(self) -> Expression:
+        expr = self.parse_bitwise_xor()
+        
+        while self.match(TokenType.PIPE):
+            op = self.current.value
+            self.advance()
+            right = self.parse_bitwise_xor()
+            expr = BinaryOp(expr, op, right)
+        
+        return expr
+    
+    def parse_bitwise_xor(self) -> Expression:
+        expr = self.parse_bitwise_and()
+        
+        while self.match(TokenType.CARET):
+            op = self.current.value
+            self.advance()
+            right = self.parse_bitwise_and()
+            expr = BinaryOp(expr, op, right)
+        
+        return expr
+    
+    def parse_bitwise_and(self) -> Expression:
+        expr = self.parse_comparison()
+        
+        while self.match(TokenType.AMPERSAND):
+            op = self.current.value
+            self.advance()
+            right = self.parse_comparison()
+            expr = BinaryOp(expr, op, right)
+        
+        return expr
     
     def parse_comparison(self) -> Expression:
-        """
-        comparison := additive (('==' | '!=' | '<' | '<=' | '>' | '>=') additive)*
-        """
-        expr = self.parse_additive()
+        expr = self.parse_shift()
         
         while self.match(TokenType.EQ, TokenType.NE, TokenType.LT, TokenType.LE, TokenType.GT, TokenType.GE):
+            op = self.current.value
+            self.advance()
+            right = self.parse_shift()
+            expr = BinaryOp(expr, op, right)
+        
+        return expr
+    
+    def parse_shift(self) -> Expression:
+        expr = self.parse_additive()
+        
+        while self.match(TokenType.LSHIFT, TokenType.RSHIFT):
             op = self.current.value
             self.advance()
             right = self.parse_additive()
@@ -400,9 +401,6 @@ class Parser:
         return expr
     
     def parse_additive(self) -> Expression:
-        """
-        additive := multiplicative (('+' | '-') multiplicative)*
-        """
         expr = self.parse_multiplicative()
         
         while self.match(TokenType.PLUS, TokenType.MINUS):
@@ -414,12 +412,9 @@ class Parser:
         return expr
     
     def parse_multiplicative(self) -> Expression:
-        """
-        multiplicative := unary (('*' | '/') unary)*
-        """
         expr = self.parse_unary()
         
-        while self.match(TokenType.STAR, TokenType.SLASH):
+        while self.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT):
             op = self.current.value
             self.advance()
             right = self.parse_unary()
@@ -428,10 +423,14 @@ class Parser:
         return expr
     
     def parse_unary(self) -> Expression:
-        """
-        unary := ('-' | '*') unary | primary
-        """
         if self.match(TokenType.MINUS):
+            op = self.current.value
+            self.advance()
+            operand = self.parse_unary()
+            return UnaryOp(op, operand)
+        
+        if self.match(TokenType.BANG):
+            # Boolean NOT
             op = self.current.value
             self.advance()
             operand = self.parse_unary()
@@ -447,30 +446,33 @@ class Parser:
     
     def parse_primary(self) -> Expression:
         """
-        primary := INT_LITERAL | IDENTIFIER | call | '(' expression ')'
+        primary := INT_LITERAL | TRUE | FALSE | IDENTIFIER | call | '(' expression ')'
         """
-        # Integer Literal
         if self.match(TokenType.INT_LITERAL):
             value = self.current.value
             self.advance()
             return Literal(value, 'int')
         
-        # Identifier oder Call
+        if self.match(TokenType.TRUE):
+            self.advance()
+            return Literal('1', 'bool')
+        
+        if self.match(TokenType.FALSE):
+            self.advance()
+            return Literal('0', 'bool')
+        
         if self.match(TokenType.IDENTIFIER):
             name = self.current.value
             self.advance()
             
-            # Function Call
             if self.match(TokenType.LPAREN):
                 self.advance()
                 args = self.parse_args()
                 self.expect(TokenType.RPAREN)
                 return Call(name, args)
             
-            # Identifier
             return Identifier(name)
         
-        # Parenthesized Expression
         if self.match(TokenType.LPAREN):
             self.advance()
             expr = self.parse_expression()
@@ -480,9 +482,6 @@ class Parser:
         self.error(f"Unexpected token in expression: {self.current.type.name if self.current else 'EOF'}")
     
     def parse_args(self) -> List[Expression]:
-        """
-        args := expression (',' expression)*
-        """
         args = []
         
         if not self.match(TokenType.RPAREN):
@@ -495,12 +494,7 @@ class Parser:
         return args
 
 
-# ============================================================================
-# Utility: AST Pretty-Printer
-# ============================================================================
-
 def print_ast(node: ASTNode, indent: int = 0):
-    """Gibt AST formatiert aus"""
     prefix = "  " * indent
     
     if isinstance(node, Program):
@@ -589,11 +583,6 @@ def print_ast(node: ASTNode, indent: int = 0):
     elif isinstance(node, Deref):
         print(f"{prefix}Deref:")
         print_ast(node.operand, indent + 1)
-
-
-# ============================================================================
-# Test
-# ============================================================================
 
 if __name__ == '__main__':
     from tokenization_engine import Lexer

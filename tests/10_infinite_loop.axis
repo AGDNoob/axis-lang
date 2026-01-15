@@ -1,0 +1,15 @@
+// AXIS Example 10: Infinite Loop with Break
+// Demonstrates repeat/loop for infinite loops
+// Expected exit code: 50
+
+func main() -> i32:
+    counter: i32 = 0
+    
+    # Infinite loop - must use break to exit
+    repeat:
+        counter = counter + 1
+        
+        when counter == 50:
+            break
+    
+    give counter  # 50

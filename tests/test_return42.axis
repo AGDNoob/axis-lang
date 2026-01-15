@@ -1,6 +1,0 @@
-// AXIS Test: Return 42
-// Minimales Programm zum Testen von ELF64 Generation
-
-fn main() -> i32 {
-    return 42;
-}

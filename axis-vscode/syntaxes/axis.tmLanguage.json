@@ -17,6 +17,10 @@
         {
           "name": "comment.line.double-slash.axis",
           "match": "//.*$"
+        },
+        {
+          "name": "comment.line.number-sign.axis",
+          "match": "#.*$"
         }
       ]
     },
@@ -24,11 +28,23 @@
       "patterns": [
         {
           "name": "keyword.control.axis",
-          "match": "\\b(if|else|while|break|continue|return)\\b"
+          "match": "\\b(when|else|while|loop|repeat|break|continue)\\b"
+        },
+        {
+          "name": "keyword.control.flow.axis",
+          "match": "\\bgive\\b"
+        },
+        {
+          "name": "keyword.declaration.function.axis",
+          "match": "\\bfunc\\b"
+        },
+        {
+          "name": "constant.language.boolean.axis",
+          "match": "\\b(True|False)\\b"
         },
         {
           "name": "keyword.other.axis",
-          "match": "\\b(fn|let|mut|syscall)\\b"
+          "match": "\\bsyscall\\b"
         }
       ]
     },
@@ -87,7 +103,15 @@
         },
         {
           "name": "keyword.operator.arithmetic.axis",
-          "match": "(\\+|-|\\*|/)"
+          "match": "(\\+|-|\\*|/|%)"
+        },
+        {
+          "name": "keyword.operator.bitwise.axis",
+          "match": "(&|\\||\\^|<<|>>)"
+        },
+        {
+          "name": "keyword.operator.logical.axis",
+          "match": "!"
         },
         {
           "name": "keyword.operator.assignment.axis",

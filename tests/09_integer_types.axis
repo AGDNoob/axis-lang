@@ -1,0 +1,23 @@
+// AXIS Example 09: Integer Types
+// Demonstrates i8, i16, i32, i64 types
+// Expected exit code: 42
+
+func main() -> i32:
+    # Different integer sizes
+    tiny: i8 = 42
+    small: i16 = 1000
+    normal: i32 = 100000
+    large: i64 = 9000000000
+    
+    # Unsigned types
+    byte_val: u8 = 255
+    word_val: u16 = 65535
+    
+    # Verify tiny value
+    result: i32 = 0
+    
+    when tiny == 42:
+        when byte_val == 255:
+            result = 42
+    
+    give result

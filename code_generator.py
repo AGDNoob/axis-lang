@@ -41,21 +41,54 @@ class CodeGenerator:
         self.arg_regs_32 = ['edi', 'esi', 'edx', 'ecx', 'r8d', 'r9d']
     
     def emit(self, line: str):
-        """Adds Assembly-Zeile """
         self.asm_lines.append(line)
     
     def emit_label(self, label: str):
-        """Adds Label """
         self.asm_lines.append(f"{label}:")
     
     def fresh_label(self, prefix: str = "L") -> str:
-        """Generates einzigartiges Label"""
         label = f"{prefix}_{self.label_counter}"
         self.label_counter += 1
         return label
     
+    def get_register(self, base_reg: str, type_: str) -> str:
+        """Get the appropriate register name for a given type."""
+        if type_ == 'i8' or type_ == 'u8':
+            # 8-bit registers: al, bl, cl, dl
+            reg_map = {'a': 'al', 'b': 'bl', 'c': 'cl', 'd': 'dl'}
+            return reg_map.get(base_reg, base_reg + 'l')
+        elif type_ == 'i16' or type_ == 'u16':
+            return base_reg + 'x' if base_reg in 'abcd' else base_reg
+        elif type_ == 'i64' or type_ == 'u64':
+            return 'r' + base_reg + 'x' if base_reg in 'abcd' else base_reg
+        else:  # i32, u32, bool, default
+            return 'e' + base_reg + 'x' if base_reg in 'abcd' else base_reg
+    
+    def get_register(self, base_reg: str, type_: str) -> str:
+        """Get the appropriate register name for a given type."""
+        if type_ == 'i8' or type_ == 'u8':
+            # 8-bit registers: al, bl, cl, dl
+            reg_map = {'a': 'al', 'b': 'bl', 'c': 'cl', 'd': 'dl'}
+            return reg_map.get(base_reg, base_reg + 'l')
+        elif type_ == 'i16' or type_ == 'u16':
+            return base_reg + 'x' if base_reg in 'abcd' else base_reg
+        elif type_ == 'i64' or type_ == 'u64':
+            return 'r' + base_reg + 'x' if base_reg in 'abcd' else base_reg
+        else:  # i32, u32, bool, default
+            return 'e' + base_reg + 'x' if base_reg in 'abcd' else base_reg
+    
+    def get_mov_size(self, type_: str) -> str:
+        """Get the memory size specifier for mov instructions."""
+        if type_ == 'i8' or type_ == 'u8':
+            return 'byte'
+        elif type_ == 'i16' or type_ == 'u16':
+            return 'word'
+        elif type_ == 'i64' or type_ == 'u64':
+            return 'qword'
+        else:  # i32, u32, bool, default
+            return 'dword'
+    
     def compile(self, program: Program) -> str:
-        """Compiles Program-AST zu Assembly-String"""
         self.asm_lines = []
         self.label_counter = 0
         
@@ -65,12 +98,7 @@ class CodeGenerator:
         
         return '\n'.join(self.asm_lines)
     
-    # ========================================================================
-    # Function Compilation
-    # ========================================================================
-    
     def compile_function(self, func: Function):
-        """Compiles Funktion"""
         self.current_function = func
         
         # Function Label
@@ -84,13 +112,6 @@ class CodeGenerator:
         if func.stack_size > 0:
             self.emit(f"sub rsp, {func.stack_size}")
         
-        # Parameter in Stack-Slots laden (für MVP: nur Register-Args)
-        # Semantic Analyzer markiert Params mit is_param=True
-        # Wir müssen jetzt die first 6 Args aus Registern laden
-        # TODO: Implementiere Parameter-Handling
-        # for now: Params bleiben in Registern (keine lokalen Vars mit gleichem Namen)
-        
-        # Body kompilieren
         self.compile_block(func.body)
         
         # Epilog (falls kein explizites Return)
@@ -104,16 +125,11 @@ class CodeGenerator:
         self.current_function = None
     
     def compile_block(self, block: Block):
-        """Compiles Block"""
         for stmt in block.statements:
             self.compile_statement(stmt)
     
-    # ========================================================================
-    # Statement Compilation
-    # ========================================================================
-    
     def compile_statement(self, stmt: Statement):
-        """Compiles Statement"""
+        # dispatch zu verschiedenen statement types
         if isinstance(stmt, VarDecl):
             self.compile_vardecl(stmt)
         elif isinstance(stmt, Assignment):
@@ -134,17 +150,23 @@ class CodeGenerator:
             raise NotImplementedError(f"Statement type not implemented: {type(stmt).__name__}")
     
     def compile_vardecl(self, vardecl: VarDecl):
-        """Compiles Variable Declaration"""
         if vardecl.init:
-            # Init-Expression evaluieren -> eax
+            # Init-Expression evaluieren -> eax/rax
             self.compile_expression(vardecl.init)
             
-            # Store zu Stack-Slot
+            # Store zu Stack-Slot - type aware
             # vardecl.stack_offset ist negativ (z.B. -4)
-            self.emit(f"mov [rbp{vardecl.stack_offset:+d}], eax")
+            var_type = vardecl.type
+            if var_type in ['i8', 'u8']:
+                self.emit(f"mov byte [rbp{vardecl.stack_offset:+d}], al")
+            elif var_type in ['i16', 'u16']:
+                self.emit(f"mov word [rbp{vardecl.stack_offset:+d}], ax")
+            elif var_type in ['i64', 'u64']:
+                self.emit(f"mov qword [rbp{vardecl.stack_offset:+d}], rax")
+            else:
+                self.emit(f"mov [rbp{vardecl.stack_offset:+d}], eax")
     
     def compile_assignment(self, assign: Assignment):
-        """Compiles Assignment"""
         # Value evaluieren -> eax
         self.compile_expression(assign.value)
         
@@ -152,12 +174,18 @@ class CodeGenerator:
         if not isinstance(assign.target, Identifier):
             raise NotImplementedError("Assignment target must be identifier")
         
-        # Store zu Stack-Slot
+        # Store zu Stack-Slot - type aware
         symbol = assign.target.symbol
-        self.emit(f"mov [rbp{symbol.stack_offset:+d}], eax")
+        if symbol.type in ['i8', 'u8']:
+            self.emit(f"mov byte [rbp{symbol.stack_offset:+d}], al")
+        elif symbol.type in ['i16', 'u16']:
+            self.emit(f"mov word [rbp{symbol.stack_offset:+d}], ax")
+        elif symbol.type in ['i64', 'u64']:
+            self.emit(f"mov qword [rbp{symbol.stack_offset:+d}], rax")
+        else:
+            self.emit(f"mov [rbp{symbol.stack_offset:+d}], eax")
     
     def compile_return(self, ret: Return):
-        """Compiles Return"""
         if ret.value:
             # Value evaluieren -> eax
             self.compile_expression(ret.value)
@@ -166,7 +194,6 @@ class CodeGenerator:
         self.emit(f"jmp {self.current_function.name}_epilog")
     
     def compile_if(self, if_stmt: If):
-        """Compiles If-Statement"""
         else_label = self.fresh_label("if_else")
         end_label = self.fresh_label("if_end")
         
@@ -192,7 +219,6 @@ class CodeGenerator:
         self.emit_label(end_label)
     
     def compile_while(self, while_stmt: While):
-        """Compiles While-Loop"""
         cond_label = self.fresh_label("while_cond")
         body_label = self.fresh_label("while_body")
         end_label = self.fresh_label("while_end")
@@ -217,7 +243,6 @@ class CodeGenerator:
         self.loop_stack.pop()
     
     def compile_break(self, break_stmt: Break):
-        """Compiles Break"""
         if not self.loop_stack:
             raise RuntimeError("Break outside of loop")
         
@@ -225,19 +250,15 @@ class CodeGenerator:
         self.emit(f"jmp {break_label}")
     
     def compile_continue(self, continue_stmt: Continue):
-        """Compiles Continue"""
+        # continue jump - geht zu loop start
         if not self.loop_stack:
             raise RuntimeError("Continue outside of loop")
         
         continue_label, _ = self.loop_stack[-1]
         self.emit(f"jmp {continue_label}")
     
-    # ========================================================================
-    # Expression Compilation (Result in eax/rax)
-    # ========================================================================
-    
     def compile_expression(self, expr: Expression):
-        """Compiles Expression -> eax"""
+        # expression compilation - result landet immer in eax
         if isinstance(expr, Literal):
             self.compile_literal(expr)
         elif isinstance(expr, Identifier):
@@ -252,13 +273,31 @@ class CodeGenerator:
             raise NotImplementedError(f"Expression type not implemented: {type(expr).__name__}")
     
     def compile_literal(self, lit: Literal):
-        """Compiles Literal -> eax"""
         # Parse Immediate
         value = self.parse_literal_value(lit.value)
+        # Get the inferred type from semantic analysis
+        lit_type = getattr(lit, 'inferred_type', 'i32')
+        
+        # For signed i8, sign-extend negative values properly for comparison
+        # When we compare an i8 variable (loaded with movsx) against a literal,
+        # both should be in sign-extended i32 form
+        if lit_type == 'i8':
+            # Sign-extend i8 to i32
+            if value < 0:
+                value = value  # Already correct as Python int
+            elif value > 127:
+                value = value - 256  # Convert unsigned 8-bit to signed
+        elif lit_type == 'u8':
+            value = value & 0xFF  # Zero-extend for unsigned
+        elif lit_type in ['i64', 'u64']:
+            # Use 64-bit register for i64/u64
+            self.emit(f"mov rax, {value}")
+            return
+        
         self.emit(f"mov eax, {value}")
     
     def parse_literal_value(self, value_str: str) -> int:
-        """Parses Literal-value (hex, binary, decimal)"""
+        # parse verschiedene number formats - hex, binary, decimal
         value_str = value_str.strip()
         
         if value_str.startswith('0x') or value_str.startswith('0X'):
@@ -269,41 +308,94 @@ class CodeGenerator:
             return int(value_str, 10)
     
     def compile_identifier(self, ident: Identifier):
-        """Compiles Identifier -> eax"""
+        # load variable value vom stack in eax
         symbol = ident.symbol
         
         if symbol.is_param:
-            # Parameter: Für MVP in Register (erste 6)
-            # TODO: Implementiere Parameter-Mapping
-            # for now: Error
             raise NotImplementedError("Parameter access not yet implemented in MVP")
         else:
-            # Lokale Variable: Load von Stack
-            self.emit(f"mov eax, [rbp{symbol.stack_offset:+d}]")
+            # Use type-aware load
+            if symbol.type == 'i8':
+                # Sign-extend i8 to i32
+                self.emit(f"movsx eax, byte [rbp{symbol.stack_offset:+d}]")
+            elif symbol.type == 'u8':
+                # Zero-extend u8 to i32
+                self.emit(f"movzx eax, byte [rbp{symbol.stack_offset:+d}]")
+            elif symbol.type == 'i16':
+                # Sign-extend i16 to i32
+                self.emit(f"movsx eax, word [rbp{symbol.stack_offset:+d}]")
+            elif symbol.type == 'u16':
+                # Zero-extend u16 to i32
+                self.emit(f"movzx eax, word [rbp{symbol.stack_offset:+d}]")
+            elif symbol.type in ['i64', 'u64']:
+                # Full 64-bit load
+                self.emit(f"mov rax, qword [rbp{symbol.stack_offset:+d}]")
+            else:
+                # Default i32 load
+                self.emit(f"mov eax, [rbp{symbol.stack_offset:+d}]")
     
     def compile_binaryop(self, binop: BinaryOp):
-        """Compiles Binary Operation -> eax"""
-        # Arithmetik: + - * /
-        if binop.op in ['+', '-']:
-            # Links -> eax
+        # binary operations - beide seiten evaluate und dann op
+        if binop.op in ['+', '-', '*', '/', '%', '&', '|', '^']:
             self.compile_expression(binop.left)
             
-            # Rechts -> ecx (temp)
-            self.emit("push rax")  # Save left
+            # rechts in temp register
+            self.emit("push rax")
             self.compile_expression(binop.right)
-            self.emit("mov ecx, eax")  # right in ecx
-            self.emit("pop rax")  # Restore left
+            self.emit("mov ecx, eax")
+            self.emit("pop rax")
             
             if binop.op == '+':
                 self.emit("add eax, ecx")
             elif binop.op == '-':
                 self.emit("sub eax, ecx")
+            elif binop.op == '*':
+                # Multiplikation: eax = eax * ecx
+                self.emit("imul ecx")
+            elif binop.op == '/':
+                # Division: eax = eax / ecx
+                # cdq erweitert eax zu edx:eax (sign extend)
+                self.emit("cdq")
+                self.emit("idiv ecx")
+            elif binop.op == '%':
+                # Modulo: remainder nach Division in edx
+                self.emit("cdq")
+                self.emit("idiv ecx")
+                self.emit("mov eax, edx")  # remainder von edx nach eax
+            elif binop.op == '&':
+                # Bitwise AND
+                self.emit("and eax, ecx")
+            elif binop.op == '|':
+                # Bitwise OR
+                self.emit("or eax, ecx")
+            elif binop.op == '^':
+                # Bitwise XOR
+                self.emit("xor eax, ecx")
         
-        elif binop.op in ['*', '/']:
-            # Multiplikation/Division: not implemented im MVP
-            raise NotImplementedError(f"Operator '{binop.op}' not implemented in MVP (requires imul/idiv)")
+        # Shift operators
+        elif binop.op in ['<<', '>>']:
+            self.compile_expression(binop.left)
+            
+            # rechts in ecx (shift count)
+            self.emit("push rax")
+            self.compile_expression(binop.right)
+            self.emit("mov ecx, eax")
+            self.emit("pop rax")
+            
+            if binop.op == '<<':
+                # Left shift: shl eax, cl
+                self.emit("shl eax, cl")
+            elif binop.op == '>>':
+                # Right shift: use sar for signed, shr for unsigned
+                left_type = getattr(binop.left, 'inferred_type', 'i32')
+                if left_type in ['i8', 'i16', 'i32', 'i64']:
+                    # Arithmetic right shift (preserves sign bit)
+                    self.emit("sar eax, cl")
+                else:
+                    # Logical right shift (fills with zeros)
+                    self.emit("shr eax, cl")
         
-        # Vergleiche: == != < <= > >=
+        # comparison operators - result is bool
         elif binop.op in ['==', '!=', '<', '<=', '>', '>=']:
             # Links -> eax
             self.compile_expression(binop.left)
@@ -342,16 +434,23 @@ class CodeGenerator:
             raise NotImplementedError(f"Binary operator '{binop.op}' not implemented")
     
     def compile_unaryop(self, unaryop: UnaryOp):
-        """Compiles Unary Operation -> eax"""
         if unaryop.op == '-':
-            # Negation
+            # Negation - type aware
             self.compile_expression(unaryop.operand)
-            self.emit("neg eax")
+            # Get the type of the operand
+            op_type = getattr(unaryop.operand, 'inferred_type', 'i32')
+            if op_type in ['i64', 'u64']:
+                self.emit("neg rax")
+            else:
+                self.emit("neg eax")
+        elif unaryop.op == '!':
+            # Boolean NOT: flip 0 to 1 and 1 to 0
+            self.compile_expression(unaryop.operand)
+            self.emit("xor eax, 1")  # Toggle lowest bit
         else:
             raise NotImplementedError(f"Unary operator '{unaryop.op}' not implemented")
     
     def compile_call(self, call: Call):
-        """Compiles Function Call -> eax"""
         # System V AMD64: Args in rdi, rsi, rdx, rcx, r8, r9
         # Für i32: edi, esi, edx, ecx, r8d, r9d
         
@@ -359,28 +458,22 @@ class CodeGenerator:
             raise NotImplementedError("More than 6 arguments not supported in MVP")
         
         # Evaluiere Argumente und lade in Register
-        # TODO: Für mehrere Args brauchen wir Stack-based eval
-        # MVP: Max 6 Args, evaluiere von links nach rechts
-        
-        for i, arg in enumerate(call.args):
-            # Evaluiere arg -> eax
+        # Evaluate all args and push to stack first to avoid clobbering
+        for arg in call.args:
             self.compile_expression(arg)
-            
-            # Move zu Argument-Register
-            if i < len(self.arg_regs_32):
-                dest_reg = self.arg_regs_32[i]
-                if dest_reg != 'eax':  # Avoid redundant mov
-                    self.emit(f"mov {dest_reg}, eax")
+            self.emit("push rax")
+        
+        # Pop args in reverse order into argument registers
+        for i in range(len(call.args) - 1, -1, -1):
+            self.emit("pop rax")
+            dest_reg = self.arg_regs_32[i]
+            if dest_reg != 'eax':
+                self.emit(f"mov {dest_reg}, eax")
         
         # Call
         self.emit(f"call {call.name}")
         
         # Ergebnis ist bereits in eax
-
-
-# ============================================================================
-# Test
-# ============================================================================
 
 if __name__ == '__main__':
     from tokenization_engine import Lexer

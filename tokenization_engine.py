@@ -9,19 +9,16 @@ from typing import Optional
 
 
 class TokenType(Enum):
-    # Keywords
-    FN = auto()
-    LET = auto()
-    MUT = auto()
-    RETURN = auto()
-    IF = auto()
+    FUNC = auto()
+    GIVE = auto()
+    WHEN = auto()
     ELSE = auto()
     WHILE = auto()
+    LOOP = auto()
+    REPEAT = auto()
     BREAK = auto()
     CONTINUE = auto()
     SYSCALL = auto()
-    
-    # Types
     I8 = auto()
     I16 = auto()
     I32 = auto()
@@ -32,12 +29,18 @@ class TokenType(Enum):
     U64 = auto()
     PTR = auto()
     BOOL = auto()
-    
-    # Operators
+    TRUE = auto()
+    FALSE = auto()
     PLUS = auto()       # +
     MINUS = auto()      # -
     STAR = auto()       # *
     SLASH = auto()      # /
+    PERCENT = auto()    # %
+    AMPERSAND = auto()  # &
+    PIPE = auto()       # |
+    CARET = auto()      # ^
+    LSHIFT = auto()     # <<
+    RSHIFT = auto()     # >>
     EQ = auto()         # ==
     NE = auto()         # !=
     LT = auto()         # <
@@ -45,8 +48,7 @@ class TokenType(Enum):
     GT = auto()         # >
     GE = auto()         # >=
     ASSIGN = auto()     # =
-    
-    # Delimiters
+    BANG = auto()       # !
     LPAREN = auto()     # (
     RPAREN = auto()     # )
     LBRACE = auto()     # {
@@ -55,12 +57,11 @@ class TokenType(Enum):
     SEMICOLON = auto()  # ;
     COMMA = auto()      # ,
     ARROW = auto()      # ->
-    
-    # Literals
     INT_LITERAL = auto()
     IDENTIFIER = auto()
-    
-    # Special
+    INDENT = auto()
+    DEDENT = auto()
+    NEWLINE = auto()
     EOF = auto()
 
 
@@ -76,18 +77,18 @@ class Token:
 
 
 class Lexer:
+    # alle keywords hier, ziemlich straightforward
     KEYWORDS = {
-        'fn': TokenType.FN,
-        'let': TokenType.LET,
-        'mut': TokenType.MUT,
-        'return': TokenType.RETURN,
-        'if': TokenType.IF,
+        'func': TokenType.FUNC,
+        'give': TokenType.GIVE,
+        'when': TokenType.WHEN,
         'else': TokenType.ELSE,
         'while': TokenType.WHILE,
+        'loop': TokenType.LOOP,
+        'repeat': TokenType.REPEAT,
         'break': TokenType.BREAK,
         'continue': TokenType.CONTINUE,
         'syscall': TokenType.SYSCALL,
-        # Types
         'i8': TokenType.I8,
         'i16': TokenType.I16,
         'i32': TokenType.I32,
@@ -98,20 +99,26 @@ class Lexer:
         'u64': TokenType.U64,
         'ptr': TokenType.PTR,
         'bool': TokenType.BOOL,
+        'True': TokenType.TRUE,
+        'False': TokenType.FALSE,
     }
-    
+
     def __init__(self, source: str):
+        # lexer state - pos tracken und so
         self.source = source
         self.pos = 0
         self.line = 1
         self.column = 1
         self.current_char = self.source[0] if source else None
+        # indentation tracking für Python-style blocks
+        self.indent_stack = [0]
+        self.at_line_start = True
+        self.pending_tokens = []
     
     def error(self, msg: str):
         raise SyntaxError(f"Lexer Error at {self.line}:{self.column}: {msg}")
     
     def advance(self):
-        """Advances position by one character"""
         if self.current_char == '\n':
             self.line += 1
             self.column = 1
@@ -125,37 +132,82 @@ class Lexer:
             self.current_char = self.source[self.pos]
     
     def peek(self, offset: int = 1) -> Optional[str]:
-        """Looks ahead without changing position"""
         peek_pos = self.pos + offset
         if peek_pos >= len(self.source):
             return None
         return self.source[peek_pos]
     
-    def skip_whitespace(self):
-        """Skips whitespace"""
-        while self.current_char and self.current_char.isspace():
+    def skip_whitespace_inline(self):
+        # whitespace überspringen, aber nicht newlines (wichtig für indentation)
+        while self.current_char and self.current_char in ' \t\r':
             self.advance()
     
-    def skip_comment(self):
-        """Skips comments // until end of line"""
+    def handle_indentation(self):
+        # indentation level am line start berechnen
+        if not self.at_line_start:
+            return None
+        
+        self.at_line_start = False
+        indent_level = 0
+        
+        while self.current_char in ' \t':
+            if self.current_char == ' ':
+                indent_level += 1
+            elif self.current_char == '\t':
+                indent_level += 4  # tabs = 4 spaces
+            self.advance()
+        
+        # leere zeilen und comments ignorieren
+        if self.current_char in ('\n', None):
+            return None
         if self.current_char == '/' and self.peek() == '/':
+            self.skip_comment()
+            return None
+        if self.current_char == '#':
+            self.skip_comment()
+            return None
+        
+        # indentation mit stack vergleichen
+        current_indent = self.indent_stack[-1]
+        
+        if indent_level > current_indent:
+            self.indent_stack.append(indent_level)
+            return Token(TokenType.INDENT, '', self.line, 1)
+        elif indent_level < current_indent:
+            # mehrere DEDENTs möglich
+            dedent_tokens = []
+            while self.indent_stack and self.indent_stack[-1] > indent_level:
+                self.indent_stack.pop()
+                dedent_tokens.append(Token(TokenType.DEDENT, '', self.line, 1))
+            
+            if self.indent_stack[-1] != indent_level:
+                self.error(f"Indentation error: level {indent_level} doesn't match any outer level")
+            
+            # erstes DEDENT returnen, rest in pending queue
+            if dedent_tokens:
+                self.pending_tokens.extend(dedent_tokens[1:])
+                return dedent_tokens[0]
+        
+        return None
+    
+    def skip_comment(self):
+        # single-line comments - rest of line ignorieren
+        # Supports both // (C-style) and # (Python-style) comments
+        if (self.current_char == '/' and self.peek() == '/') or self.current_char == '#':
             while self.current_char and self.current_char != '\n':
                 self.advance()
-            if self.current_char == '\n':
-                self.advance()
+            # Don't consume the newline - let the main loop handle it
     
     def read_number(self) -> Token:
-        """Reads integer literal (decimal, hex, binary)"""
         start_line = self.line
         start_column = self.column
         num_str = ''
         
-        # Negative sign
         if self.current_char == '-':
             num_str += '-'
             self.advance()
         
-        # Hex: 0x...
+        # hex literals mit 0x prefix
         if self.current_char == '0' and self.peek() in ['x', 'X']:
             num_str += self.current_char
             self.advance()
@@ -170,7 +222,7 @@ class Lexer:
                     num_str += self.current_char
                 self.advance()
         
-        # Binary: 0b...
+        # binary literals mit 0b prefix
         elif self.current_char == '0' and self.peek() in ['b', 'B']:
             num_str += self.current_char
             self.advance()
@@ -185,7 +237,6 @@ class Lexer:
                     num_str += self.current_char
                 self.advance()
         
-        # Decimal
         else:
             while self.current_char and (self.current_char.isdigit() or self.current_char == '_'):
                 if self.current_char != '_':
@@ -195,47 +246,64 @@ class Lexer:
         return Token(TokenType.INT_LITERAL, num_str, start_line, start_column)
     
     def read_identifier(self) -> Token:
-        """Reads identifier or keyword"""
+        # identifiers lesen, dann keyword check
         start_line = self.line
         start_column = self.column
         ident = ''
         
-        # Identifier: [a-zA-Z_][a-zA-Z0-9_]*
         while self.current_char and (self.current_char.isalnum() or self.current_char == '_'):
             ident += self.current_char
             self.advance()
         
-        # Check if keyword
         token_type = self.KEYWORDS.get(ident, TokenType.IDENTIFIER)
         return Token(token_type, ident, start_line, start_column)
     
     def next_token(self) -> Token:
-        """Returns next token"""
+        # pending tokens von DEDENT handling returnen
+        if self.pending_tokens:
+            return self.pending_tokens.pop(0)
+        
         while self.current_char:
-            # Whitespace
-            if self.current_char.isspace():
-                self.skip_whitespace()
+            # handle indentation at line start
+            if self.at_line_start:
+                indent_token = self.handle_indentation()
+                if indent_token:
+                    return indent_token
+                # falls keine indentation token, weitermachen
+            
+            # newline als token behandeln (wichtig für statement separation)
+            if self.current_char == '\n':
+                line_num = self.line
+                col_num = self.column
+                self.advance()
+                self.at_line_start = True
+                # NEWLINE nur returnen wenn nicht am file start
+                if line_num > 1 or col_num > 1:
+                    return Token(TokenType.NEWLINE, '\\n', line_num, col_num)
                 continue
             
-            # Comments
+            # whitespace überspringen (aber nicht newlines)
+            if self.current_char in ' \t\r':
+                self.skip_whitespace_inline()
+                continue
+            
             if self.current_char == '/' and self.peek() == '/':
                 self.skip_comment()
                 continue
             
-            # Numbers
+            if self.current_char == '#':
+                self.skip_comment()
+                continue
+            
             if self.current_char.isdigit() or (self.current_char == '-' and self.peek() and self.peek().isdigit()):
                 return self.read_number()
             
-            # Identifiers / Keywords
             if self.current_char.isalpha() or self.current_char == '_':
                 return self.read_identifier()
             
-            # Operators and delimiters
             start_line = self.line
             start_column = self.column
             char = self.current_char
-            
-            # Two-character operators
             if char == '=' and self.peek() == '=':
                 self.advance()
                 self.advance()
@@ -246,10 +314,25 @@ class Lexer:
                 self.advance()
                 return Token(TokenType.NE, '!=', start_line, start_column)
             
+            # Single ! for boolean NOT
+            if char == '!':
+                self.advance()
+                return Token(TokenType.BANG, '!', start_line, start_column)
+            
+            if char == '<' and self.peek() == '<':
+                self.advance()
+                self.advance()
+                return Token(TokenType.LSHIFT, '<<', start_line, start_column)
+            
             if char == '<' and self.peek() == '=':
                 self.advance()
                 self.advance()
                 return Token(TokenType.LE, '<=', start_line, start_column)
+            
+            if char == '>' and self.peek() == '>':
+                self.advance()
+                self.advance()
+                return Token(TokenType.RSHIFT, '>>', start_line, start_column)
             
             if char == '>' and self.peek() == '=':
                 self.advance()
@@ -261,12 +344,15 @@ class Lexer:
                 self.advance()
                 return Token(TokenType.ARROW, '->', start_line, start_column)
             
-            # Single-character operators
             single_char_tokens = {
                 '+': TokenType.PLUS,
                 '-': TokenType.MINUS,
                 '*': TokenType.STAR,
                 '/': TokenType.SLASH,
+                '%': TokenType.PERCENT,
+                '&': TokenType.AMPERSAND,
+                '|': TokenType.PIPE,
+                '^': TokenType.CARET,
                 '=': TokenType.ASSIGN,
                 '<': TokenType.LT,
                 '>': TokenType.GT,
@@ -284,14 +370,22 @@ class Lexer:
                 self.advance()
                 return Token(token_type, char, start_line, start_column)
             
-            # Unknown character
             self.error(f"Unexpected character: '{char}'")
         
-        # EOF
+        # bei EOF alle übrigen DEDENTs emittieren
+        dedents = []
+        while len(self.indent_stack) > 1:
+            self.indent_stack.pop()
+            dedents.append(Token(TokenType.DEDENT, '', self.line, self.column))
+        
+        if dedents:
+            self.pending_tokens.extend(dedents[1:])
+            return dedents[0]
+        
         return Token(TokenType.EOF, '', self.line, self.column)
     
     def tokenize(self) -> list[Token]:
-        """Generates Complete token list"""
+        # convenience method - gibt alle tokens zurück
         tokens = []
         while True:
             token = self.next_token()

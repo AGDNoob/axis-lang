@@ -1,0 +1,23 @@
+// AXIS Example 06: Break and Continue
+// Demonstrates loop control with break and continue
+// Expected exit code: 25 (sum of odd numbers 1-9)
+
+func main() -> i32:
+    sum: i32 = 0
+    i: i32 = 0
+    
+    while i < 20:
+        i = i + 1
+        
+        # Skip even numbers
+        when i % 2 == 0:
+            continue
+        
+        # Stop at 10
+        when i >= 10:
+            break
+        
+        # Add odd numbers: 1, 3, 5, 7, 9
+        sum = sum + i
+    
+    give sum  # 1+3+5+7+9 = 25

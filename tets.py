@@ -1,27 +1,3 @@
-# Vollwertiger x86/x86-64 Assembler in Python
-# 
-# ARCHITEKTUR-ENTSCHEIDUNGEN:
-# 1. ✅ Index-basierte Jump-Forms (nicht Adress-basiert)
-#    - Verhindert Bugs wenn Instruktionen während Relaxation schrumpfen
-#    - Jump-Forms werden mit Instruktions-Index (nicht Adresse) gekey'd
-#    - Kritisch für korrekte Relaxation bei mehreren Jumps
-#
-# 2. ✅ Relaxation-Algorithmus
-#    - Iterative Optimierung until convergence (max 10 Iterationen)
-#    - Forward jumps: Funktioniert perfekt
-#    - Backward jumps: Konservativ (optimiert nur wenn sicher)
-#    - Real-world Assembler sind ähnlich konservativ für Stabilität
-#
-# 3. ⚠️ Memory-Operanden (TODO)
-#    - Aktuell nur Register-zu-Register Operationen
-#    - Fehlende Features: [rax], [rbp+8], [rip+rel32], SIB-Byte
-#    - ModR/M aktuell nur mit mod=3 (Register direct)
-#
-# 3. ⚠️ Operand-Size-Inference (TODO)
-#    - Aktuell explizite Register-Größen erforderlich
-#    - Fehlende Features: Default operand size, implizite Größenregeln
-#    - Beispiel: mov eax, ebx (explizit) vs mov [mem], 1 (implizit: size?)
-#
 import re
 import sys
 from enum import Enum
@@ -34,31 +10,27 @@ class RegisterType(Enum):
 
 class Assembler:
     def __init__(self):
-        # 8-bit Register
+        # register tables - alle x86-64 register hier
         self.reg8 = {'al': 0, 'cl': 1, 'dl': 2, 'bl': 3, 'ah': 4, 'ch': 5, 'dh': 6, 'bh': 7}
         self.reg8_rex = {'spl': 4, 'bpl': 5, 'sil': 6, 'dil': 7, 'r8b': 8, 'r9b': 9, 'r10b': 10, 'r11b': 11, 
                          'r12b': 12, 'r13b': 13, 'r14b': 14, 'r15b': 15}
         
-        # 16-bit Register  
         self.reg16 = {'ax': 0, 'cx': 1, 'dx': 2, 'bx': 3, 'sp': 4, 'bp': 5, 'si': 6, 'di': 7,
                       'r8w': 8, 'r9w': 9, 'r10w': 10, 'r11w': 11, 'r12w': 12, 'r13w': 13, 'r14w': 14, 'r15w': 15}
         
-        # 32-bit Register
         self.reg32 = {'eax': 0, 'ecx': 1, 'edx': 2, 'ebx': 3, 'esp': 4, 'ebp': 5, 'esi': 6, 'edi': 7,
                       'r8d': 8, 'r9d': 9, 'r10d': 10, 'r11d': 11, 'r12d': 12, 'r13d': 13, 'r14d': 14, 'r15d': 15}
         
-        # 64-bit Register
         self.reg64 = {'rax': 0, 'rcx': 1, 'rdx': 2, 'rbx': 3, 'rsp': 4, 'rbp': 5, 'rsi': 6, 'rdi': 7,
                       'r8': 8, 'r9': 9, 'r10': 10, 'r11': 11, 'r12': 12, 'r13': 13, 'r14': 14, 'r15': 15}
         
         self.labels = {}
         self.current_address = 0
-        self.jump_forms = {}  # Speichert ob Jump short oder near ist: {instr_index: 'short'/'near'}
-        self.current_instr_index = 0  # Aktuelle Instruktions-Index (unabhängig von Adressen!)
-        # WICHTIG: Index-basiert statt Adress-basiert, da Adressen sich während Relaxation ändern!
+        self.jump_forms = {}
+        self.current_instr_index = 0
+        # jump forms tracking für relaxation - wichtig dass index-based ist!
         
     def get_reg_num(self, reg):
-        """Returns Register-Nummer und Typ """
         reg = reg.lower()
         if reg in self.reg8 or reg in self.reg8_rex:
             num = self.reg8.get(reg, self.reg8_rex.get(reg))
@@ -72,26 +44,19 @@ class Assembler:
         return None, None
     
     def is_high_byte_reg(self, reg):
-        """Checks ob Register ein High-Byte Register ist (AH/CH/DH/BH)"""
         return reg.lower() in ['ah', 'ch', 'dh', 'bh']
     
     def validate_8bit_regs(self, reg1, reg2=None):
-        """
-        Validates 8-bit Register Kombination.
-        AH/CH/DH/BH können nicht mit REX-Prefix verwendet werden.
-        Returns True  wenn valid, sonst False.
-        """
+        # AH/CH/DH/BH können nicht mit REX-Prefix verwendet werden
         regs = [reg1] if reg2 is None else [reg1, reg2]
         has_high_byte = any(self.is_high_byte_reg(r) for r in regs if r)
         has_rex_reg = any(r and r.lower() in self.reg8_rex for r in regs if r)
         
-        # Beide gleichzeitig ist invalid
         if has_high_byte and has_rex_reg:
             return False
         return True
     
     def is_immediate(self, value_str):
-        """Checks ob String ein gültiger Immediate-value ist"""
         try:
             self.parse_immediate(value_str)
             return True
@@ -99,12 +64,10 @@ class Assembler:
             return False
     
     def parse_immediate(self, value_str):
-        """Parses Immediate-Werte (Decimal, hex, Binary)"""
         value_str = value_str.strip()
         if not value_str:
             raise ValueError("Leerer Immediate-Wert")
         
-        # Negative sign handle
         negative = value_str.startswith('-')
         if negative:
             value_str = value_str[1:]
@@ -124,7 +87,6 @@ class Assembler:
         return -result if negative else result
     
     def validate_immediate_size(self, value, bits):
-        """Validates ob Immediate in size passt"""
         if bits == 8:
             return -128 <= value <= 255
         elif bits == 16:
@@ -136,26 +98,21 @@ class Assembler:
         return False
     
     def encode_modrm(self, mod, reg, rm):
-        """Encodes ModR/M Byte"""
         return ((mod & 0x3) << 6) | ((reg & 0x7) << 3) | (rm & 0x7)
     
     def needs_rex(self, reg_num):
-        """Checks ob REX Prefix benötigt wird"""
         return reg_num >= 8
     
     def build_rex(self, w=0, r=0, x=0, b=0):
-        """Builds REX Prefix"""
         return 0x40 | (w << 3) | (r << 2) | (x << 1) | b
     
     def parse_memory_operand(self, operand):
-        """Parses Memory-Operanden wie [rbp-8] oder [rbp+16]"""
         operand = operand.strip()
         if not operand.startswith('[') or not operand.endswith(']'):
             return None
         
         inner = operand[1:-1].strip()
         
-        # Nur rbp-relative für MVP
         if not inner.startswith('rbp'):
             return None
         
@@ -171,7 +128,6 @@ class Assembler:
                 return None
             offset = -self.parse_immediate(parts[1].strip())
         else:
-            # [rbp] ohne offset
             if inner.strip() == 'rbp':
                 offset = 0
             else:
@@ -180,10 +136,37 @@ class Assembler:
         return ('rbp', offset)
     
     def assemble_mov(self, dest, src):
-        """MOV Instruktion"""
+        # mov instruction - viele verschiedene forms
         bytecode = []
         
-        # mov reg, [rbp+disp]
+        # Handle mov rax, qword [rbp-X] (qword load with explicit size)
+        if src.startswith('qword'):
+            src_mem = src[5:].strip()  # Remove "qword"
+            mem_op = self.parse_memory_operand(src_mem)
+            if mem_op and mem_op[0] == 'rbp':
+                dest_num, dest_type = self.get_reg_num(dest)
+                if dest_num is None or dest_type != RegisterType.REG_64:
+                    return None
+                
+                base, disp = mem_op
+                use_disp8 = -128 <= disp <= 127
+                mod = 0x01 if use_disp8 else 0x02
+                
+                modrm = self.encode_modrm(mod, dest_num % 8, 0b101)
+                
+                # MOV r64, r/m64: REX.W 8B /r
+                rex = self.build_rex(w=1, r=(dest_num >= 8))
+                bytecode = [rex, 0x8B, modrm]
+                
+                if use_disp8:
+                    bytecode.append(disp & 0xFF)
+                else:
+                    bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
+                
+                return bytecode
+            return None
+        
+        # mov reg, [memory]
         if src.startswith('['):
             mem_op = self.parse_memory_operand(src)
             if mem_op and mem_op[0] == 'rbp':
@@ -197,11 +180,9 @@ class Assembler:
                 use_disp8 = -128 <= disp <= 127
                 mod = 0x01 if use_disp8 else 0x02
                 
-                # ModRM: mod=01/10, reg=dest, rm=101 (rbp)
                 modrm = self.encode_modrm(mod, dest_num % 8, 0b101)
                 
                 if dest_type == RegisterType.REG_32:
-                    # mov r32, [rbp+disp]
                     bytecode = [0x8B, modrm]
                     if dest_num >= 8:
                         bytecode = [0x41] + bytecode
@@ -212,7 +193,6 @@ class Assembler:
                         bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
                 
                 elif dest_type == RegisterType.REG_64:
-                    # mov r64, [rbp+disp]
                     rex = self.build_rex(w=1, r=(dest_num >= 8))
                     bytecode = [rex, 0x8B, modrm]
                     
@@ -225,7 +205,89 @@ class Assembler:
             
             return None
         
-        # mov [rbp+disp], reg
+        # Handle mov byte [rbp-X], al (byte store)
+        if dest.startswith('byte'):
+            dest_mem = dest[4:].strip()  # Remove "byte"
+            mem_op = self.parse_memory_operand(dest_mem)
+            if mem_op and mem_op[0] == 'rbp':
+                src_num, src_type = self.get_reg_num(src)
+                if src_num is None:
+                    return None
+                
+                base, disp = mem_op
+                use_disp8 = -128 <= disp <= 127
+                mod = 0x01 if use_disp8 else 0x02
+                
+                modrm = self.encode_modrm(mod, src_num % 8, 0b101)
+                
+                # MOV r/m8, r8: opcode 88
+                bytecode = [0x88, modrm]
+                # For al/bl/cl/dl (0-3) no REX needed
+                # For spl/bpl/sil/dil (4-7) need REX prefix without any bits set
+                if src_num >= 4:
+                    bytecode = [0x40] + bytecode
+                
+                if use_disp8:
+                    bytecode.append(disp & 0xFF)
+                else:
+                    bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
+                
+                return bytecode
+            return None
+        
+        # Handle mov word [rbp-X], ax (word store)
+        if dest.startswith('word'):
+            dest_mem = dest[4:].strip()  # Remove "word"
+            mem_op = self.parse_memory_operand(dest_mem)
+            if mem_op and mem_op[0] == 'rbp':
+                src_num, src_type = self.get_reg_num(src)
+                if src_num is None:
+                    return None
+                
+                base, disp = mem_op
+                use_disp8 = -128 <= disp <= 127
+                mod = 0x01 if use_disp8 else 0x02
+                
+                modrm = self.encode_modrm(mod, src_num % 8, 0b101)
+                
+                # MOV r/m16, r16: 66 89 /r (operand size prefix + opcode)
+                bytecode = [0x66, 0x89, modrm]
+                
+                if use_disp8:
+                    bytecode.append(disp & 0xFF)
+                else:
+                    bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
+                
+                return bytecode
+            return None
+        
+        # Handle mov qword [rbp-X], rax (qword store)
+        if dest.startswith('qword'):
+            dest_mem = dest[5:].strip()  # Remove "qword"
+            mem_op = self.parse_memory_operand(dest_mem)
+            if mem_op and mem_op[0] == 'rbp':
+                src_num, src_type = self.get_reg_num(src)
+                if src_num is None:
+                    return None
+                
+                base, disp = mem_op
+                use_disp8 = -128 <= disp <= 127
+                mod = 0x01 if use_disp8 else 0x02
+                
+                modrm = self.encode_modrm(mod, src_num % 8, 0b101)
+                
+                # MOV r/m64, r64: REX.W 89 /r
+                rex = self.build_rex(w=1, r=(src_num >= 8))
+                bytecode = [rex, 0x89, modrm]
+                
+                if use_disp8:
+                    bytecode.append(disp & 0xFF)
+                else:
+                    bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
+                
+                return bytecode
+            return None
+        
         if dest.startswith('['):
             mem_op = self.parse_memory_operand(dest)
             if mem_op and mem_op[0] == 'rbp':
@@ -235,15 +297,12 @@ class Assembler:
                 
                 base, disp = mem_op
                 
-                # Bestimme ob disp8 oder disp32
                 use_disp8 = -128 <= disp <= 127
                 mod = 0x01 if use_disp8 else 0x02
                 
-                # ModRM: mod=01/10, reg=src, rm=101 (rbp)
                 modrm = self.encode_modrm(mod, src_num % 8, 0b101)
                 
                 if src_type == RegisterType.REG_32:
-                    # mov [rbp+disp], r32
                     bytecode = [0x89, modrm]
                     if src_num >= 8:
                         bytecode = [0x41] + bytecode
@@ -254,7 +313,6 @@ class Assembler:
                         bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
                 
                 elif src_type == RegisterType.REG_64:
-                    # mov [rbp+disp], r64
                     rex = self.build_rex(w=1, r=(src_num >= 8))
                     bytecode = [rex, 0x89, modrm]
                     
@@ -267,16 +325,14 @@ class Assembler:
             
             return None
         
-        # mov reg, imm
         if not src.startswith('['):
             dest_num, dest_type = self.get_reg_num(dest)
             if dest_num is not None and self.is_immediate(src):
                 imm = self.parse_immediate(src)
                 
                 if dest_type == RegisterType.REG_32:
-                    # mov r32, imm32
                     if not self.validate_immediate_size(imm, 32):
-                        return None  # Immediate zu groß
+                        return None
                     try:
                         bytecode = [0xB8 + (dest_num % 8)] + list(imm.to_bytes(4, 'little', signed=True))
                     except OverflowError:
@@ -285,9 +341,8 @@ class Assembler:
                         bytecode = [0x41] + bytecode
                         
                 elif dest_type == RegisterType.REG_64:
-                    # mov r64, imm64
                     if not self.validate_immediate_size(imm, 64):
-                        return None  # Immediate zu groß
+                        return None
                     rex = self.build_rex(w=1, b=(dest_num >= 8))
                     try:
                         bytecode = [rex, 0xB8 + (dest_num % 8)] + list(imm.to_bytes(8, 'little', signed=True))
@@ -295,9 +350,8 @@ class Assembler:
                         return None
                     
                 elif dest_type == RegisterType.REG_16:
-                    # mov r16, imm16
                     if not self.validate_immediate_size(imm, 16):
-                        return None  # Immediate zu groß
+                        return None
                     try:
                         bytecode = [0x66, 0xB8 + (dest_num % 8)] + list(imm.to_bytes(2, 'little', signed=True))
                     except OverflowError:
@@ -306,13 +360,11 @@ class Assembler:
                         bytecode.insert(1, 0x41)
                         
                 elif dest_type == RegisterType.REG_8:
-                    # mov r8, imm8
                     if not self.validate_immediate_size(imm, 8):
-                        return None  # Immediate zu groß für 8-bit
-                    # High-byte Register (AH/CH/DH/BH) können nicht mit REX verwendet werden
+                        return None
                     if dest_num >= 8 or dest.lower() in self.reg8_rex:
-                        # Validierung: AH/CH/DH/BH mit REX ist invalid
                         if self.is_high_byte_reg(dest):
+                            return None
                             return None  # Ungültige Kombination
                         rex = self.build_rex(b=(dest_num >= 8))
                         bytecode = [rex, 0xB0 + (dest_num % 8), imm & 0xFF]
@@ -321,7 +373,7 @@ class Assembler:
                         
                 return bytecode
         
-        # mov reg, reg
+
         dest_num, dest_type = self.get_reg_num(dest)
         src_num, src_type = self.get_reg_num(src)
         
@@ -359,7 +411,6 @@ class Assembler:
         return None
     
     def assemble_alu(self, operation, dest, src):
-        """ALU Operationen: add, sub, xor, or, and, cmp"""
         ops = {'add': 0, 'or': 1, 'and': 4, 'sub': 5, 'xor': 6, 'cmp': 7}
         if operation not in ops:
             return None
@@ -370,7 +421,6 @@ class Assembler:
         dest_num, dest_type = self.get_reg_num(dest)
         src_num, src_type = self.get_reg_num(src) if not self.is_immediate(src) else (None, None)
         
-        # reg, reg
         if dest_num is not None and src_num is not None and dest_type == src_type:
             modrm = self.encode_modrm(3, src_num % 8, dest_num % 8)
             
@@ -384,21 +434,18 @@ class Assembler:
                 rex = self.build_rex(w=1, r=(src_num >= 8), b=(dest_num >= 8))
                 bytecode = [rex, 0x01 + op_code * 8, modrm]
                 
-        # reg, imm
         elif dest_num is not None and self.is_immediate(src):
             imm = self.parse_immediate(src)
             
             if dest_type == RegisterType.REG_32:
                 if -128 <= imm <= 127:
-                    # sign-extended imm8
                     modrm = self.encode_modrm(3, op_code, dest_num % 8)
                     bytecode = [0x83, modrm, imm & 0xFF]
                     if dest_num >= 8:
                         bytecode = [0x41] + bytecode
                 else:
-                    # imm32
                     if not self.validate_immediate_size(imm, 32):
-                        return None  # Immediate zu groß
+                        return None
                     modrm = self.encode_modrm(3, op_code, dest_num % 8)
                     try:
                         bytecode = [0x81, modrm] + list(imm.to_bytes(4, 'little', signed=True))
@@ -413,9 +460,8 @@ class Assembler:
                     modrm = self.encode_modrm(3, op_code, dest_num % 8)
                     bytecode = [rex, 0x83, modrm, imm & 0xFF]
                 else:
-                    # imm32 sign-extended to 64-bit
                     if not (-2147483648 <= imm <= 2147483647):
-                        return None  # Immediate zu groß für sign-extended imm32
+                        return None
                     rex = self.build_rex(w=1, b=(dest_num >= 8))
                     modrm = self.encode_modrm(3, op_code, dest_num % 8)
                     try:
@@ -426,14 +472,12 @@ class Assembler:
         return bytecode
     
     def assemble_push_pop(self, operation, operand):
-        """PUSH/POP Instruktionen"""
         bytecode = []
         reg_num, reg_type = self.get_reg_num(operand)
         
         if reg_num is not None:
-            # PUSH/POP nur mit 16/32/64-bit Registern erlaubt
             if reg_type == RegisterType.REG_8:
-                return None  # 8-bit Register nicht erlaubt
+                return None
             
             if operation == 'push':
                 bytecode = [0x50 + (reg_num % 8)]
@@ -447,21 +491,14 @@ class Assembler:
         return bytecode
     
     def assemble_jmp_call(self, operation, target, force_form=None):
-        """
-        JMP/CALL Instruktionen
-        force_form: None (auto), 'short', oder 'near'
-        """
         bytecode = []
         
-        # CALL hat keine short form, immer near
         if operation == 'call':
             force_form = 'near'
         
-        # Wenn target eine Zahl ist (directlyer Offset)
         if self.is_immediate(target):
             offset = self.parse_immediate(target)
             if operation == 'jmp':
-                # Prüfe ob short möglich
                 if force_form == 'short' or (force_form is None and -128 <= offset <= 127):
                     bytecode = [0xEB, offset & 0xFF]
                 else:
@@ -484,27 +521,23 @@ class Assembler:
                 
                 if operation == 'jmp':
                     if form == 'short':
-                        # Short JMP: 2 Bytes
                         offset = self.labels[target] - (self.current_address + 2)
                         if not (-128 <= offset <= 127):
-                            return None  # Offset zu groß für short jump
+                            return None
                         bytecode = [0xEB, offset & 0xFF]
                     else:
-                        # Near JMP: 5 Bytes
                         offset = self.labels[target] - (self.current_address + 5)
                         try:
                             bytecode = [0xE9] + list(offset.to_bytes(4, 'little', signed=True))
                         except OverflowError:
-                            return None  # Offset zu groß für near jump
+                            return None
                 elif operation == 'call':
-                    # CALL hat keine short form
                     offset = self.labels[target] - (self.current_address + 5)
                     try:
                         bytecode = [0xE8] + list(offset.to_bytes(4, 'little', signed=True))
                     except OverflowError:
-                        return None  # Offset zu groß für call
+                        return None
             else:
-                # Label unbekannt: near form annehmen (Pass 1)
                 if operation == 'jmp':
                     bytecode = [0xE9, 0x00, 0x00, 0x00, 0x00]
                 elif operation == 'call':
@@ -513,10 +546,6 @@ class Assembler:
         return bytecode
     
     def assemble_conditional_jmp(self, operation, target, force_form=None):
-        """
-        Bedingte Sprünge (JE, JNE, JL, JG, etc.)
-        force_form: None (auto), 'short', oder 'near'
-        """
         jmp_codes = {
             'je': 0x84, 'jz': 0x84, 'jne': 0x85, 'jnz': 0x85,
             'jl': 0x8C, 'jnge': 0x8C, 'jle': 0x8E, 'jng': 0x8E,
@@ -530,10 +559,8 @@ class Assembler:
         
         opcode = jmp_codes[operation]
         
-        # Wenn target eine Zahl ist (directlyer Offset)
         if self.is_immediate(target):
             offset = self.parse_immediate(target)
-            # Prüfe ob short möglich
             if force_form == 'short' or (force_form is None and -128 <= offset <= 127):
                 return [opcode - 0x10, offset & 0xFF]
             else:
@@ -550,26 +577,24 @@ class Assembler:
                     form = self.jump_forms.get(self.current_instr_index, 'near')
                 
                 if form == 'short':
-                    # Short Jcc: 2 Bytes (7x rel8)
                     offset = self.labels[target] - (self.current_address + 2)
-                    if not (-128 <= offset <= 127):
-                        return None  # Offset zu groß für short jump
-                    return [opcode - 0x10, offset & 0xFF]
-                else:
-                    # Near Jcc: 6 Bytes (0F 8x rel32)
+                    if -128 <= offset <= 127:
+                        return [opcode - 0x10, offset & 0xFF]
+                    # Fall back to near form if short doesn't fit
+                    form = 'near'
+                
+                if form == 'near':
                     offset = self.labels[target] - (self.current_address + 6)
                     try:
                         return [0x0F, opcode] + list(offset.to_bytes(4, 'little', signed=True))
                     except OverflowError:
-                        return None  # Offset zu groß für near jump
+                        return None
             else:
-                # Label unbekannt: near form annehmen (Pass 1)
                 return [0x0F, opcode, 0x00, 0x00, 0x00, 0x00]
         
         return None
     
     def assemble_single(self, operation):
-        """Einzelne Instruktionen ohne Operanden"""
         singles = {
             'ret': [0xC3], 'nop': [0x90], 'int3': [0xCC],
             'syscall': [0x0F, 0x05], 'leave': [0xC9],
@@ -579,7 +604,6 @@ class Assembler:
         return singles.get(operation, None)
     
     def assemble_inc_dec(self, operation, operand):
-        """INC/DEC Instruktionen"""
         reg_num, reg_type = self.get_reg_num(operand)
         if reg_num is None:
             return None
@@ -599,63 +623,271 @@ class Assembler:
             
         return bytecode
     
+    def assemble_neg(self, operand):
+        # neg eax/rax: F7 D8 (two's complement negation)
+        reg_num, reg_type = self.get_reg_num(operand)
+        if reg_num is None:
+            return None
+        
+        if reg_type == RegisterType.REG_32:
+            # NEG r32: F7 /3 (opcode extension 3)
+            modrm = self.encode_modrm(3, 3, reg_num % 8)
+            bytecode = [0xF7, modrm]
+            if reg_num >= 8:
+                bytecode = [0x41] + bytecode
+        elif reg_type == RegisterType.REG_64:
+            # NEG r64: REX.W F7 /3
+            rex = self.build_rex(w=1, b=(reg_num >= 8))
+            modrm = self.encode_modrm(3, 3, reg_num % 8)
+            bytecode = [rex, 0xF7, modrm]
+        else:
+            return None
+        
+        return bytecode
+    
+    def assemble_movsx(self, dest, src):
+        # movsx eax, byte/word [rbp-X] - sign extend byte/word to dword
+        dest_num, dest_type = self.get_reg_num(dest)
+        if dest_num is None or dest_type != RegisterType.REG_32:
+            return None
+        
+        # Parse byte [rbp-X] or word [rbp-X] format
+        if src.startswith('byte'):
+            size_prefix = 'byte'
+            opcode = 0xBE  # MOVSX r32, r/m8: 0F BE /r
+            src = src[4:].strip()
+        elif src.startswith('word'):
+            size_prefix = 'word'
+            opcode = 0xBF  # MOVSX r32, r/m16: 0F BF /r
+            src = src[4:].strip()
+        else:
+            return None
+        
+        mem_op = self.parse_memory_operand(src)
+        if mem_op is None or mem_op[0] != 'rbp':
+            return None
+        
+        base, disp = mem_op
+        use_disp8 = -128 <= disp <= 127
+        mod = 0x01 if use_disp8 else 0x02
+        
+        # ModR/M: mod=01/10, reg=dest, rm=101 (rbp)
+        modrm = self.encode_modrm(mod, dest_num % 8, 0b101)
+        
+        bytecode = [0x0F, opcode, modrm]
+        if dest_num >= 8:
+            bytecode = [0x44] + bytecode  # REX.R
+        
+        if use_disp8:
+            bytecode.append(disp & 0xFF)
+        else:
+            bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
+        
+        return bytecode
+    
+    def assemble_movzx(self, dest, src):
+        # movzx eax, byte/word [rbp-X] - zero extend byte/word to dword
+        dest_num, dest_type = self.get_reg_num(dest)
+        if dest_num is None or dest_type != RegisterType.REG_32:
+            return None
+        
+        # Parse byte [rbp-X] or word [rbp-X] format
+        if src.startswith('byte'):
+            size_prefix = 'byte'
+            opcode = 0xB6  # MOVZX r32, r/m8: 0F B6 /r
+            src = src[4:].strip()
+        elif src.startswith('word'):
+            size_prefix = 'word'
+            opcode = 0xB7  # MOVZX r32, r/m16: 0F B7 /r
+            src = src[4:].strip()
+        else:
+            return None
+        
+        mem_op = self.parse_memory_operand(src)
+        if mem_op is None or mem_op[0] != 'rbp':
+            return None
+        
+        base, disp = mem_op
+        use_disp8 = -128 <= disp <= 127
+        mod = 0x01 if use_disp8 else 0x02
+        
+        # ModR/M: mod=01/10, reg=dest, rm=101 (rbp)
+        modrm = self.encode_modrm(mod, dest_num % 8, 0b101)
+        
+        bytecode = [0x0F, opcode, modrm]
+        if dest_num >= 8:
+            bytecode = [0x44] + bytecode  # REX.R
+        
+        if use_disp8:
+            bytecode.append(disp & 0xFF)
+        else:
+            bytecode.extend(list(disp.to_bytes(4, 'little', signed=True)))
+        
+        return bytecode
+
+    def assemble_imul_idiv(self, operation, operand):
+        # imul/idiv für 32-bit: imul ecx, idiv ecx
+        reg_num, reg_type = self.get_reg_num(operand)
+        if reg_num is None or reg_type != RegisterType.REG_32:
+            return None
+        
+        # imul ecx: 0F AF C1 (two-operand form: eax = eax * ecx)
+        if operation == 'imul':
+            rex = 0x41 if reg_num >= 8 else None
+            modrm = self.encode_modrm(3, 0, reg_num % 8)  # eax * operand -> eax
+            bytecode = [0x0F, 0xAF, modrm]
+            if rex:
+                bytecode = [rex] + bytecode
+            return bytecode
+        
+        # idiv ecx: F7 F9 (signed divide edx:eax by ecx -> eax=quotient, edx=remainder)
+        elif operation == 'idiv':
+            rex = 0x41 if reg_num >= 8 else None
+            modrm = self.encode_modrm(3, 7, reg_num % 8)  # /7 für idiv
+            bytecode = [0xF7, modrm]
+            if rex:
+                bytecode = [rex] + bytecode
+            return bytecode
+        
+        return None
+    
+    def assemble_shift(self, operation, dest, count):
+        # Shift operations: shl/shr eax, cl oder shl/shr eax, imm
+        dest_num, dest_type = self.get_reg_num(dest)
+        if dest_num is None or dest_type != RegisterType.REG_32:
+            return None
+        
+        # Determine shift type
+        shift_ops = {'shl': 4, 'shr': 5, 'sal': 4, 'sar': 7}
+        if operation not in shift_ops:
+            return None
+        
+        shift_code = shift_ops[operation]
+        
+        # Check if count is 'cl' register or immediate
+        if count.lower() == 'cl':
+            # Shift by CL register: D3 /4 (shl) or D3 /5 (shr)
+            modrm = self.encode_modrm(3, shift_code, dest_num % 8)
+            bytecode = [0xD3, modrm]
+            if dest_num >= 8:
+                bytecode = [0x41] + bytecode
+            return bytecode
+        else:
+            # Shift by immediate
+            try:
+                imm = int(count, 0)
+                if imm == 1:
+                    # Special encoding for shift by 1: D1 /4 or D1 /5
+                    modrm = self.encode_modrm(3, shift_code, dest_num % 8)
+                    bytecode = [0xD1, modrm]
+                    if dest_num >= 8:
+                        bytecode = [0x41] + bytecode
+                elif 0 <= imm <= 255:
+                    # Shift by immediate: C1 /4 imm8 or C1 /5 imm8
+                    modrm = self.encode_modrm(3, shift_code, dest_num % 8)
+                    bytecode = [0xC1, modrm, imm]
+                    if dest_num >= 8:
+                        bytecode = [0x41] + bytecode
+                else:
+                    return None
+                return bytecode
+            except ValueError:
+                return None
+        
+        return None
+    
     def assemble(self, instruction):
-        """Assembliert eine einzelne Instruktion"""
         instruction = instruction.strip()
         if not instruction or instruction.startswith(';'):
             return []
         
-        # Label definieren
         if instruction.endswith(':'):
             label = instruction[:-1]
             self.labels[label] = self.current_address
             return []
         
-        # comments entfernen
         if ';' in instruction:
             instruction = instruction[:instruction.index(';')].strip()
         
         parts = re.split(r'[\s,]+', instruction.lower())
         operation = parts[0]
         
-        # Einzelne Instruktionen
         bytecode = self.assemble_single(operation)
         if bytecode:
             return bytecode
         
-        # Instruktionen mit einem Operand
         if len(parts) == 2:
             operand = parts[1]
             
-            # PUSH/POP
             if operation in ['push', 'pop']:
                 return self.assemble_push_pop(operation, operand) or []
             
-            # INC/DEC
             if operation in ['inc', 'dec']:
                 return self.assemble_inc_dec(operation, operand) or []
             
-            # JMP/CALL
+            if operation == 'neg':
+                return self.assemble_neg(operand) or []
+            
+            if operation in ['imul', 'idiv']:
+                return self.assemble_imul_idiv(operation, operand) or []
+            
             if operation in ['jmp', 'call']:
                 return self.assemble_jmp_call(operation, operand) or []
             
-            # Bedingte Sprünge
             bytecode = self.assemble_conditional_jmp(operation, operand)
             if bytecode:
                 return bytecode
         
-        # Instruktionen mit zwei Operanden
         if len(parts) >= 3:
             dest = parts[1]
             src = ' '.join(parts[2:])
             
-            # MOV
+            # Handle "mov byte [rbp-X], al" - byte prefix on dest
+            if operation == 'mov' and dest == 'byte' and len(parts) >= 4:
+                dest = 'byte ' + parts[2]  # Reconstruct "byte [rbp-X]"
+                src = ' '.join(parts[3:])
+            
+            # Handle "mov word [rbp-X], ax" - word prefix on dest
+            if operation == 'mov' and dest == 'word' and len(parts) >= 4:
+                dest = 'word ' + parts[2]  # Reconstruct "word [rbp-X]"
+                src = ' '.join(parts[3:])
+            
+            # Handle "mov qword [rbp-X], rax" - qword prefix on dest
+            if operation == 'mov' and dest == 'qword' and len(parts) >= 4:
+                dest = 'qword ' + parts[2]  # Reconstruct "qword [rbp-X]"
+                src = ' '.join(parts[3:])
+            
+            # Handle "mov rax, qword [rbp-X]" - qword prefix on src
+            if operation == 'mov' and len(parts) >= 4 and parts[2] == 'qword':
+                src = 'qword ' + ' '.join(parts[3:])
+            
             if operation == 'mov':
                 bytecode = self.assemble_mov(dest, src)
                 if bytecode:
                     return bytecode
             
-            # ALU Operationen
+            # Handle "movsx eax, byte [rbp-X]" and "movzx eax, byte [rbp-X]"
+            if operation == 'movsx':
+                # Reconstruct "byte [rbp-X]" or "word [rbp-X]"
+                if len(parts) >= 4 and parts[2] in ['byte', 'word']:
+                    src = parts[2] + ' ' + ' '.join(parts[3:])
+                bytecode = self.assemble_movsx(dest, src)
+                if bytecode:
+                    return bytecode
+            
+            if operation == 'movzx':
+                # Reconstruct "byte [rbp-X]" or "word [rbp-X]"
+                if len(parts) >= 4 and parts[2] in ['byte', 'word']:
+                    src = parts[2] + ' ' + ' '.join(parts[3:])
+                bytecode = self.assemble_movzx(dest, src)
+                if bytecode:
+                    return bytecode
+            
+            if operation in ['shl', 'shr', 'sal', 'sar']:
+                bytecode = self.assemble_shift(operation, dest, src)
+                if bytecode:
+                    return bytecode
+            
             if operation in ['add', 'sub', 'xor', 'or', 'and', 'cmp']:
                 bytecode = self.assemble_alu(operation, dest, src)
                 if bytecode:
@@ -664,13 +896,10 @@ class Assembler:
         return None
     
     def assemble_code(self, code, enable_relaxation=True):
-        """
-        Assembliert kompletten Code mit zwei Durchläufen + optionaler Relaxation
-        enable_relaxation: Wenn True, optimiert Sprünge auf short form wenn möglich
-        """
+        # zwei-pass assembly mit optional relaxation für short jumps
         lines = [line.strip() for line in code.split('\n')]
         
-        # Pass 1: Labels sammeln (near form angenommen)
+        # pass 1: labels sammeln
         self.current_address = 0
         self.current_instr_index = 0
         self.labels = {}
@@ -691,16 +920,12 @@ class Assembler:
                         self.current_instr_index += 1
         
         if not enable_relaxation:
-            # Pass 2: Code generieren ohne Relaxation
             return self._generate_code(lines)
         
-        # Relaxation: Iterativ Sprünge optimieren bis stabil
         max_iterations = 10
         for iteration in range(max_iterations):
-            # Speichere alte jump_forms für Vergleich
             old_jump_forms = self.jump_forms.copy()
             
-            # Analysiere welche Jumps auf short schrumpfen können
             self.current_address = 0
             self.current_instr_index = 0
             new_jump_forms = {}
@@ -712,7 +937,6 @@ class Assembler:
                 if line.endswith(':'):
                     continue
                 
-                # Prüfe ob es ein Jump ist
                 parts = re.split(r'[\s,]+', line.lower())
                 operation = parts[0]
                 
@@ -723,36 +947,28 @@ class Assembler:
                 if is_jump and len(parts) >= 2:
                     target = parts[1]
                     
-                    # Nur Labels optimieren, keine directlyen Offsets
                     if not self.is_immediate(target) and target in self.labels:
-                        # Berechne Offset basierend auf aktueller Form
                         current_form = self.jump_forms.get(self.current_instr_index, 'near')
                         
                         if operation == 'jmp':
-                            # JMP: 2 bytes (short) oder 5 bytes (near)
                             instr_len = 2 if current_form == 'short' else 5
                         else:
-                            # Jcc: 2 bytes (short) oder 6 bytes (near)
                             instr_len = 2 if current_form == 'short' else 6
                         
                         offset = self.labels[target] - (self.current_address + instr_len)
                         
-                        # Kann auf short schrumpfen?
                         if -128 <= offset <= 127:
                             new_jump_forms[self.current_instr_index] = 'short'
                         else:
                             new_jump_forms[self.current_instr_index] = 'near'
                 
-                # Adresse und Index weiterzählen
                 bytecode = self.assemble(line)
                 if bytecode:
                     self.current_address += len(bytecode)
                     self.current_instr_index += 1
             
-            # Update jump_forms
             self.jump_forms = new_jump_forms
             
-            # Labels neu berechnen mit neuen jump_forms
             self.current_address = 0
             self.current_instr_index = 0
             self.labels = {}
@@ -767,18 +983,14 @@ class Assembler:
                             self.current_address += len(bytecode)
                             self.current_instr_index += 1
             
-            # Prüfe ob stabil (keine Änderungen mehr)
             if self.jump_forms == old_jump_forms:
                 break
         else:
-            # Max Iterations erreicht ohne Konvergenz
             print(f"Warnung: Relaxation konvergierte nicht nach {max_iterations} Iterationen")
         
-        # Finaler Pass: Code generieren
         return self._generate_code(lines)
     
     def _generate_code(self, lines):
-        """Generates finalen machine code"""
         self.current_address = 0
         self.current_instr_index = 0
         machine_code = []
@@ -801,16 +1013,13 @@ class Assembler:
         return machine_code
     
     def format_hex(self, bytecode):
-        """Formatiert Bytecode als Hex-String"""
         return ' '.join(f'{byte:02X}' for byte in bytecode)
     
     def write_binary(self, bytecode, filename):
-        """Schreibt Bytecode in Binärdatei"""
         with open(filename, 'wb') as f:
             f.write(bytes(bytecode))
 
 
-# Hauptprogramm
 def main():
     asm = Assembler()
     

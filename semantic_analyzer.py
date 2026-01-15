@@ -1,17 +1,9 @@
-"""
-AXIS Semantic Analyzer
-Type checking, Symbol table, Stack layout calculation.
-Keine Codegen - nur AST-Annotation.
-"""
+"""AXIS Semantic Analyzer - Type checking and symbol table management."""
 
 from dataclasses import dataclass, field
 from typing import Optional, Dict
 from syntactic_analyzer import *
 
-
-# ============================================================================
-# Type System
-# ============================================================================
 
 TYPE_SIZES = {
     'i8': 1, 'i16': 2, 'i32': 4, 'i64': 8,
@@ -27,30 +19,22 @@ VALID_TYPES = INTEGER_TYPES | {'ptr', 'bool'}
 
 
 def is_integer_type(type_name: str) -> bool:
-    """Checks ob Typ ein Integer ist"""
     return type_name in INTEGER_TYPES
 
 
 def is_pointer_type(type_name: str) -> bool:
-    """Checks ob Typ ein Pointer ist"""
     return type_name == 'ptr'
 
 
 def get_type_size(type_name: str) -> int:
-    """Returns size eines Typs in Bytes """
     if type_name not in TYPE_SIZES:
         raise SemanticError(f"Unknown type: {type_name}")
     return TYPE_SIZES[type_name]
 
 
 def align_offset(offset: int, alignment: int) -> int:
-    """Aligned Offset berechnen (aufrunden)"""
     return ((offset + alignment - 1) // alignment) * alignment
 
-
-# ============================================================================
-# Symbol und Scope
-# ============================================================================
 
 @dataclass
 class Symbol:
@@ -69,9 +53,8 @@ class Symbol:
 
 @dataclass
 class FunctionSymbol:
-    """Funktions-Symbol"""
     name: str
-    params: list[tuple[str, str]]  # (name, type)
+    params: list[tuple[str, str]]
     return_type: Optional[str]
     
     def __repr__(self):
@@ -81,20 +64,17 @@ class FunctionSymbol:
 
 
 class Scope:
-    """Lexical scope mit Parent-chaining"""
-    
     def __init__(self, parent: Optional['Scope'] = None):
         self.parent = parent
         self.symbols: Dict[str, Symbol] = {}
     
     def define(self, symbol: Symbol):
-        """Defines Symbol im current Scope"""
         if symbol.name in self.symbols:
             raise SemanticError(f"Symbol '{symbol.name}' already defined in this scope")
         self.symbols[symbol.name] = symbol
     
     def lookup(self, name: str) -> Optional[Symbol]:
-        """Searches Symbol im current oder Parent-Scope"""
+        # lookup in current scope, dann parent scopes
         if name in self.symbols:
             return self.symbols[name]
         if self.parent:
@@ -102,56 +82,34 @@ class Scope:
         return None
     
     def lookup_local(self, name: str) -> Optional[Symbol]:
-        """Searches Symbol nur im current Scope"""
         return self.symbols.get(name)
 
 
-# ============================================================================
-# Semantic Error
-# ============================================================================
-
 class SemanticError(Exception):
-    """Semantic error"""
     pass
 
 
-# ============================================================================
-# Semantic Analyzer
-# ============================================================================
-
 class SemanticAnalyzer:
-    """
-    Semantic Analyzer:
-    - Builds Symbol table
-    - Typisiert Expressions
-    - Calculates Stack-Layout
-    - Annotiert AST
-    """
-    
     def __init__(self):
         self.global_scope: Optional[Scope] = None
         self.current_scope: Optional[Scope] = None
         self.functions: Dict[str, FunctionSymbol] = {}
         self.current_function: Optional[Function] = None
         self.current_stack_offset: int = 0
-        self.in_loop: int = 0  # Zähler für verschachtelte Loops
+        self.in_loop: int = 0
     
     def error(self, msg: str):
-        """Throws semantischen Fehler"""
         raise SemanticError(msg)
     
     def enter_scope(self):
-        """Creates neuen Scope"""
         self.current_scope = Scope(parent=self.current_scope)
     
     def exit_scope(self):
-        """Exits current Scope"""
         if not self.current_scope:
             self.error("Cannot exit scope: no current scope")
         self.current_scope = self.current_scope.parent
     
     def define_symbol(self, name: str, type_: str, mutable: bool, is_param: bool = False) -> Symbol:
-        """Defines Symbol im current Scope"""
         if not self.current_scope:
             self.error("No current scope")
         
@@ -159,15 +117,11 @@ class SemanticAnalyzer:
         if type_ not in VALID_TYPES:
             self.error(f"Unknown type: {type_}")
         
-        # Berechne Stack-Offset
         type_size = get_type_size(type_)
         
         if is_param:
-            # Parameter: Erstmal Stack-Offset 0, wird später von Calling Convention gesetzt
             stack_offset = 0
         else:
-            # Lokale Variable: Stack grows downward
-            # Alignment: Typen sind selbst-aligned (8-byte Typ → 8-byte aligned)
             alignment = min(type_size, 8)
             self.current_stack_offset = align_offset(self.current_stack_offset, alignment)
             self.current_stack_offset += type_size
@@ -178,7 +132,6 @@ class SemanticAnalyzer:
         return symbol
     
     def lookup_symbol(self, name: str) -> Symbol:
-        """Searches Symbol"""
         if not self.current_scope:
             self.error("No current scope")
         
@@ -188,17 +141,11 @@ class SemanticAnalyzer:
         return symbol
     
     def lookup_function(self, name: str) -> FunctionSymbol:
-        """Searches Funktion"""
         if name not in self.functions:
             self.error(f"Undefined function: {name}")
         return self.functions[name]
     
-    # ========================================================================
-    # Analyze Entry Point
-    # ========================================================================
-    
     def analyze(self, program: Program):
-        """Analyzes komplettes Programm"""
         # Global Scope erstellen
         self.global_scope = Scope()
         self.current_scope = self.global_scope
@@ -216,16 +163,13 @@ class SemanticAnalyzer:
             self.analyze_function(func)
     
     def analyze_function(self, func: Function):
-        """Analyzes Funktion"""
         self.current_function = func
         self.current_stack_offset = 0
         
         # Neuer Scope für Funktion
         self.enter_scope()
         
-        # Parameter definieren
         for param_name, param_type in func.params:
-            # Parameter sind immer immutable (per Design-Entscheidung)
             self.define_symbol(param_name, param_type, mutable=False, is_param=True)
         
         # Body analysieren
@@ -242,7 +186,6 @@ class SemanticAnalyzer:
         self.current_function = None
     
     def analyze_block(self, block: Block):
-        """Analyzes Block"""
         # Neuer Scope für Block
         self.enter_scope()
         
@@ -251,12 +194,7 @@ class SemanticAnalyzer:
         
         self.exit_scope()
     
-    # ========================================================================
-    # Statement Analysis
-    # ========================================================================
-    
     def analyze_statement(self, stmt: Statement):
-        """Analyzes Statement"""
         if isinstance(stmt, VarDecl):
             self.analyze_vardecl(stmt)
         elif isinstance(stmt, Assignment):
@@ -277,7 +215,6 @@ class SemanticAnalyzer:
             self.error(f"Unknown statement type: {type(stmt).__name__}")
     
     def analyze_vardecl(self, vardecl: VarDecl):
-        """Analyzes Variable Declaration"""
         # Typ validieren
         if vardecl.type not in VALID_TYPES:
             self.error(f"Unknown type: {vardecl.type}")
@@ -287,7 +224,24 @@ class SemanticAnalyzer:
             init_type = self.analyze_expression(vardecl.init)
             
             # Type-Check: init muss vom gleichen Typ sein
-            if init_type != vardecl.type:
+            # Special case: Allow i32 literals to be assigned to other integer types if in range
+            if init_type == 'i32' and vardecl.type in ['i8', 'i16', 'i64', 'u8', 'u16', 'u32', 'u64']:
+                if isinstance(vardecl.init, Literal):
+                    # Allow literal coercion
+                    vardecl.init.inferred_type = vardecl.type
+                    init_type = vardecl.type
+                else:
+                    self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}")
+            # Special case: Allow i32 literals 0/1 to be assigned to bool
+            elif vardecl.type == 'bool' and init_type == 'i32':
+                # Check if it's a literal 0 or 1
+                if isinstance(vardecl.init, Literal) and vardecl.init.value in ['0', '1']:
+                    # Convert literal type to bool
+                    vardecl.init.inferred_type = 'bool'
+                    init_type = 'bool'
+                else:
+                    self.error(f"Cannot assign non-boolean value to bool variable '{vardecl.name}'")
+            elif init_type != vardecl.type:
                 self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}")
         
         # Symbol definieren
@@ -298,7 +252,6 @@ class SemanticAnalyzer:
         vardecl.symbol = symbol
     
     def analyze_assignment(self, assign: Assignment):
-        """Analyzes Assignment"""
         # Target muss Identifier sein (oder später: Deref)
         if not isinstance(assign.target, Identifier):
             self.error("Assignment target must be an identifier")
@@ -314,7 +267,23 @@ class SemanticAnalyzer:
         target_type = symbol.type
         value_type = self.analyze_expression(assign.value)
         
-        if target_type != value_type:
+        # Special case: Allow i32 literals to be assigned to other integer types if in range
+        if target_type in ['i8', 'i16', 'i64', 'u8', 'u16', 'u32', 'u64'] and value_type == 'i32':
+            if isinstance(assign.value, Literal):
+                # Allow literal coercion
+                assign.value.inferred_type = target_type
+                value_type = target_type
+            else:
+                self.error(f"Type mismatch in assignment to '{symbol.name}': expected {target_type}, got {value_type}")
+        # Special case: Allow i32 literals 0/1 to be assigned to bool
+        elif target_type == 'bool' and value_type == 'i32':
+            if isinstance(assign.value, Literal) and assign.value.value in ['0', '1']:
+                # Convert literal type to bool
+                assign.value.inferred_type = 'bool'
+                value_type = 'bool'
+            else:
+                self.error(f"Cannot assign non-boolean value to bool variable '{symbol.name}'")
+        elif target_type != value_type:
             self.error(f"Type mismatch in assignment to '{symbol.name}': expected {target_type}, got {value_type}")
         
         # AST annotieren
@@ -322,7 +291,6 @@ class SemanticAnalyzer:
         assign.target.inferred_type = target_type
     
     def analyze_return(self, ret: Return):
-        """Analyzes Return"""
         if not self.current_function:
             self.error("Return outside of function")
         
@@ -340,10 +308,11 @@ class SemanticAnalyzer:
                 self.error(f"Function '{self.current_function.name}' must return a value of type {self.current_function.return_type}")
     
     def analyze_if(self, if_stmt: If):
-        """Analyzes If-Statement"""
-        # Condition muss bool sein (oder Integer for now)
+        # Condition must be bool type (strict checking)
         cond_type = self.analyze_expression(if_stmt.condition)
-        # TODO: Strikte bool-Prüfung optional
+        
+        if cond_type != 'bool':
+            self.error(f"Condition in 'when' statement must be bool type, got {cond_type}")
         
         # Then-Block analysieren
         self.analyze_block(if_stmt.then_block)
@@ -353,9 +322,11 @@ class SemanticAnalyzer:
             self.analyze_block(if_stmt.else_block)
     
     def analyze_while(self, while_stmt: While):
-        """Analyzes While-Statement"""
-        # Condition typisieren
+        # Condition must be bool type (strict checking)
         cond_type = self.analyze_expression(while_stmt.condition)
+        
+        if cond_type != 'bool':
+            self.error(f"Condition in 'while' statement must be bool type, got {cond_type}")
         
         # Body analysieren (in Loop-Kontext)
         self.in_loop += 1
@@ -363,18 +334,12 @@ class SemanticAnalyzer:
         self.in_loop -= 1
     
     def analyze_break(self, break_stmt: Break):
-        """Analyzes Break"""
         if self.in_loop == 0:
             self.error("Break outside of loop")
     
     def analyze_continue(self, continue_stmt: Continue):
-        """Analyzes Continue"""
         if self.in_loop == 0:
             self.error("Continue outside of loop")
-    
-    # ========================================================================
-    # Expression Analysis (mit Type Inference)
-    # ========================================================================
     
     def analyze_expression(self, expr: Expression) -> str:
         """
@@ -397,17 +362,21 @@ class SemanticAnalyzer:
             self.error(f"Unknown expression type: {type(expr).__name__}")
     
     def analyze_literal(self, lit: Literal) -> str:
-        """Analyzes Literal"""
         # Integer Literal: Default-Typ = i32
         if lit.type == 'int':
             inferred_type = 'i32'
             lit.inferred_type = inferred_type
             return inferred_type
         
+        # Boolean Literal: True/False → bool
+        if lit.type == 'bool':
+            inferred_type = 'bool'
+            lit.inferred_type = inferred_type
+            return inferred_type
+        
         self.error(f"Unknown literal type: {lit.type}")
     
     def analyze_identifier(self, ident: Identifier) -> str:
-        """Analyzes Identifier"""
         symbol = self.lookup_symbol(ident.name)
         
         # AST annotieren
@@ -417,24 +386,59 @@ class SemanticAnalyzer:
         return symbol.type
     
     def analyze_binaryop(self, binop: BinaryOp) -> str:
-        """Analyzes Binary Operation"""
         left_type = self.analyze_expression(binop.left)
         right_type = self.analyze_expression(binop.right)
         
-        # Operanden müssen gleichen Typ haben
+        # Allow i32 literals to coerce to match the other operand's type
         if left_type != right_type:
-            self.error(f"Type mismatch in binary operation '{binop.op}': {left_type} vs {right_type}")
+            # Try to coerce i32 literal to match the other type
+            if left_type == 'i32' and isinstance(binop.left, Literal) and is_integer_type(right_type):
+                binop.left.inferred_type = right_type
+                left_type = right_type
+            elif right_type == 'i32' and isinstance(binop.right, Literal) and is_integer_type(left_type):
+                binop.right.inferred_type = left_type
+                right_type = left_type
+            else:
+                self.error(f"Type mismatch in binary operation '{binop.op}': {left_type} vs {right_type}")
         
         # Vergleichsoperatoren → bool
         if binop.op in ['==', '!=', '<', '<=', '>', '>=']:
-            if not is_integer_type(left_type):
-                self.error(f"Comparison operator '{binop.op}' requires integer types, got {left_type}")
+            # Allow comparisons on integers and bools
+            if not (is_integer_type(left_type) or left_type == 'bool'):
+                self.error(f"Comparison operator '{binop.op}' requires integer or bool types, got {left_type}")
             inferred_type = 'bool'
         
         # Arithmetik → gleicher Typ
-        elif binop.op in ['+', '-', '*', '/']:
+        elif binop.op in ['+', '-', '*', '/', '%']:
             if not is_integer_type(left_type):
                 self.error(f"Arithmetic operator '{binop.op}' requires integer types, got {left_type}")
+            inferred_type = left_type
+        
+        # Bitweise Operationen → gleicher Typ
+        elif binop.op in ['&', '|', '^']:
+            if not is_integer_type(left_type):
+                self.error(f"Bitwise operator '{binop.op}' requires integer types, got {left_type}")
+            inferred_type = left_type
+        
+        # Shift operations: left operand type is result, right must be valid shift count
+        elif binop.op in ['<<', '>>']:
+            if not is_integer_type(left_type):
+                self.error(f"Shift operator '{binop.op}' requires integer types, got {left_type}")
+            if not is_integer_type(right_type):
+                self.error(f"Shift count must be integer type, got {right_type}")
+            
+            # Warn if shift count is a literal and exceeds type bit width
+            if isinstance(binop.right, Literal):
+                shift_count = int(binop.right.value)
+                type_bits = get_type_size(left_type) * 8
+                
+                if shift_count < 0:
+                    self.error(f"Shift count cannot be negative: {shift_count}")
+                elif shift_count >= type_bits:
+                    # This is undefined behavior in C, but we'll allow it with a warning
+                    # The hardware will typically mask the shift count (e.g., & 31 for i32)
+                    pass  # Could add warning system here later
+            
             inferred_type = left_type
         
         else:
@@ -445,7 +449,6 @@ class SemanticAnalyzer:
         return inferred_type
     
     def analyze_unaryop(self, unaryop: UnaryOp) -> str:
-        """Analyzes Unary Operation"""
         operand_type = self.analyze_expression(unaryop.operand)
         
         if unaryop.op == '-':
@@ -453,6 +456,13 @@ class SemanticAnalyzer:
             if operand_type not in SIGNED_TYPES:
                 self.error(f"Unary minus requires signed integer, got {operand_type}")
             inferred_type = operand_type
+        
+        elif unaryop.op == '!':
+            # Boolean NOT: nur bool type
+            if operand_type != 'bool':
+                self.error(f"Unary '!' requires bool type, got {operand_type}")
+            inferred_type = 'bool'
+        
         else:
             self.error(f"Unknown unary operator: {unaryop.op}")
         
@@ -461,7 +471,6 @@ class SemanticAnalyzer:
         return inferred_type
     
     def analyze_call(self, call: Call) -> str:
-        """Analyzes Function Call"""
         func_symbol = self.lookup_function(call.name)
         
         # Argument-Count prüfen
@@ -473,8 +482,6 @@ class SemanticAnalyzer:
             arg_type = self.analyze_expression(arg)
             if arg_type != param_type:
                 self.error(f"Argument {i+1} to function '{call.name}': expected {param_type}, got {arg_type}")
-        
-        # Return-Type
         if not func_symbol.return_type:
             self.error(f"Function '{call.name}' has no return type and cannot be used in expression")
         
@@ -487,7 +494,6 @@ class SemanticAnalyzer:
         return inferred_type
     
     def analyze_deref(self, deref: Deref) -> str:
-        """Analyzes Pointer-Dereferenzierung"""
         operand_type = self.analyze_expression(deref.operand)
         
         if not is_pointer_type(operand_type):
@@ -496,11 +502,6 @@ class SemanticAnalyzer:
         # Pointer-Dereferenzierung: Wir kennen den Target-Type nicht
         # for now: Fehler, später mit typed pointers
         self.error("Pointer dereferencing not yet implemented (need typed pointers)")
-
-
-# ============================================================================
-# Utility: Annotated AST Printer
-# ============================================================================
 
 def print_annotated_ast(node: ASTNode, indent: int = 0):
     """Gibt annotierten AST aus"""
@@ -600,11 +601,6 @@ def print_annotated_ast(node: ASTNode, indent: int = 0):
         inferred_type = getattr(node, 'inferred_type', '?')
         print(f"{prefix}Deref: → {inferred_type}")
         print_annotated_ast(node.operand, indent + 1)
-
-
-# ============================================================================
-# Test
-# ============================================================================
 
 if __name__ == '__main__':
     from tokenization_engine import Lexer
