@@ -289,8 +289,9 @@ Examples:
     if force_build or ast.mode == "compile":
         # Compile mode
         if not args.output:
-            # Default output name
-            output = Path(input_file).stem
+            # Default output name: same directory as input, same name without .axis
+            input_path = Path(input_file)
+            output = str(input_path.parent / input_path.stem)
         else:
             output = args.output
         

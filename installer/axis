@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# AXIS Language CLI Wrapper
-# Version: 1.0.2-beta
+# AXIS Language CLI
+# Version: 1.1.0 - Dual Mode (Script + Compile)
 #
 
 # This will be updated by install.sh
@@ -25,29 +25,35 @@ if [ ! -d "$AXIS_LIB_DIR" ]; then
 fi
 
 # Version information
-VERSION="1.0.2-beta"
+VERSION="1.1.0"
 
 # Show help
 show_help() {
     cat << EOF
-AXIS Language Compiler (Beta $VERSION)
+AXIS Language ($VERSION) - Dual Mode: Script & Compile
 
 Usage:
-    axis build <file.axis> [options]     Compile AXIS source to executable
-    axis run <file.axis>                 Compile and run (exit code only)
+    axis <file.axis>                     Auto-detect mode and run/compile
+    axis run <file.axis>                 Force interpret (script mode)
+    axis build <file.axis> [options]     Force compile (compile mode)
     axis --version                       Show version information
     axis --help                          Show this help message
 
+Mode Detection:
+    If file starts with 'mode script'  → Interpreted (cross-platform)
+    If file starts with 'mode compile' → Compiled to ELF64 (Linux only)
+    Default (no mode declaration)      → Compile mode
+
 Build Options:
-    -o, --output <file>                  Output file name
-    --elf                                Generate ELF64 executable (default)
-    --raw                                Generate raw machine code
+    -o, --output <file>                  Output file name (default: same as input)
     -v, --verbose                        Show assembly output
+    --no-hex                             Don't show hex dump
 
 Examples:
-    axis build program.axis -o program --elf
-    axis build program.axis --raw -v
-    axis run test.axis
+    axis script.axis                     # Runs if 'mode script', compiles otherwise
+    axis run program.axis                # Force run as script
+    axis build program.axis              # Compile to ./program
+    axis build program.axis -o myapp     # Compile to ./myapp
 
 For more information: https://github.com/AGDNoob/axis-lang
 EOF
@@ -56,63 +62,62 @@ EOF
 # Show version
 show_version() {
     cat << EOF
-AXIS Language Compiler
+AXIS Language
 Version: $VERSION
-Platform: Linux x86-64
+Modes: script (interpreted), compile (native ELF64)
+Platform: Linux x86-64 (compile), Any (script)
 Python: $($PYTHON_CMD --version 2>&1)
 
 Compiler location: $AXIS_LIB_DIR
 EOF
 }
 
-# Build command
-cmd_build() {
-    if [ -z "$1" ]; then
-        echo "Error: No input file specified" >&2
-        echo "Usage: axis build <file.axis> [options]" >&2
-        exit 1
-    fi
+# Detect mode from file
+detect_mode() {
+    local file="$1"
+    # Read first non-empty, non-comment line
+    local first_line=$(grep -m1 -E "^[^#]" "$file" 2>/dev/null | head -1)
     
-    INPUT_FILE="$1"
+    if [[ "$first_line" =~ ^[[:space:]]*mode[[:space:]]+script ]]; then
+        echo "script"
+    elif [[ "$first_line" =~ ^[[:space:]]*mode[[:space:]]+compile ]]; then
+        echo "compile"
+    else
+        echo "compile"  # Default
+    fi
+}
+
+# Run script (interpreted)
+cmd_run_script() {
+    local input_file="$1"
+    
+    cd "$AXIS_LIB_DIR"
+    exec $PYTHON_CMD compilation_pipeline.py run "$input_file"
+}
+
+# Build (compile to ELF)
+cmd_build() {
+    local input_file="$1"
     shift
     
-    if [ ! -f "$INPUT_FILE" ]; then
-        echo "Error: File not found: $INPUT_FILE" >&2
-        exit 1
-    fi
-    
-    # Check if .axis extension
-    if [[ "$INPUT_FILE" != *.axis ]]; then
-        echo "Warning: File does not have .axis extension" >&2
-    fi
-    
-    # Build argument list
-    ARGS=("$INPUT_FILE")
-    OUTPUT_SET=0
-    ELF_SET=0
+    # Parse options
+    local output_file=""
+    local verbose=""
+    local no_hex="--no-hex"
     
     while [ $# -gt 0 ]; do
         case "$1" in
             -o|--output)
-                if [ -z "$2" ]; then
-                    echo "Error: --output requires an argument" >&2
-                    exit 1
-                fi
-                ARGS+=("-o" "$2")
-                OUTPUT_SET=1
+                output_file="$2"
                 shift 2
                 ;;
-            --elf)
-                ARGS+=("--elf")
-                ELF_SET=1
-                shift
-                ;;
-            --raw)
-                ARGS+=("--raw")
-                shift
-                ;;
             -v|--verbose)
-                ARGS+=("-v")
+                verbose="-v"
+                no_hex=""
+                shift
+                ;;
+            --no-hex)
+                no_hex="--no-hex"
                 shift
                 ;;
             *)
@@ -122,69 +127,75 @@ cmd_build() {
         esac
     done
     
-    # Add --elf by default if no format specified and output is set
-    if [ $OUTPUT_SET -eq 1 ] && [ $ELF_SET -eq 0 ] && [[ ! " ${ARGS[@]} " =~ " --raw " ]]; then
-        ARGS+=("--elf")
+    # Default output: same name without .axis, in same directory as source
+    if [ -z "$output_file" ]; then
+        local dir=$(dirname "$input_file")
+        local base=$(basename "$input_file" .axis)
+        output_file="$dir/$base"
     fi
     
     # Run compiler
     cd "$AXIS_LIB_DIR"
-    exec $PYTHON_CMD compilation_pipeline.py "${ARGS[@]}"
+    $PYTHON_CMD compilation_pipeline.py build "$input_file" -o "$output_file" --elf $verbose $no_hex
+    
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "Executable created: $output_file"
+        echo "Run with: chmod +x $output_file && $output_file"
+    fi
 }
 
-# Run command (compile and check exit code)
-cmd_run() {
+# Auto command - detect mode and act
+cmd_auto() {
+    local input_file="$1"
+    shift
+    
+    if [ ! -f "$input_file" ]; then
+        echo "Error: File not found: $input_file" >&2
+        exit 1
+    fi
+    
+    # Check if .axis extension
+    if [[ "$input_file" != *.axis ]]; then
+        echo "Warning: File does not have .axis extension" >&2
+    fi
+    
+    local mode=$(detect_mode "$input_file")
+    
+    if [ "$mode" = "script" ]; then
+        cmd_run_script "$input_file"
+    else
+        cmd_build "$input_file" "$@"
+    fi
+}
+
+# Validate input file exists
+check_input_file() {
     if [ -z "$1" ]; then
         echo "Error: No input file specified" >&2
-        echo "Usage: axis run <file.axis>" >&2
+        echo "Usage: axis <file.axis>" >&2
         exit 1
     fi
     
-    INPUT_FILE="$1"
-    
-    if [ ! -f "$INPUT_FILE" ]; then
-        echo "Error: File not found: $INPUT_FILE" >&2
+    if [ ! -f "$1" ]; then
+        echo "Error: File not found: $1" >&2
         exit 1
     fi
-    
-    # Create temporary executable
-    TEMP_EXE=$(mktemp /tmp/axis_run_XXXXXX)
-    
-    # Cleanup on exit
-    trap "rm -f '$TEMP_EXE'" EXIT
-    
-    # Compile
-    echo "Compiling $INPUT_FILE..."
-    cd "$AXIS_LIB_DIR"
-    if ! $PYTHON_CMD compilation_pipeline.py "$INPUT_FILE" -o "$TEMP_EXE" --elf > /dev/null 2>&1; then
-        echo "Compilation failed" >&2
-        exit 1
-    fi
-    
-    # Make executable
-    chmod +x "$TEMP_EXE"
-    
-    # Run and capture exit code
-    echo "Running..."
-    "$TEMP_EXE"
-    EXIT_CODE=$?
-    
-    echo ""
-    echo "Program exited with code: $EXIT_CODE"
-    exit $EXIT_CODE
 }
 
 # Main dispatcher
 case "$1" in
     build)
         shift
+        check_input_file "$1"
         cmd_build "$@"
         ;;
     run)
         shift
-        cmd_run "$@"
+        check_input_file "$1"
+        cmd_run_script "$1"
         ;;
-    --version|-v)
+    --version|-V)
         show_version
         ;;
     --help|-h|help)
@@ -195,9 +206,14 @@ case "$1" in
         echo "Run 'axis --help' for usage information" >&2
         exit 1
         ;;
-    *)
-        echo "Error: Unknown command: $1" >&2
+    -*)
+        echo "Error: Unknown option: $1" >&2
         echo "Run 'axis --help' for usage information" >&2
         exit 1
+        ;;
+    *)
+        # Auto mode - file specified directly
+        check_input_file "$1"
+        cmd_auto "$@"
         ;;
 esac
