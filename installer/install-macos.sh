@@ -124,11 +124,61 @@ download_file() {
     curl -fsSL "$url" -o "$dest"
 }
 
+uninstall_axis() {
+    show_progress "Removing AXIS files..."
+    rm -rf "$INSTALL_DIR"
+    
+    show_progress "Removing axis command..."
+    rm -f "$BIN_DIR/axis"
+    
+    show_progress "Cleaning up shell configs..."
+    for rc in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+        if [ -f "$rc" ]; then
+            sed -i '' '/# AXIS Language/d' "$rc"
+            sed -i '' '/\.local\/bin/d' "$rc"
+        fi
+    done
+    
+    show_progress "Uninstalling VS Code extension..."
+    if command -v code &> /dev/null; then
+        code --uninstall-extension AGDNoob.axis-lang 2>/dev/null || true
+    fi
+    
+    show_info "Uninstall Complete" "AXIS has been removed.
+
+Restart your terminal to complete the process."
+}
+
 # ============================================================================
 # MAIN INSTALLATION
 # ============================================================================
 
 main() {
+    # Check if already installed
+    local is_installed=false
+    if [ -d "$INSTALL_DIR" ] && [ -f "$BIN_DIR/axis" ]; then
+        is_installed=true
+    fi
+    
+    # Show action menu if installed
+    if [ "$is_installed" = true ]; then
+        local action
+        action=$(osascript -e 'display dialog "AXIS is already installed. What would you like to do?" with title "AXIS Installer" buttons {"Cancel", "Uninstall", "Reinstall"} default button "Reinstall"' 2>/dev/null)
+        
+        if echo "$action" | grep -q "Uninstall"; then
+            local confirm
+            confirm=$(osascript -e 'display dialog "Are you sure you want to uninstall AXIS?" with title "Confirm Uninstall" buttons {"Cancel", "Uninstall"} default button "Cancel"' 2>/dev/null)
+            if echo "$confirm" | grep -q "Uninstall"; then
+                uninstall_axis
+                exit 0
+            else
+                exit 0
+            fi
+        elif echo "$action" | grep -q "Cancel"; then
+            exit 0
+        fi
+    fi
+    
     # Welcome message
     local python_info=$(get_python_version)
     local python_cmd=$(echo "$python_info" | cut -d: -f1)

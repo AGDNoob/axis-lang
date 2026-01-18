@@ -254,6 +254,43 @@ function Install-VSCodeExtension {
     return $false
 }
 
+function Uninstall-AXIS {
+    param([System.Windows.Forms.Label]$StatusLabel, [System.Windows.Forms.ProgressBar]$ProgressBar)
+    
+    $ProgressBar.Value = 20
+    $StatusLabel.Text = "Removing AXIS files..."
+    $StatusLabel.Refresh()
+    
+    # Remove installation directory
+    if (Test-Path $INSTALL_DIR) {
+        Remove-Item -Recurse -Force $INSTALL_DIR
+    }
+    
+    $ProgressBar.Value = 50
+    $StatusLabel.Text = "Removing from PATH..."
+    $StatusLabel.Refresh()
+    
+    # Remove from PATH
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $newPath = ($userPath -split ';' | Where-Object { $_ -ne $BIN_DIR }) -join ';'
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    
+    $ProgressBar.Value = 80
+    $StatusLabel.Text = "Uninstalling VS Code extension..."
+    $StatusLabel.Refresh()
+    
+    # Try to uninstall VS Code extension
+    try {
+        $code = Get-Command code -ErrorAction SilentlyContinue
+        if ($code) {
+            & code --uninstall-extension AGDNoob.axis-lang 2>&1 | Out-Null
+        }
+    } catch {}
+    
+    $ProgressBar.Value = 100
+    return $true
+}
+
 # ============================================================================
 # GUI SETUP
 # ============================================================================
@@ -341,13 +378,29 @@ $form.Controls.Add($statusLabel)
 # Install Button
 $installButton = New-Object System.Windows.Forms.Button
 $installButton.Text = "Install AXIS"
-$installButton.Location = New-Object System.Drawing.Point(150, 310)
+$installButton.Location = New-Object System.Drawing.Point(50, 310)
 $installButton.Size = New-Object System.Drawing.Size(180, 40)
 $installButton.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $installButton.ForeColor = [System.Drawing.Color]::White
 $installButton.FlatStyle = "Flat"
 $installButton.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($installButton)
+
+# Uninstall Button
+$uninstallButton = New-Object System.Windows.Forms.Button
+$uninstallButton.Text = "Uninstall"
+$uninstallButton.Location = New-Object System.Drawing.Point(250, 310)
+$uninstallButton.Size = New-Object System.Drawing.Size(180, 40)
+$uninstallButton.BackColor = [System.Drawing.Color]::FromArgb(150, 50, 50)
+$uninstallButton.ForeColor = [System.Drawing.Color]::White
+$uninstallButton.FlatStyle = "Flat"
+$uninstallButton.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+# Only enable if AXIS is installed
+if (-not (Test-Path $INSTALL_DIR)) {
+    $uninstallButton.Enabled = $false
+    $uninstallButton.BackColor = [System.Drawing.Color]::FromArgb(80, 80, 80)
+}
+$form.Controls.Add($uninstallButton)
 
 # ============================================================================
 # INSTALL LOGIC
@@ -417,6 +470,33 @@ $installButton.Add_Click({
         $statusLabel.Text = "Error: $_"
         $statusLabel.ForeColor = [System.Drawing.Color]::Red
         $installButton.Enabled = $true
+    }
+})
+
+# Uninstall button click handler
+$uninstallButton.Add_Click({
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        "Are you sure you want to uninstall AXIS?",
+        "Confirm Uninstall",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Question
+    )
+    
+    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+        $installButton.Enabled = $false
+        $uninstallButton.Enabled = $false
+        $vscodeCheckbox.Enabled = $false
+        
+        if (Uninstall-AXIS -StatusLabel $statusLabel -ProgressBar $progressBar) {
+            $statusLabel.Text = "AXIS has been uninstalled. Restart your terminal."
+            $statusLabel.ForeColor = [System.Drawing.Color]::LightGreen
+            $uninstallButton.Text = "Done!"
+            $uninstallButton.BackColor = [System.Drawing.Color]::FromArgb(0, 150, 0)
+        } else {
+            $statusLabel.Text = "Uninstall failed"
+            $statusLabel.ForeColor = [System.Drawing.Color]::Red
+            $uninstallButton.Enabled = $true
+        }
     }
 })
 

@@ -226,12 +226,82 @@ download_file() {
     fi
 }
 
+uninstall_axis() {
+    (
+        echo "20"
+        echo "# Removing AXIS files..."
+        rm -rf "$INSTALL_DIR"
+        
+        echo "50"
+        echo "# Removing axis command..."
+        rm -f "$BIN_DIR/axis"
+        
+        echo "70"
+        echo "# Cleaning up shell configs..."
+        for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+            if [ -f "$rc" ]; then
+                sed -i '/# AXIS Language/d' "$rc"
+                sed -i '/\.local\/bin/d' "$rc"
+            fi
+        done
+        
+        echo "90"
+        echo "# Uninstalling VS Code extension..."
+        if command -v code &> /dev/null; then
+            code --uninstall-extension AGDNoob.axis-lang 2>/dev/null || true
+        fi
+        
+        echo "100"
+        echo "# Uninstall complete!"
+    ) | show_progress "Uninstalling AXIS"
+    
+    show_info "Uninstall Complete" "AXIS has been removed.\n\nRestart your terminal to complete the process."
+}
+
 # ============================================================================
 # MAIN INSTALLATION
 # ============================================================================
 
 main() {
     detect_gui
+    
+    # Check if already installed
+    local is_installed=false
+    if [ -d "$INSTALL_DIR" ] && [ -f "$BIN_DIR/axis" ]; then
+        is_installed=true
+    fi
+    
+    # Show action menu if installed
+    if [ "$is_installed" = true ]; then
+        local action
+        case $GUI_TOOL in
+            zenity)
+                action=$(zenity --list --title="AXIS Installer" --text="AXIS is already installed. What would you like to do?" \
+                    --column="Action" "Reinstall" "Uninstall" --width=400 --height=250)
+                ;;
+            kdialog)
+                action=$(kdialog --title "AXIS Installer" --menu "AXIS is already installed. What would you like to do?" \
+                    1 "Reinstall" 2 "Uninstall")
+                [ "$action" = "1" ] && action="Reinstall"
+                [ "$action" = "2" ] && action="Uninstall"
+                ;;
+            yad)
+                action=$(yad --list --title="AXIS Installer" --text="AXIS is already installed. What would you like to do?" \
+                    --column="Action" "Reinstall" "Uninstall" --width=400 --height=250)
+                ;;
+        esac
+        
+        if [ "$action" = "Uninstall" ]; then
+            if show_question "Confirm Uninstall" "Are you sure you want to uninstall AXIS?"; then
+                uninstall_axis
+                exit 0
+            else
+                exit 0
+            fi
+        elif [ -z "$action" ]; then
+            exit 0
+        fi
+    fi
     
     # Welcome message
     local python_info=$(get_python_version)
