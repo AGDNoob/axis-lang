@@ -99,18 +99,22 @@ axis info
 
 ## 🗑️ Uninstall
 
-### Windows
-```powershell
-Remove-Item -Recurse -Force "$env:LOCALAPPDATA\AXIS"
-# Manually remove from PATH in System Environment Variables
-```
+Each installer includes a built-in uninstaller. Simply run the same installer again:
 
-### Linux/macOS
-```bash
-rm -rf ~/.local/lib/axis
-rm ~/.local/bin/axis
-# Remove the PATH entry from ~/.bashrc or ~/.zshrc
-```
+### Windows
+Run `install-windows.ps1` again → Click the **Uninstall** button
+
+### Linux
+Run `./install-linux.sh` again → Select **Uninstall** from the menu
+
+### macOS
+Run `./install-macos.sh` again → Click **Uninstall** in the dialog
+
+The uninstaller will:
+- Remove all AXIS files
+- Remove the `axis` command
+- Clean up PATH entries
+- Uninstall the VS Code extension
 
 ---
 
