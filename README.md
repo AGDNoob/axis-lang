@@ -12,29 +12,26 @@ AXIS can run as an interpreted scripting language OR compile directly to x86-64 
 
 ### Installation
 
-**All Platforms (Windows, macOS, Linux):**
-```bash
-git clone https://github.com/AGDNoob/axis-lang
-cd axis-lang
-```
+Download and run the one-click GUI installer for your platform:
 
-No dependencies required beyond Python 3.7+.
+| Platform | Installer | One-Liner |
+|----------|-----------|----------|
+| **Windows** | [install-windows.ps1](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-windows.ps1) | Right-click → Run with PowerShell |
+| **Linux** | [install-linux.sh](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-linux.sh) | `curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-linux.sh \| bash` |
+| **macOS** | [install-macos.sh](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-macos.sh) | `curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-macos.sh \| bash` |
 
-**Linux only (optional CLI):**
-```bash
-cd installer && ./install.sh --user
-```
+The installer will:
+- ✅ Check/install Python 3.7+
+- ✅ Download all AXIS files
+- ✅ Set up the `axis` command
+- ✅ Optionally install VS Code extension
 
 ### Hello World (Script Mode)
 
 Works on **Windows**, **macOS**, and **Linux**:
 
 ```bash
-# Windows (PowerShell)
-python compilation_pipeline.py run hello.axis
-
-# macOS/Linux
-python3 compilation_pipeline.py run hello.axis
+axis run hello.axis
 ```
 
 ### Hello World (Compile Mode)
@@ -48,7 +45,7 @@ func main() -> i32:
     give 42
 EOF
 
-python3 compilation_pipeline.py hello.axis -o hello --elf
+axis build hello.axis -o hello --elf
 ./hello && echo $?  # Output: 42
 ```
 
@@ -77,7 +74,7 @@ writeln(x)
 
 Run with:
 ```bash
-python compilation_pipeline.py run script.axis
+axis run script.axis
 ```
 
 ### Compile Mode
@@ -95,7 +92,7 @@ func main() -> i32:
 
 Build with:
 ```bash
-python compilation_pipeline.py program.axis -o program --elf
+axis build program.axis -o program --elf
 ./program
 ```
 
@@ -227,10 +224,10 @@ The `examples/` folder contains 20 example programs:
 Run examples:
 ```bash
 # Script mode (examples 01-19)
-python compilation_pipeline.py run examples/01_hello_world.axis
+axis run examples/01_hello_world.axis
 
 # Compile mode (example 20)
-python compilation_pipeline.py examples/20_compile_mode.axis -o demo --elf
+axis build examples/20_compile_mode.axis -o demo --elf
 ```
 
 ---
@@ -282,12 +279,10 @@ axis-lang/
 ├── syntactic_analyzer.py      # Parser + AST
 ├── semantic_analyzer.py       # Type checker
 ├── code_generator.py          # x86-64 codegen
-├── assembler.py               # Machine code
 ├── executable_format_generator.py  # ELF64
-├── transpiler.py              # Python transpiler
 ├── examples/                  # 20 example programs
 ├── axis-vscode/               # VS Code extension
-└── installer/                 # Linux installer
+└── installer/                 # GUI installers (Windows/Linux/macOS)
 ```
 
 ---
@@ -296,40 +291,25 @@ axis-lang/
 
 ### Commands
 
-```bash
-# Run script mode
-python compilation_pipeline.py run program.axis
-
-# Compile to ELF64 (Linux)
-python compilation_pipeline.py program.axis -o output --elf
-
-# Check syntax without running
-python compilation_pipeline.py check program.axis
-```
-
-### CLI Commands (Linux/macOS after install)
+After installation, the `axis` command is available on all platforms:
 
 ```bash
 axis run script.axis        # Run in script mode
-axis build prog.axis        # Compile to native binary
-axis check prog.axis        # Validate syntax only
-axis info                   # Show system/environment info
-axis update                 # Update AXIS from GitHub
-axis --help                 # Show all options
-```
-
-### Windows Usage
-
-```batch
-cd installer
-axis.bat run script.axis    # Run script
-axis.bat check prog.axis    # Check syntax
-axis.bat info               # System info
+axis build prog.axis        # Compile to native binary (Linux only)
+axis check prog.axis        # Validate syntax without running
+axis info                   # Show installation info
+axis version                # Show version
+axis help                   # Show all commands
 ```
 
 ### VS Code Extension
 
-The `axis-vscode/` folder contains syntax highlighting for `.axis` files.
+The installer can optionally install the VS Code extension for syntax highlighting.
+Or manually: `axis-vscode/` folder contains the extension source.
+
+### Uninstall
+
+Run the same installer again and select **Uninstall**.
 
 ---
 
