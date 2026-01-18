@@ -79,7 +79,7 @@ axis run script.axis
 
 ### Compile Mode
 
-Compile mode generates native Linux x86-64 executables with zero runtime dependencies.
+Compile mode generates native Linux x86-64 executables. The output binary has no runtime dependencies.
 
 ```python
 mode compile
@@ -315,9 +315,11 @@ Run the same installer again and select **Uninstall**.
 
 ## ⚠️ Platform Requirements
 
+**All modes require Python 3.7+** to run the AXIS compiler.
+
 **Compile mode:**
 - Linux x86-64 only (Ubuntu, Debian, Fedora, Arch, etc.)
-- Generated binaries are native ELF64 executables
+- Generated binaries are native ELF64 executables (no runtime dependencies)
 
 **Script mode:**
 - Any platform with Python 3.7+
@@ -327,10 +329,10 @@ Run the same installer again and select **Uninstall**.
 
 ## 📊 Performance
 
-| Mode | Overhead | Binary Size | Dependencies |
-|------|----------|-------------|--------------|
-| Script | ~30% vs Python | N/A | Python 3.7+ |
-| Compile | Native speed | ~4KB | None |
+| Mode | Overhead | Binary Size | Compiler Requires | Output Requires |
+|------|----------|-------------|-------------------|----------------|
+| Script | ~30% vs Python | N/A | Python 3.7+ | Python 3.7+ |
+| Compile | Native speed | ~4KB | Python 3.7+ | Nothing (standalone) |
 
 ---
 
