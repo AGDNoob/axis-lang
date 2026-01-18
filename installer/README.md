@@ -1,300 +1,165 @@
 # AXIS Installer
 
-This directory contains installation scripts for the AXIS programming language.
+One-click GUI installers for the AXIS programming language.
 
 ---
 
-## 📦 Installation
+## 📦 Download & Install
+
+Choose the installer for your operating system:
 
 ### Windows
 
-```batch
-cd installer
-install.bat --user
+1. Download [install-windows.ps1](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-windows.ps1)
+2. Right-click → **Run with PowerShell**
+3. If prompted about execution policy, click "Yes" or "Run Anyway"
+
+**Alternative:** Open PowerShell and run:
+```powershell
+irm https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-windows.ps1 | iex
 ```
 
-Or for system-wide installation (run as Administrator):
-```batch
-install.bat --system
-```
+### Linux
 
-### Linux/macOS - User Installation (Recommended)
+1. Download [install-linux.sh](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-linux.sh)
+2. Make it executable: `chmod +x install-linux.sh`
+3. Run it: `./install-linux.sh`
 
-Installs AXIS to your home directory (`~/.local/bin` and `~/.local/lib/axis`):
-
+**One-liner:**
 ```bash
-cd installer/
-chmod +x install.sh
-./install.sh --user
+curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-linux.sh | bash
 ```
 
-**No root privileges required.**
+### macOS
 
-### Linux/macOS - System-Wide Installation
+1. Download [install-macos.sh](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-macos.sh)
+2. Make it executable: `chmod +x install-macos.sh`
+3. Run it: `./install-macos.sh`
 
-Installs AXIS for all users (`/usr/local/bin` and `/usr/local/lib/axis`):
-
+**One-liner:**
 ```bash
-cd installer/
-chmod +x install.sh
-sudo ./install.sh --system
+curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-macos.sh | bash
 ```
-
-**Requires root/sudo privileges.**
 
 ---
 
-## ✅ Post-Installation
+## 🎯 What Each Installer Does
 
-### Verify Installation
+1. **Checks for Python 3.7+** - Installs if not found
+2. **Downloads AXIS files** - From the GitHub repository
+3. **Creates the `axis` command** - Ready to use in terminal
+4. **Adds to PATH** - Works immediately after restart
+5. **VS Code Extension (optional)** - Syntax highlighting
+
+---
+
+## ✅ Verify Installation
+
+After installation, restart your terminal and run:
 
 ```bash
-axis --version
+axis version
 ```
 
 Expected output:
 ```
-AXIS Language
-Version: 1.0.2-beta
-Modes: script (interpreted), compile (native ELF64)
-Platform: Linux x86-64 (compile), Any (script)
-Python: Python 3.x.x
-```
-
-### Configure PATH (if needed)
-
-If you see `command not found`, add this to your `~/.bashrc` or `~/.zshrc`:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Then reload:
-```bash
-source ~/.bashrc  # or source ~/.zshrc
+AXIS v1.0.2-beta
 ```
 
 ---
 
 ## 🚀 Usage
 
-### Script Mode (Interpreted)
-
+### Run a Script
 ```bash
 axis run script.axis
 ```
 
-### Compile Mode (Native Binary)
-
+### Check Syntax
 ```bash
-axis build program.axis -o program
-chmod +x program
-./program
+axis check script.axis
 ```
 
-This compiles to a temporary file and shows the exit code.
+### Build to Binary (Linux only)
+```bash
+axis build program.axis -o program --elf
+```
 
 ### Show Help
-
 ```bash
-axis --help
+axis help
+```
+
+### Show Installation Info
+```bash
+axis info
 ```
 
 ---
 
-## 🗑️ Uninstallation
-
-### Linux/macOS
-
-```bash
-cd installer/
-chmod +x uninstall.sh
-./uninstall.sh          # User installation
-sudo ./uninstall.sh     # System installation
-```
+## 🗑️ Uninstall
 
 ### Windows
-
-```batch
-cd installer
-uninstall.bat
+```powershell
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\AXIS"
+# Manually remove from PATH in System Environment Variables
 ```
 
-Or simply delete the `axis-lang` folder if you installed via git clone.
-
----
-
-## 📋 Requirements
-
-- **OS:** Linux, macOS, or Windows (script mode on all; compile mode on Linux x86-64 only)
-- **Python:** 3.7 or higher
-- **Permissions:** User installation = none, System installation = root/sudo (Linux/macOS)
-
----
-
-## 🛠️ What Gets Installed
-
-### User Installation (`--user`)
-
-```
-~/.local/bin/axis                    # CLI command
-~/.local/lib/axis/                   # Compiler files
-    ├── tokenization_engine.py
-    ├── syntactic_analyzer.py
-    ├── semantic_analyzer.py
-    ├── code_generator.py
-    ├── executable_format_generator.py
-    ├── compilation_pipeline.py
-    ├── transpiler.py
-    └── assembler.py
-```
-
-### System Installation (`--system`)
-
-```
-/usr/local/bin/axis                  # CLI command
-/usr/local/lib/axis/                 # Compiler files
-    └── (same as above)
-```
-
----
-
-## 🔧 Troubleshooting
-
-### `axis: command not found`
-
-**Problem:** `~/.local/bin` is not in your `PATH`.
-
-**Solution:**
+### Linux/macOS
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+rm -rf ~/.local/lib/axis
+rm ~/.local/bin/axis
+# Remove the PATH entry from ~/.bashrc or ~/.zshrc
 ```
 
-### `Python 3.7+ required`
+---
 
-**Problem:** Python version too old.
+## 📋 System Requirements
 
-**Solution:**
+| OS | Requirements |
+|---|---|
+| Windows | Windows 10/11, PowerShell 5.1+ |
+| Linux | Any distro with GUI (zenity/kdialog), Python 3.7+ or package manager |
+| macOS | macOS 10.15+, Homebrew (auto-installed if needed) |
+
+---
+
+## 🆘 Troubleshooting
+
+### "command not found: axis"
+
+Restart your terminal, or add manually:
+
+**Windows:** Add `%LOCALAPPDATA%\AXIS\bin` to your PATH
+
+**Linux/macOS:** Add this to `~/.bashrc` or `~/.zshrc`:
 ```bash
-sudo apt install python3.9  # Ubuntu/Debian
-sudo dnf install python39   # Fedora
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### `Permission denied`
+### Windows: "Script cannot be executed"
 
-**Problem:** Trying system installation without root.
+Run this in PowerShell as Administrator:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
-**Solution:**
+### Linux: "zenity not found"
+
+The installer will try to install it automatically. If that fails:
 ```bash
-sudo ./install.sh --system
-```
+# Ubuntu/Debian
+sudo apt-get install zenity
 
-### Test Installation Manually
+# Fedora
+sudo dnf install zenity
 
-```bash
-# Check if binary exists
-ls -l ~/.local/bin/axis
-
-# Check if library exists
-ls -l ~/.local/lib/axis/
-
-# Test directly
-~/.local/bin/axis --version
+# Arch
+sudo pacman -S zenity
 ```
 
 ---
 
-## 📝 Installation Script Details
+## 📄 License
 
-### What `install.sh` Does
-
-1. Checks Python 3.7+ is installed
-2. Verifies all compiler files exist
-3. Creates installation directories
-4. Copies compiler files to library directory
-5. Installs `axis` wrapper command
-6. Configures library paths
-7. Checks PATH configuration
-
-### What `uninstall.sh` Does
-
-1. Detects user and/or system installations
-2. Removes `axis` command
-3. Removes library directory
-4. Cleans up completely
-
----
-
-## 🧪 Testing the Installer (For Developers)
-
-If you want to test the installer in a VM or container:
-
-```bash
-# Create test file
-cat > test.axis << 'EOF'
-fn main() -> i32 {
-    return 42;
-}
-EOF
-
-# Install AXIS
-./install.sh --user
-
-# Verify
-axis --version
-axis build test.axis -o test
-./test
-echo $?  # Should output: 42
-
-# Cleanup
-./uninstall.sh
-```
-
----
-
-## 📦 Distribution
-
-When distributing AXIS, include:
-- This `installer/` directory
-- All compiler `.py` files in the root
-- Main `README.md` with language documentation
-
-Users only need to:
-1. Download/clone repository
-2. Run `cd installer && ./install.sh --user`
-3. Start coding with `axis`
-
----
-
-## 🐧 Supported Linux Distributions
-
-Tested on:
-- Ubuntu 20.04+
-- Debian 10+
-- Fedora 33+
-- Arch Linux
-- openSUSE Leap 15+
-
-**Should work on:** Any Linux x86-64 with Python 3.7+
-
-**Not supported:** 
-- macOS (different executable format)
-- Windows (different executable format)
-- ARM/ARM64 (different architecture)
-
----
-
-## ⚠️ Important Notes
-
-- **No sudo for user install** – Keeps everything in your home directory
-- **Portable** – User installation doesn't affect other users
-- **Clean uninstall** – Removes everything completely
-- **PATH issues** – Most common problem; see troubleshooting above
-- **Python required** – AXIS compiler is written in Python
-
----
-
-**For more information, see the main [README.md](../README.md) in the repository root.**
-
-**Repository:** https://github.com/AGDNoob/axis-lang
+MIT License - See [LICENSE](../LICENSE)
