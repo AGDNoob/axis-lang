@@ -1,0 +1,21 @@
+// Example 05: Loops
+// Using 'repeat' for iteration
+
+mode script
+
+writeln("Counting to 5:")
+i: i32 = 1
+repeat:
+    writeln(i)
+    i = i + 1
+    when i > 5:
+        stop
+
+writeln("")
+writeln("Countdown from 5:")
+count: i32 = 5
+repeat:
+    writeln(count)
+    count = count - 1
+    when count < 1:
+        stop

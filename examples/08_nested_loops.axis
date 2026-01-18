@@ -1,0 +1,22 @@
+// Example 08: Nested Loops
+// Creating patterns with nested loops
+
+mode script
+
+writeln("Multiplication Table (1-5):")
+writeln("===========================")
+
+row: i32 = 1
+repeat:
+    col: i32 = 1
+    repeat:
+        result: i32 = row * col
+        write(result)
+        write("  ")
+        col = col + 1
+        when col > 5:
+            stop
+    writeln("")
+    row = row + 1
+    when row > 5:
+        stop

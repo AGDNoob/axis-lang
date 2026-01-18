@@ -2,17 +2,6 @@ import sys
 import argparse
 from pathlib import Path
 
-from tokenization_engine import Lexer
-from syntactic_analyzer import Parser
-from semantic_analyzer import SemanticAnalyzer
-from code_generator import CodeGenerator
-from executable_format_generator import ELF64Writer, write_elf_executable
-from interpreter import Interpreter
-
-# assembler backend importieren
-sys.path.insert(0, str(Path(__file__).parent))
-from assembler import Assembler
-
 
 class CompilationPipeline:
     def __init__(self, verbose: bool = False):
@@ -23,13 +12,31 @@ class CompilationPipeline:
         if self.verbose:
             print(f"[PIPELINE] {msg}")
     
-    def run_script(self, ast) -> bool:
-        """Run a script-mode program using the interpreter"""
+    def run_script(self, source: str, source_path: str = None) -> bool:
+        """Run a script using the transpiler"""
         try:
-            interpreter = Interpreter()
-            exit_code = interpreter.run(ast)
+            from transpiler import run_script
             if self.verbose:
-                print(f"[PIPELINE] Script finished with exit code {exit_code}")
+                self.log("Transpiling and executing...")
+            exit_code = run_script(source, source_path, verbose=self.verbose)
+            if self.verbose:
+                self.log(f"Script finished with exit code {exit_code}")
+            return True
+        except Exception as e:
+            print(f"Runtime error: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def run_script_from_ast(self, ast) -> bool:
+        """Run a script-mode program (when AST is already available)"""
+        try:
+            from transpiler import run_transpiled
+            if self.verbose:
+                self.log("Transpiling to Python and executing...")
+            exit_code = run_transpiled(ast, verbose=self.verbose)
+            if self.verbose:
+                self.log(f"Script finished with exit code {exit_code}")
             return True
         except Exception as e:
             print(f"Runtime error: {e}", file=sys.stderr)
@@ -44,6 +51,14 @@ class CompilationPipeline:
         Returns:
             tuple: (machine_code, rodata, relocations, string_offsets, needs_bss)
         """
+        # Lazy imports for compile mode
+        from tokenization_engine import Lexer
+        from syntactic_analyzer import Parser
+        from semantic_analyzer import SemanticAnalyzer
+        from code_generator import CodeGenerator
+        sys.path.insert(0, str(Path(__file__).parent))
+        from assembler import Assembler
+        
         # die ganze pipeline durchlaufen: source -> tokens -> ast -> asm -> bytes
         self.log("Phase 1: Tokenization...")
         lexer = Lexer(source_code)
@@ -105,6 +120,10 @@ class CompilationPipeline:
         return bytes(machine_code), bytes(rodata), relocations, string_offsets, needs_bss
     
     def compile_file(self, input_path: str, output_path: str = None, dump_hex: bool = True, elf_format: bool = False):
+        from tokenization_engine import Lexer
+        from syntactic_analyzer import Parser
+        from executable_format_generator import write_elf_executable
+        
         self.log(f"Reading source: {input_path}")
         with open(input_path, 'r', encoding='utf-8') as f:
             source_code = f.read()
@@ -225,15 +244,17 @@ def main():
 Commands:
   run      Execute a script (mode script) - interpreted
   build    Compile to binary (mode compile) - native ELF
+  check    Check syntax without running or compiling
 
 Examples:
   python compilation_pipeline.py run script.axis
   python compilation_pipeline.py build prog.axis -o prog
+  python compilation_pipeline.py check prog.axis
   python compilation_pipeline.py prog.axis          # auto-detect mode
         """
     )
     
-    parser.add_argument('command', nargs='?', help='Command: run, build, or omit for auto-detect')
+    parser.add_argument('command', nargs='?', help='Command: run, build, check, or omit for auto-detect')
     parser.add_argument('input', nargs='?', help='Input source file (.axis)')
     parser.add_argument('-o', '--output', help='Output binary file (build mode only)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
@@ -246,13 +267,16 @@ Examples:
     input_file = None
     force_run = False
     force_build = False
+    force_check = False
     
-    if args.command in ['run', 'build']:
+    if args.command in ['run', 'build', 'check']:
         # Explicit command
         if args.command == 'run':
             force_run = True
-        else:
+        elif args.command == 'build':
             force_build = True
+        elif args.command == 'check':
+            force_check = True
         input_file = args.input
     elif args.command and args.command.endswith('.axis'):
         # No command, just file (auto-detect)
@@ -266,25 +290,54 @@ Examples:
         return 1
     
     if not Path(input_file).exists():
-        print(f"Error: Input file not found: {input_file}", file=sys.stderr)
+        print(f"Error: File not found: {input_file}", file=sys.stderr)
         return 1
     
     pipeline = CompilationPipeline(verbose=args.verbose)
     
-    # Read file to detect mode
+    # Read file
     with open(input_file, 'r', encoding='utf-8') as f:
         source_code = f.read()
     
+    # Check mode - just parse and validate
+    if force_check:
+        try:
+            from tokenization_engine import Lexer
+            from syntactic_analyzer import Parser
+            from semantic_analyzer import SemanticAnalyzer
+            
+            print(f"Checking {input_file}...")
+            
+            lexer = Lexer(source_code)
+            tokens = lexer.tokenize()
+            print("  ✓ Tokenization passed")
+            
+            parser_obj = Parser(tokens)
+            ast = parser_obj.parse()
+            print("  ✓ Parsing passed")
+            
+            analyzer = SemanticAnalyzer()
+            analyzer.analyze(ast)
+            print("  ✓ Semantic analysis passed")
+            
+            print(f"\n✓ {input_file} is valid AXIS code (mode: {ast.mode})")
+            return 0
+        except Exception as e:
+            print(f"\n✗ Syntax error: {e}")
+            return 1
+    
+    # For forced run or auto-detect, try cache first for script mode
+    if force_run or (not force_build and source_code.strip().startswith('mode script')):
+        # Script mode - transpile and run
+        return 0 if pipeline.run_script(source_code, input_file) else 1
+    
+    # Compile mode - need to parse to get AST
+    from tokenization_engine import Lexer
+    from syntactic_analyzer import Parser
     lexer = Lexer(source_code)
     tokens = lexer.tokenize()
     parser_obj = Parser(tokens)
     ast = parser_obj.parse()
-    
-    # Override mode if forced
-    if force_run:
-        if ast.mode == "compile":
-            print("Warning: File uses 'mode compile' but running with 'run' command. Interpreting anyway.")
-        return 0 if pipeline.run_script(ast) else 1
     
     if force_build or ast.mode == "compile":
         # Compile mode
@@ -304,7 +357,7 @@ Examples:
         return 0 if success else 1
     else:
         # Script mode (auto-detected)
-        return 0 if pipeline.run_script(ast) else 1
+        return 0 if pipeline.run_script_from_ast(ast) else 1
 
 
 if __name__ == '__main__':

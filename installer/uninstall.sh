@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# AXIS Language Uninstaller for Linux
+# AXIS Language Uninstaller for Linux/macOS
 # Version: 1.0.2-beta
 #
 
@@ -11,6 +11,14 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+
+# Detect OS
+OS="$(uname -s)"
+case "$OS" in
+    Linux*)  PLATFORM="Linux" ;;
+    Darwin*) PLATFORM="macOS" ;;
+    *)       PLATFORM="Unknown" ;;
+esac
 
 # Detect installation mode
 SYSTEM_BIN="/usr/local/bin/axis"
@@ -36,7 +44,7 @@ if [ $FOUND_SYSTEM -eq 0 ] && [ $FOUND_USER -eq 0 ]; then
 fi
 
 echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  AXIS Language Uninstaller${NC}"
+echo -e "${GREEN}  AXIS Language Uninstaller ($PLATFORM)${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
 echo ""
 

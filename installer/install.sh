@@ -49,7 +49,7 @@ else
 fi
 
 echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  AXIS Language Installer (Beta 1.0.2)${NC}"
+echo -e "${GREEN}  AXIS Language Installer (v1.0.2-beta)${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
 echo ""
 echo "Installation mode: $INSTALL_MODE"
@@ -90,7 +90,8 @@ REQUIRED_FILES=(
     "code_generator.py"
     "executable_format_generator.py"
     "compilation_pipeline.py"
-    "tets.py"
+    "transpiler.py"
+    "assembler.py"
 )
 
 for file in "${REQUIRED_FILES[@]}"; do

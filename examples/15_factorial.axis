@@ -1,0 +1,25 @@
+// Example 15: Factorial
+// Calculate n! iteratively
+
+mode script
+
+n: i32 = 10
+
+writeln("Factorial Calculator")
+writeln("====================")
+
+i: i32 = 1
+factorial: i32 = 1
+j: i32 = 1
+repeat:
+    factorial = 1
+    j = 1
+    while j <= i:
+        factorial = factorial * j
+        j = j + 1
+    write(i)
+    write("! = ")
+    writeln(factorial)
+    i = i + 1
+    when i > n:
+        stop

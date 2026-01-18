@@ -42,9 +42,10 @@ axis --version
 
 Expected output:
 ```
-AXIS Language Compiler
+AXIS Language
 Version: 1.0.2-beta
-Platform: Linux x86-64
+Modes: script (interpreted), compile (native ELF64)
+Platform: Linux x86-64 (compile), Any (script)
 Python: Python 3.x.x
 ```
 
@@ -65,18 +66,18 @@ source ~/.bashrc  # or source ~/.zshrc
 
 ## 🚀 Usage
 
-### Build an Executable
+### Script Mode (Interpreted)
+
+```bash
+axis run script.axis
+```
+
+### Compile Mode (Native Binary)
 
 ```bash
 axis build program.axis -o program
 chmod +x program
 ./program
-```
-
-### Quick Run (Test)
-
-```bash
-axis run program.axis
 ```
 
 This compiles to a temporary file and shows the exit code.
@@ -91,29 +92,31 @@ axis --help
 
 ## 🗑️ Uninstallation
 
-### User Installation
+### Linux/macOS
 
 ```bash
 cd installer/
 chmod +x uninstall.sh
-./uninstall.sh
+./uninstall.sh          # User installation
+sudo ./uninstall.sh     # System installation
 ```
 
-### System Installation
+### Windows
 
-```bash
-cd installer/
-chmod +x uninstall.sh
-sudo ./uninstall.sh
+```batch
+cd installer
+uninstall.bat
 ```
+
+Or simply delete the `axis-lang` folder if you installed via git clone.
 
 ---
 
 ## 📋 Requirements
 
-- **OS:** Linux x86-64
+- **OS:** Linux, macOS, or Windows (script mode on all; compile mode on Linux x86-64 only)
 - **Python:** 3.7 or higher
-- **Permissions:** User installation = none, System installation = root/sudo
+- **Permissions:** User installation = none, System installation = root/sudo (Linux/macOS)
 
 ---
 
@@ -130,7 +133,8 @@ sudo ./uninstall.sh
     ├── code_generator.py
     ├── executable_format_generator.py
     ├── compilation_pipeline.py
-    └── tets.py
+    ├── transpiler.py
+    └── assembler.py
 ```
 
 ### System Installation (`--system`)

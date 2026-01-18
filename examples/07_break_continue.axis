@@ -1,0 +1,25 @@
+// Example 07: Break and Continue
+// Using 'stop' and 'skip' to control loops
+
+mode script
+
+writeln("Finding first multiple of 7 > 50:")
+n: i32 = 1
+repeat:
+    when n % 7 == 0:
+        when n > 50:
+            write("Found: ")
+            writeln(n)
+            stop
+    n = n + 1
+
+writeln("")
+writeln("Odd numbers from 1 to 10:")
+i: i32 = 0
+repeat:
+    i = i + 1
+    when i > 10:
+        stop
+    when i % 2 == 0:
+        skip  // Skip even numbers
+    writeln(i)

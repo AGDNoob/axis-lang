@@ -1,8 +1,0 @@
-// Test write() without newline
-// Expected output: HelloWorld (no newline between)
-
-func main() -> i32:
-    write("Hello")
-    write("World")
-    writeln("")
-    give 0

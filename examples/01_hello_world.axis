@@ -1,0 +1,7 @@
+// Example 01: Hello World
+// The simplest AXIS program - prints a message
+
+mode script
+
+writeln("Hello, World!")
+writeln("Welcome to AXIS!")

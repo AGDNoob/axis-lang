@@ -12,10 +12,8 @@ build/
 *.bin
 *.o
 *.elf
-tests/*.bin
-tests/*_test
-tests/test_*
-!tests/*.axis
+examples/*.bin
+examples/*_test
 
 # Temporary files
 *.tmp

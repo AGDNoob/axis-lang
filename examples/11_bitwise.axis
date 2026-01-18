@@ -1,0 +1,32 @@
+// Example 11: Bitwise Operations
+// Low-level bit manipulation
+
+mode script
+
+a: i32 = 12   // Binary: 1100
+b: i32 = 10   // Binary: 1010
+
+writeln("Bitwise Operations")
+writeln("==================")
+write("a = ")
+write(a)
+writeln(" (binary: 1100)")
+write("b = ")
+write(b)
+writeln(" (binary: 1010)")
+writeln("")
+
+write("a & b (AND) = ")
+writeln(a & b)   // 1000 = 8
+
+write("a | b (OR) = ")
+writeln(a | b)   // 1110 = 14
+
+write("a ^ b (XOR) = ")
+writeln(a ^ b)   // 0110 = 6
+
+write("a << 2 (left shift) = ")
+writeln(a << 2)  // 110000 = 48
+
+write("a >> 1 (right shift) = ")
+writeln(a >> 1)  // 110 = 6

@@ -1,0 +1,27 @@
+// Example 19: FizzBuzz
+// Classic programming challenge
+
+mode script
+
+writeln("FizzBuzz (1-30)")
+writeln("===============")
+
+i: i32 = 1
+repeat:
+    printed: i32 = 0
+    when i % 15 == 0:
+        writeln("FizzBuzz")
+        printed = 1
+    when i % 3 == 0:
+        when printed == 0:
+            writeln("Fizz")
+            printed = 1
+    when i % 5 == 0:
+        when printed == 0:
+            writeln("Buzz")
+            printed = 1
+    when printed == 0:
+        writeln(i)
+    i = i + 1
+    when i > 30:
+        stop

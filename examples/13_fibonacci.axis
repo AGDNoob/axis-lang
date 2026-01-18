@@ -1,0 +1,20 @@
+// Example 13: Fibonacci Sequence
+// Classic algorithm implementation
+
+mode script
+
+writeln("Fibonacci Sequence (first 15 numbers):")
+writeln("=======================================")
+
+a: i32 = 0
+b: i32 = 1
+count: i32 = 0
+
+repeat:
+    writeln(a)
+    temp: i32 = a + b
+    a = b
+    b = temp
+    count = count + 1
+    when count >= 15:
+        stop

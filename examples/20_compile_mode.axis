@@ -1,0 +1,12 @@
+// Example 20: Compile Mode Demo
+// This file compiles to a native ELF64 binary!
+// Build: python compilation_pipeline.py examples/20_compile_mode.axis -o demo --elf
+// Run on Linux: ./demo && echo $?  (exit code will be 30)
+
+mode compile
+
+func main() -> i32:
+    x: i32 = 10
+    y: i32 = 20
+    result: i32 = x + y
+    give result

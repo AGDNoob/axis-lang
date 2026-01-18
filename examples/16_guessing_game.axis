@@ -1,0 +1,37 @@
+// Example 16: Number Guessing Game Logic
+// Demonstrates game-like control flow
+
+mode script
+
+secret: i32 = 42
+guess: i32 = 0
+attempts: i32 = 0
+
+writeln("Number Guessing Game Simulation")
+writeln("================================")
+writeln("(Simulating guesses to find 42)")
+writeln("")
+
+// Simulate binary search guessing
+low: i32 = 1
+high: i32 = 100
+
+repeat:
+    guess = (low + high) / 2
+    attempts = attempts + 1
+    write("Attempt ")
+    write(attempts)
+    write(": Guessing ")
+    writeln(guess)
+    when guess == secret:
+        writeln("")
+        write("Found it in ")
+        write(attempts)
+        writeln(" attempts!")
+        stop
+    when guess < secret:
+        writeln("  Too low!")
+        low = guess + 1
+    when guess > secret:
+        writeln("  Too high!")
+        high = guess - 1

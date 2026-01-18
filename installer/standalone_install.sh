@@ -199,7 +199,8 @@ download_files() {
         "code_generator.py"
         "executable_format_generator.py"
         "compilation_pipeline.py"
-        "tets.py"
+        "transpiler.py"
+        "assembler.py"
     )
     
     cd "$TEMP_DIR"
@@ -234,7 +235,8 @@ install_axis() {
         "code_generator.py"
         "executable_format_generator.py"
         "compilation_pipeline.py"
-        "tets.py"
+        "transpiler.py"
+        "assembler.py"
     )
     
     for file in "${files[@]}"; do

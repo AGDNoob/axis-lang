@@ -1,0 +1,51 @@
+// Example 10: Comparison Operators
+// All comparison operators in AXIS
+
+mode script
+
+x: i32 = 10
+y: i32 = 20
+
+writeln("Comparison Operators")
+writeln("====================")
+write("x = ")
+writeln(x)
+write("y = ")
+writeln(y)
+writeln("")
+
+write("x == y: ")
+when x == y:
+    writeln("true")
+when x != y:
+    writeln("false")
+
+write("x != y: ")
+when x != y:
+    writeln("true")
+when x == y:
+    writeln("false")
+
+write("x < y: ")
+when x < y:
+    writeln("true")
+when x >= y:
+    writeln("false")
+
+write("x <= y: ")
+when x <= y:
+    writeln("true")
+when x > y:
+    writeln("false")
+
+write("x > y: ")
+when x > y:
+    writeln("true")
+when x <= y:
+    writeln("false")
+
+write("x >= y: ")
+when x >= y:
+    writeln("true")
+when x < y:
+    writeln("false")

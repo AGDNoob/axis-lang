@@ -1,0 +1,34 @@
+// Example 09: Bitwise Logic as Boolean
+// Using &, |, ^ for logic (0 = false, non-zero = true)
+
+mode script
+
+a: i32 = 1
+b: i32 = 0
+
+writeln("Bitwise Logic Demo")
+writeln("==================")
+writeln("a = 1 (true), b = 0 (false)")
+writeln("")
+
+write("a & b (AND) = ")
+writeln(a & b)
+
+write("a | b (OR) = ")
+writeln(a | b)
+
+write("a ^ b (XOR) = ")
+writeln(a ^ b)
+
+writeln("")
+writeln("Logic with conditions:")
+
+write("Is a true? ")
+when a:
+    writeln("yes")
+
+write("Is b true? ")
+when b:
+    writeln("yes")
+when b == 0:
+    writeln("no")

@@ -7,312 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - v1.0.3-beta
+## [1.0.2-beta] - 2026-01-18
 
 ### Added
-- **Output Functions**: `write()` and `writeln()` for stdout output
-- **Input Functions**: `read()`, `readln()`, `readchar()` for stdin input
-  - `readln()` → Read one line until newline (stripped from result)
-  - `read()` → Read all input until EOF
-  - `readchar()` → Read single byte, returns -1 on EOF
-  - `read_failed()` → Returns `True` if last read failed
-- **Type-Aware Input Parsing**: Assign to `str` for raw string, to integer type for auto-parsing
-- **String Literals**: Double-quoted strings with escape sequences (`\n`, `\t`, `\\`, `\"`, `\r`, `\0`)
-- **`str` Type**: String type for storing string pointers (8 bytes)
-- **Multi-Type Output**: `write()`/`writeln()` works with `str`, integers (`i8`-`i64`, `u8`-`u64`), and `bool`
-- Integer output converts to decimal string representation
-- Boolean output displays as "True" or "False"
-- New assembler instructions: `test`, `movsxd`, `div`, `jns`, `movabs`, `imul r64, r64`
-- String data stored in ELF `.rodata` section with proper relocation patching
-- BSS section for global `_read_failed` flag
-- mmap syscall for dynamic buffer allocation
+- **Dual-Mode Execution**: Two execution modes for different use cases
+  - `mode script` - Cross-platform Python transpilation (Windows, macOS, Linux)
+  - `mode compile` - Native x86-64 ELF64 compilation (Linux only)
+- **Source Transpiler**: New `transpiler.py` converts AXIS AST to Python for fast execution
+- **CLI Commands**: `axis check`, `axis info`, `axis update`
+- **20 Example Programs**: Comprehensive examples in `examples/` folder
+- **I/O Functions**: `write()`, `writeln()`, `read()`, `readln()`, `readchar()`, `read_failed()`
+- **String Support**: `str` type, double-quoted literals with escape sequences
+- **Boolean Type**: `True`/`False` literals, `!` negation operator
+- **Arithmetic Negation**: Unary `-` operator for all numeric types
+- **Comments**: Both `//` and `#` style single-line comments
+- **Full Integer Support**: `i8`/`u8`, `i16`/`u16`, `i32`/`u32`, `i64`/`u64`
+- **Bitwise Operators**: `&`, `|`, `^`, `<<`, `>>`
+- **Windows/macOS Uninstallers**: `uninstall.bat` and updated `uninstall.sh`
 
-### Example
-```python
-func main() -> i32:
-    writeln("Hello World!")
-    writeln(42)
-    writeln(True)
-    
-    # Read input
-    name: str = readln()
-    writeln(name)
-    
-    num: i32 = readln()
-    when read_failed():
-        writeln("Invalid!")
-        give 1
-    
-    give 0
-```
+### Changed
+- **Simplified Architecture**: Removed interpreter/bytecode VM in favor of direct transpilation
+- **Renamed `tets.py` to `assembler.py`**: Cleaner naming for x86-64 assembler
+- **Updated Documentation**: Complete README rewrite with dual-mode and cross-platform docs
+- **Installer Reorganization**: All install files now in `installer/` folder
 
----
+### Removed
+- `ast_compiler.py`, `interpreter.py`, `bytecode_vm.py` (replaced by transpiler)
+- `tests/` folder (replaced by `examples/`)
+- Cache system (unnecessary complexity)
 
-## GitHub Release Template (Copy & Paste for v1.0.2-beta)
-
-```markdown
-# AXIS v1.0.2-beta - Multi-Type Integer Support
-
-Second beta release with full support for all integer sizes and new language features.
-
-## 🚀 Installation
-
-### Quick Install (Recommended)
-```bash
-curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/standalone_install.sh | bash
-```
-
-### Or: Download and Install Manually
-```bash
-# Download source code (see Assets below)
-tar -xzf axis-lang-1.0.2-beta.tar.gz
-cd axis-lang-*/installer
-./install.sh --user
-```
-
-## ✨ What's New in v1.0.2-beta
-
-### Boolean Type & Operators
-- **Boolean Literals**: `True` and `False` keywords
-- **Boolean Negation**: Unary `!` operator (`!condition`)
-- **Strict Boolean Conditions**: `when`/`while` require boolean expressions
-
-### Unary Negation
-- **Arithmetic Negation**: Unary `-` operator for all numeric types (`-x`)
-
-### Comments
-- **Line Comments**: Both `//` and `#` style single-line comments
-
-### Full Integer Type Support
-- **i8/u8**: 8-bit integers (-128 to 127 / 0 to 255)
-- **i16/u16**: 16-bit integers (-32768 to 32767 / 0 to 65535)
-- **i32/u32**: 32-bit integers (full range)
-- **i64/u64**: 64-bit integers (full range)
-- Type-aware code generation with proper sign/zero extension
-
-### Bitwise Operators
-- **AND**: `&` operator
-- **OR**: `|` operator
-- **XOR**: `^` operator
-- **Shifts**: `<<` and `>>` operators
-
-### Bug Fixes
-- Fixed right shift to use arithmetic shift (`sar`) for signed types
-- Fixed jump relaxation for large conditional jumps
-- Fixed negative literal handling for i8/i16 types
-
-## 🧪 Quick Start
-
-```bash
-# Create your first program
-cat > hello.axis << 'EOF'
-func main() -> i32:
-    x: i32 = 42
-    y: i32 = -x
-    when y == -42:
-        give 42
-    give 0
-EOF
-
-# Compile and run
-axis build hello.axis -o hello --elf
-./hello
-echo $?  # Output: 42
-```
-
-## 📚 Integer Types Example
-
-```python
-func main() -> i32:
-    # 8-bit integers
-    small: i8 = 127
-    tiny: u8 = 255
-    
-    # 16-bit integers
-    medium: i16 = 32767
-    word: u16 = 65535
-    
-    # 32-bit integers (default)
-    normal: i32 = 2147483647
-    
-    # 64-bit integers
-    large: i64 = 9000000000000000000
-    
-    give 42
-```
-
-## ⚠️ Known Limitations
-
-- **Platform**: Linux x86-64 only
-- **Function Parameters**: Limited implementation
-- **Standard Library**: Not yet available
-- **Unsigned Literals**: Values > signed max need special handling
-
-## 🔧 Upgrade from v1.0.1-beta
-
-No breaking changes. Simply reinstall:
-```bash
-curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/standalone_install.sh | bash
-```
-
----
-
-**Full Changelog**: https://github.com/AGDNoob/axis-lang/blob/main/CHANGELOG.md
-```
-
----
-
-## [Unreleased] - v1.0.2-beta
-
-### ✨ New Features
-
-#### Boolean Type & Operators
-- **Boolean Literals**: `True` and `False` keywords for explicit boolean values
-- **Boolean Negation**: Unary `!` operator for boolean NOT (e.g., `!condition`)
-- **Strict Boolean Conditions**: `when` and `while` now require boolean expressions
-
-#### Unary Negation
-- **Arithmetic Negation**: Unary `-` operator for numeric negation (e.g., `-x`)
-- **Type-Aware Negation**: Correct `neg` instruction for all integer sizes (i8 through i64)
-
-#### Comments
-- **Line Comments**: Support for both `//` and `#` style single-line comments
-- **Mixed Styles**: Both comment styles can be used interchangeably in the same file
-
-#### Multi-Size Integer Support
-- **i8 Type**: Full support for 8-bit signed integers
-  - Sign-extended loads via `movsx`
-  - Byte-sized stores
-  - Proper literal handling with sign extension
-- **i16 Type**: Full support for 16-bit signed integers
-  - Sign-extended loads via `movsx`
-  - Word-sized stores with operand size prefix
-- **i64 Type**: Full support for 64-bit signed integers
-  - 64-bit register operations (rax, rbx, etc.)
-  - Qword-sized stores with REX.W prefix
-  - 64-bit immediate values
-- **Unsigned Types**: u8, u16, u32, u64 with zero-extension via `movzx`
-
-#### Assembler Enhancements
-- **MOVSX Instruction**: Sign-extend byte/word to dword (`0F BE`, `0F BF`)
-- **MOVZX Instruction**: Zero-extend byte/word to dword (`0F B6`, `0F B7`)
-- **Byte Stores**: `mov byte [rbp-X], al` (opcode `88`)
-- **Word Stores**: `mov word [rbp-X], ax` (prefix `66` + opcode `89`)
-- **Qword Stores**: `mov qword [rbp-X], rax` (REX.W + opcode `89`)
-- **Qword Loads**: `mov rax, qword [rbp-X]` (REX.W + opcode `8B`)
-- **64-bit NEG**: `neg rax` with REX.W prefix
-
-### 🐛 Bug Fixes
-- **Right Shift Operator**: Fixed `>>` to use `sar` (arithmetic) instead of `shr` (logical) for signed integers
-- **Jump Relaxation**: Fixed conditional jumps to fall back from short to near form when offset exceeds ±127 bytes
-- **Negative Literals**: Fixed i8/i16 negative literal handling for proper sign extension
-
-### 📝 Documentation
-- **README Keyword Correction**: Fixed documentation to use actual AXIS keywords (`while`/`else` instead of fictional `whilst`/`otherwise`)
-- **Loop Keywords**: Documented both `loop` and `repeat` as valid infinite loop keywords
-
-### 🧪 New Test Suite
-- `stress_test_bool.axis` - Boolean operations and True/False literals
-- `stress_test_negation.axis` - Unary negation for all types
-- `stress_test_comments.axis` - Comment syntax testing
-- `stress_test_i8_limits.axis` - i8 boundary testing (-128 to 127)
-- `stress_test_i16_limits.axis` - i16 boundary testing (-32768 to 32767)
-- `stress_test_i32_limits.axis` - i32 boundary testing
-- `stress_test_i64_limits.axis` - i64 large value testing
-- `stress_test_u8_limits.axis` - u8 boundary testing (0 to 255)
-- `stress_test_u16_limits.axis` - u16 boundary testing (0 to 65535)
-- `stress_test_u32_limits.axis` - u32 large value testing
-- `stress_test_u64_limits.axis` - u64 large value testing
-- `stress_test_all_int_limits.axis` - Combined integer type testing
-- Multiple comprehensive test files for each new feature
-
-### 📋 Technical Improvements
-- Type-aware code generation for all integer sizes
-- Proper register selection (al/ax/eax/rax) based on operand type
-- Sign extension for signed types, zero extension for unsigned types
-- 64-bit immediate value support for i64/u64 types
+### Fixed
+- `ExprStatement` handling in transpiler for function calls as statements
+- Right shift now uses `sar` (arithmetic) for signed types
+- Jump relaxation for large conditional jumps
+- Negative literal handling for i8/i16 types
+- Installer file lists now include all required modules
 
 ---
 
 ## [1.0.1-beta] - 2026-01-14
 
-### ✨ Features
-
-#### Core Language
-- **Type System**: Full support for hardware-native integer types
-  - Signed: `i8`, `i16`, `i32`, `i64`
-  - Unsigned: `u8`, `u16`, `u32`, `u64`
-  - Pointer: `ptr`
-  - Boolean: `bool`
-- **Variables**: Immutable by default with `let`, mutable with `let mut`
-- **Control Flow**: `if/else`, `while`, `break`, `continue`
-- **Functions**: Function definitions with typed parameters and return values
-- **Operators**: Arithmetic (`+`, `-`, `*`, `/`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`)
-
-#### Compiler
-- **Compilation Pipeline**: Complete source-to-machine-code compilation
-  - Phase 1: Tokenization (Lexer)
-  - Phase 2: Syntactic Analysis (Parser with AST)
-  - Phase 3: Semantic Analysis (Type checking)
-  - Phase 4: Code Generation (x86-64 assembly)
-  - Phase 5: Assembly (Machine code generation)
-- **Output Formats**:
-  - ELF64 executables for Linux x86-64
-  - Raw binary machine code
-- **Command-line Interface**: Full-featured CLI with verbose mode
-
-#### Tooling
+### Added
+- **Type System**: `i8`-`i64`, `u8`-`u64`, `ptr`, `bool`
+- **Variables**: `let` (immutable), `let mut` (mutable)
+- **Control Flow**: `when`/`else`, `while`, `stop`, `skip`
+- **Functions**: Typed parameters and return values
+- **Operators**: `+`, `-`, `*`, `/`, `==`, `!=`, `<`, `>`, `<=`, `>=`
+- **Compilation Pipeline**: Tokenizer - Parser - Semantic Analyzer - Code Generator - Assembler
+- **Output Formats**: ELF64 executables, raw binary
 - **VS Code Extension**: Syntax highlighting for `.axis` files
-- **Build Tasks**: Integrated VS Code build tasks
-- **Installer**: Linux installation scripts (user and system-wide)
+- **Linux Installer**: User and system-wide installation scripts
 
-### 📚 Documentation
-- Comprehensive README with language reference
-- Test suite documentation with example programs
-- Installation guide
-- MIT License
-
-### 🧪 Test Programs
-- `test_return42.axis` - Basic return value
-- `test_arithmetic.axis` - Arithmetic operations
-- `test_control_flow.axis` - While loops and conditionals
-- `test_complex.axis` - Complex multi-feature program
-
-### ⚠️ Known Limitations
-- **Platform**: Linux x86-64 only (ELF64 format)
-- **Windows/macOS**: Not supported in this release
-- **Function Parameters**: Limited implementation
-- **Standard Library**: Not yet available
-- **Optimization**: No optimization passes yet
-- **Debugging**: No DWARF debug info generation
-
-### 🔧 Technical Details
-- Compiler written in Python 3
-- Direct x86-64 machine code generation
-- No external assembler or linker required
-- Zero-dependency runtime (no libc)
-- Direct Linux syscalls for system interaction
-
-### 📋 Future Roadmap
-- Function parameters and multiple arguments
-- Arrays and structs
-- Pointers and references
-- Memory operations
-- Standard library
-- Optimization passes
-- More platforms (ARM64, Windows PE format)
+### Known Limitations
+- Linux x86-64 only (ELF64 format)
+- Limited function parameter support
+- No standard library
+- No optimization passes
+- No debug info generation
 
 ---
 
-## [Unreleased]
+## [1.0.0-beta] - 2026-01-12
 
-### Planned for Next Release
-- Function parameter passing
-- Array types
-- Struct definitions
-- Standard library basics
+Initial beta release of the AXIS programming language.
 
 ---
 
-**Note**: This is a BETA release. The language and compiler are under active development. 
-Breaking changes may occur between versions. Not recommended for production use.
+> **Note**: This is beta software under active development. Breaking changes may occur.

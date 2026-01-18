@@ -1,0 +1,65 @@
+// Example 17: ASCII Art
+// Drawing patterns with text
+
+mode script
+
+writeln("ASCII Art Demo")
+writeln("==============")
+writeln("")
+
+// Triangle
+writeln("Triangle:")
+row: i32 = 1
+repeat:
+    col: i32 = 0
+    repeat:
+        write("*")
+        col = col + 1
+        when col >= row:
+            stop
+    writeln("")
+    row = row + 1
+    when row > 5:
+        stop
+
+writeln("")
+
+// Square
+writeln("Square:")
+row = 1
+repeat:
+    col: i32 = 0
+    repeat:
+        write("# ")
+        col = col + 1
+        when col >= 5:
+            stop
+    writeln("")
+    row = row + 1
+    when row > 5:
+        stop
+
+writeln("")
+
+// Diamond top half
+writeln("Diamond:")
+row = 1
+repeat:
+    // Spaces
+    spaces: i32 = 4 - row
+    repeat:
+        when spaces <= 0:
+            stop
+        write(" ")
+        spaces = spaces - 1
+    // Stars
+    stars: i32 = row * 2 - 1
+    repeat:
+        when stars <= 0:
+            stop
+        write("*")
+        stars = stars - 1
+    writeln("")
+    row = row + 1
+    when row > 4:
+        stop

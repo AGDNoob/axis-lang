@@ -98,7 +98,9 @@ class Lexer:
         'loop': TokenType.LOOP,
         'repeat': TokenType.REPEAT,
         'break': TokenType.BREAK,
+        'stop': TokenType.BREAK,      # alias for break
         'continue': TokenType.CONTINUE,
+        'skip': TokenType.CONTINUE,   # alias for continue
         'syscall': TokenType.SYSCALL,
         'i8': TokenType.I8,
         'i16': TokenType.I16,

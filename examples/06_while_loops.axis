@@ -1,0 +1,20 @@
+// Example 06: While Loops
+// Using 'while' for condition-based loops
+
+mode script
+
+writeln("Power of 2:")
+n: i32 = 1
+while n <= 128:
+    writeln(n)
+    n = n * 2
+
+writeln("")
+writeln("Sum 1 to 10:")
+sum: i32 = 0
+i: i32 = 1
+while i <= 10:
+    sum = sum + i
+    i = i + 1
+write("Total: ")
+writeln(sum)

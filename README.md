@@ -2,394 +2,236 @@
 
 ![Version](https://img.shields.io/badge/version-1.0.2--beta-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86--64-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
 
-**A minimalist system programming language with Python-like syntax and C-level performance.**
+**A minimalist programming language with Python-like syntax and dual execution modes.**
 
-AXIS compiles directly to x86-64 machine code without requiring external linkers, assemblers, or runtime libraries.
-
-**⚠️ Platform Requirements:** Linux x86-64 only (Ubuntu, Debian, Fedora, Arch, etc.)
+AXIS can run as an interpreted scripting language OR compile directly to x86-64 machine code.
 
 ---
 
 ## 🚀 Quick Start
 
-### One-Line Install (Recommended)
+### Installation
 
+**All Platforms (Windows, macOS, Linux):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/standalone_install.sh | bash
-```
-
-This will:
-- ✅ Install AXIS compiler to `~/.local/bin`
-- ✅ Set up the `axis` command
-- ✅ Optionally install VS Code extension
-- ✅ Configure your PATH automatically
-
-### Or: Manual Installation
-
-```bash
-# Clone repository
 git clone https://github.com/AGDNoob/axis-lang
 cd axis-lang
-
-# Install
-cd installer
-./install.sh --user
 ```
 
-### Your First Program
+No dependencies required beyond Python 3.7+.
+
+**Linux only (optional CLI):**
+```bash
+cd installer && ./install.sh --user
+```
+
+### Hello World (Script Mode)
+
+Works on **Windows**, **macOS**, and **Linux**:
 
 ```bash
-# Write your first program
+# Windows (PowerShell)
+python compilation_pipeline.py run hello.axis
+
+# macOS/Linux
+python3 compilation_pipeline.py run hello.axis
+```
+
+### Hello World (Compile Mode)
+
+**Linux x86-64 only** - creates native ELF executable:
+```bash
 cat > hello.axis << 'EOF'
+mode compile
+
 func main() -> i32:
     give 42
 EOF
 
-# Compile to executable
-axis build hello.axis -o hello --elf
-
-# Run
-./hello
-echo $?  # Output: 42
+python3 compilation_pipeline.py hello.axis -o hello --elf
+./hello && echo $?  # Output: 42
 ```
 
 ---
 
-## 📖 Language Overview
+## 📖 Dual-Mode Execution
 
-### Syntax at a Glance
+AXIS supports two execution modes:
 
-AXIS uses Python-like syntax with unique keywords:
+| Mode | Declaration | Execution | Speed | Use Case |
+|------|-------------|-----------|-------|----------|
+| **Script** | `mode script` | Transpiled to Python | Fast startup | Scripting, prototyping |
+| **Compile** | `mode compile` | Native x86-64 ELF | Maximum performance | Systems programming |
 
-| AXIS | Traditional | Description |
-|------|-------------|-------------|
-| `func` | `fn`/`function` | Define a function |
-| `give` | `return` | Return a value |
-| `when` | `if` | Conditional branch |
-| `else` | `else` | Else branch |
-| `while` | `while` | Conditional loop |
-| `loop`/`repeat` | `loop` | Infinite loop |
-| `True`/`False` | `true`/`false` | Boolean literals |
+### Script Mode
+
+Script mode transpiles AXIS to Python and executes it. ~30% overhead vs native Python.
 
 ```python
-func main() -> i32:
-    x: i32 = 42
-    when x > 0:
-        give x
-    else:
-        give -x
+mode script
+
+writeln("Script mode example")
+x: i32 = 10
+writeln(x)
 ```
 
-### Philosophy
+Run with:
+```bash
+python compilation_pipeline.py run script.axis
+```
 
-AXIS follows four core principles:
+### Compile Mode
 
-1. **Zero-Cost Abstractions** – You only pay for what you use
-2. **Explicit Control** – Stack, memory, and OS interactions are visible
-3. **Direct Mapping** – Source code maps predictably to assembly
-4. **No Magic** – No hidden allocations, no garbage collector, no virtual machine
+Compile mode generates native Linux x86-64 executables with zero runtime dependencies.
 
-### Design Goals
+```python
+mode compile
 
-- **Learnable in ≤1 week** – Small, focused language
-- **Immediately productive** – Build real programs from day one
-- **Predictable performance** – Performance ceiling = C/C++
-- **Systems access** – Direct syscalls, full OS integration
+func main() -> i32:
+    x: i32 = 10
+    y: i32 = 20
+    give x + y
+```
+
+Build with:
+```bash
+python compilation_pipeline.py program.axis -o program --elf
+./program
+```
 
 ---
 
 ## 📚 Language Reference
 
-### Type System
-
-AXIS provides hardware-native integer types with explicit sizing:
-
-```python
-# Signed integers
-i8      # -128 to 127
-i16     # -32,768 to 32,767
-i32     # -2,147,483,648 to 2,147,483,647
-i64     # -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807
-
-# Unsigned integers
-u8      # 0 to 255
-u16     # 0 to 65,535
-u32     # 0 to 4,294,967,295
-u64     # 0 to 18,446,744,073,709,551,615
-
-# Other types
-bool    # True or False
-ptr     # 64-bit pointer
-```
-
-**Type safety:** All variables must be explicitly typed. No implicit conversions.
-
 ### Variables
 
 ```python
-# Variable declaration with type annotation
-x: i32 = 10
-
-# Variables can be reassigned
-y: i32 = 20
-y = y + 5  # y is now 25
-
-# Different integer sizes
-small: i8 = 127
-medium: i16 = 32767
-large: i64 = 9000000000000000000
+x: i32 = 42          # 32-bit signed integer
+y: i64 = 1000000     # 64-bit signed integer
+small: i8 = 127      # 8-bit signed integer
+flag: bool = True    # Boolean
 ```
 
-### Functions
+**Types:** `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `bool`, `str`, `ptr`
+
+### Output
 
 ```python
-# Basic function with return type
+write("Hello ")      # Output without newline
+writeln("World!")    # Output with newline
+writeln(42)          # Works with numbers
+```
+
+### Conditionals
+
+```python
+when x > 0:
+    writeln("positive")
+
+when x < 0:
+    writeln("negative")
+```
+
+### Loops
+
+```python
+# Infinite loop with break
+i: i32 = 0
+repeat:
+    writeln(i)
+    i = i + 1
+    when i >= 10:
+        stop
+
+# While loop
+while i < 20:
+    i = i + 1
+```
+
+**Keywords:**
+- `repeat:` – Infinite loop
+- `while condition:` – Conditional loop  
+- `stop` – Break out of loop
+- `skip` – Continue to next iteration
+
+### Functions (Script Mode)
+
+```python
+mode script
+
+func greet():
+    writeln("Hello!")
+
 func add(a: i32, b: i32) -> i32:
     give a + b
 
-# Entry point (must return i32)
+greet()
+result: i32 = add(10, 20)
+writeln(result)
+```
+
+### Functions (Compile Mode)
+
+```python
+mode compile
+
 func main() -> i32:
-    result: i32 = add(10, 20)
-    give result
-```
-
-**Keywords:**
-- `func` – Define a function
-- `give` – Return a value (like `return`)
-
-**Calling convention:** System V AMD64 (Linux)
-- First 6 arguments: `rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`
-- Return value: `rax` (or `eax` for i32)
-
-### Control Flow
-
-#### Conditionals (when/else)
-
-```python
-func abs(x: i32) -> i32:
-    when x < 0:
-        give -x
-    else:
-        give x
-
-# Without else
-func positive_check(x: i32) -> bool:
-    when x > 0:
-        give True
-    give False
-```
-
-**Keywords:**
-- `when` – Conditional branch (like `if`)
-- `else` – Else branch
-
-#### Loops (while/loop/repeat)
-
-```python
-# while loop
-func count() -> i32:
-    i: i32 = 0
-    while i < 10:
-        i = i + 1
-    give i  # 10
-
-# repeat loop (infinite loop, use break to exit)
-func find_value() -> i32:
-    i: i32 = 0
-    repeat:
-        i = i + 1
-        when i >= 10:
-            break
-    give i
-```
-
-**Keywords:**
-- `while` – Conditional loop
-- `loop` / `repeat` – Infinite loop (requires `break` to exit)
-
-#### Break and Continue
-
-```python
-func find_value() -> i32:
-    i: i32 = 0
-    
-    while i < 100:
-        i = i + 1
-        
-        when i == 50:
-            break      # Exit loop
-        
-        when i < 10:
-            continue   # Skip to next iteration
-    
-    give i
+    x: i32 = 42
+    give x
 ```
 
 ### Operators
 
-#### Arithmetic
+**Arithmetic:** `+`, `-`, `*`, `/`, `%`
 
-```python
-a: i32 = 10 + 5    # Addition: 15
-b: i32 = 10 - 5    # Subtraction: 5
-c: i32 = 10 * 5    # Multiplication: 50
-d: i32 = 10 / 5    # Division: 2
-e: i32 = 10 % 3    # Modulo: 1
-f: i32 = -10       # Negation (unary minus)
-```
+**Comparison:** `==`, `!=`, `<`, `<=`, `>`, `>=`
 
-#### Bitwise
-
-```python
-a: i32 = 5 & 3     # AND: 1
-b: i32 = 5 | 3     # OR: 7
-c: i32 = 5 ^ 3     # XOR: 6
-d: i32 = 5 << 2    # Left shift: 20
-e: i32 = 20 >> 2   # Right shift (arithmetic): 5
-```
-
-#### Comparison
-
-```python
-x == y    # Equal
-x != y    # Not equal
-x < y     # Less than
-x <= y    # Less than or equal
-x > y     # Greater than
-x >= y    # Greater than or equal
-```
-
-All comparisons return `bool` (True or False).
-
-#### Boolean
-
-```python
-a: bool = True     # Boolean true literal
-b: bool = False    # Boolean false literal
-c: bool = !a       # Boolean NOT: False
-```
-
-#### Assignment
-
-```python
-x = y       # Simple assignment
-x = x + 1   # Compound expression
-```
-
-### Literals
-
-```python
-# Decimal
-dec: i32 = 42
-
-# Hexadecimal
-hex_val: i32 = 0xFF       # 255
-hex2: i32 = 0x1A2B        # 6699
-
-# Binary
-bin_val: i32 = 0b1010     # 10
-bin2: i32 = 0b11111111    # 255
-
-# Negative
-neg: i32 = -100
-
-# Boolean
-flag: bool = True
-done: bool = False
-```
-
-### Output
-
-AXIS provides `write()` and `writeln()` for output to stdout:
-
-```python
-func main() -> i32:
-    # write() outputs without newline
-    write("Hello ")
-    write("World!")
-    
-    # writeln() adds newline automatically
-    writeln("")        # Just a newline
-    writeln("Done!")   # Text + newline
-    
-    # Works with all types
-    writeln(42)        # Integer output (as decimal)
-    writeln(-123)      # Negative numbers work too
-    writeln(True)      # Boolean outputs as "True"
-    writeln(False)     # Boolean outputs as "False"
-    
-    give 0
-```
-
-**Output functions:**
-- `write(expr)` – Output value without newline
-- `writeln(expr)` – Output value with newline
-
-**Supported types:** `str`, `i8`-`i64`, `u8`-`u64`, `bool`
-
-**String literals:** Use double quotes (`"Hello World!"`) with escape sequences (`\n`, `\t`, `\\`, `\"`)
-
-### Input
-
-AXIS provides `read()`, `readln()`, and `readchar()` for reading from stdin:
-
-```python
-func main() -> i32:
-    # Read a line as string (strips newline)
-    writeln("Enter your name:")
-    name: str = readln()
-    write("Hello, ")
-    writeln(name)
-    
-    # Read a line and parse as integer
-    writeln("Enter a number:")
-    num: i32 = readln()
-    
-    # Check for parse errors
-    when read_failed():
-        writeln("That wasn't a valid number!")
-        give 1
-    
-    writeln(num * 2)
-    
-    # Read a single character (returns ASCII code or -1 for EOF)
-    c: i32 = readchar()
-    when c == -1:
-        writeln("EOF detected")
-    
-    give 0
-```
-
-**Input functions:**
-- `readln()` → Read one line until `\n` (newline stripped)
-- `read()` → Read all input until EOF
-- `readchar()` → Read single byte, returns -1 on EOF
-- `read_failed()` → Returns `True` if last read failed (empty input or parse error)
-
-**Type-aware parsing:**
-- Assign to `str` → Returns the raw string pointer
-- Assign to integer → Parses decimal number from input
-- Invalid integers return 0 with `read_failed() == True`
-
-**Memory model:** Read functions use mmap for buffer allocation. The MVP uses intentional memory leaks (no deallocation).
+**Bitwise:** `&`, `|`, `^`, `<<`, `>>`
 
 ### Comments
 
-```rust
-// C-style single-line comments
-# Python-style single-line comments
-
-func example() -> i32:
-    // This is a C-style comment
-    x: i32 = 10  # This is a Python-style comment
-    
-    # Both styles work anywhere
-    // Use whichever you prefer
-    
-    give x
+```python
+// C-style comment
+# Python-style comment
 ```
 
-**Note:** AXIS supports both `//` and `#` for comments. Multi-line comments use multiple single-line comments.
+---
+
+## 📁 Examples
+
+The `examples/` folder contains 20 example programs:
+
+| # | Example | Description |
+|---|---------|-------------|
+| 01 | `hello_world.axis` | Basic output |
+| 02 | `variables.axis` | Variable types |
+| 03 | `arithmetic.axis` | Math operations |
+| 04 | `conditionals.axis` | `when` branching |
+| 05 | `loops.axis` | `repeat` loops |
+| 06 | `while_loops.axis` | `while` loops |
+| 07 | `break_continue.axis` | `stop` and `skip` |
+| 08 | `nested_loops.axis` | Multiplication table |
+| 09 | `boolean_logic.axis` | Bitwise logic |
+| 10 | `comparison.axis` | Comparison operators |
+| 11 | `bitwise.axis` | Bit manipulation |
+| 12 | `functions.axis` | Function definitions |
+| 13 | `fibonacci.axis` | Fibonacci sequence |
+| 14 | `prime_numbers.axis` | Prime checker |
+| 15 | `factorial.axis` | Factorial calculation |
+| 16 | `guessing_game.axis` | Binary search |
+| 17 | `ascii_art.axis` | Pattern drawing |
+| 18 | `gcd.axis` | Euclidean algorithm |
+| 19 | `fizzbuzz.axis` | Classic challenge |
+| 20 | `compile_mode.axis` | Native compilation |
+
+Run examples:
+```bash
+# Script mode (examples 01-19)
+python compilation_pipeline.py run examples/01_hello_world.axis
+
+# Compile mode (example 20)
+python compilation_pipeline.py examples/20_compile_mode.axis -o demo --elf
+```
 
 ---
 
@@ -398,408 +240,122 @@ func example() -> i32:
 ### Compilation Pipeline
 
 ```
-┌─────────────────────┐
-│  Source Code        │  .axis file
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Lexer              │  tokenization_engine.py
-│  (Tokenization)     │  → Token stream
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Parser             │  syntactic_analyzer.py
-│  (Syntax Analysis)  │  → Abstract Syntax Tree (AST)
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Semantic Analyzer  │  semantic_analyzer.py
-│  (Type Checking)    │  → Annotated AST
-└──────────┬──────────┘  → Symbol table
-           │              → Stack layout
-           ▼
-┌─────────────────────┐
-│  Code Generator     │  code_generator.py
-│  (x86-64)           │  → Assembly instructions
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Assembler          │  tets.py
-│  (Machine Code)     │  → Raw x86-64 machine code
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  ELF64 Generator    │  executable_format_generator.py
-│  (Executable)       │  → Linux executable
-└─────────────────────┘
+Source (.axis)
+     │
+     ▼
+┌─────────────┐
+│   Lexer     │  tokenization_engine.py
+└──────┬──────┘
+       ▼
+┌─────────────┐
+│   Parser    │  syntactic_analyzer.py
+└──────┬──────┘
+       │
+       ├──────────────────┐
+       ▼                  ▼
+┌─────────────┐    ┌─────────────┐
+│ Transpiler  │    │  Semantic   │
+│ (Script)    │    │  Analyzer   │
+└──────┬──────┘    └──────┬──────┘
+       ▼                  ▼
+┌─────────────┐    ┌─────────────┐
+│   Python    │    │  Code Gen   │
+│   exec()    │    │  (x86-64)   │
+└─────────────┘    └──────┬──────┘
+                          ▼
+                   ┌─────────────┐
+                   │  Assembler  │
+                   └──────┬──────┘
+                          ▼
+                   ┌─────────────┐
+                   │  ELF64      │
+                   │  Executable │
+                   └─────────────┘
 ```
 
-### Runtime Model
+### Project Structure
 
-**No runtime library.** AXIS executables contain only:
-
-1. **ELF64 Header** (64 bytes)
-2. **Program Header** (56 bytes)
-3. **_start stub** (16 bytes) – Calls `main()` and invokes `exit` syscall
-4. **User code** – Your compiled functions
-
-**Entry point:**
-```asm
-_start:
-    xor edi, edi        ; argc = 0
-    call main           ; Call user's main()
-    mov edi, eax        ; exit_code = main's return value
-    mov eax, 60         ; syscall: exit
-    syscall             ; exit(code)
 ```
-
-### Memory Layout
-
-**Virtual address space:**
-- Base: `0x400000` (4MB, Linux standard)
-- Code: `0x401000` (page-aligned at 4KB)
-- Stack: Grows downward from high addresses
-
-**Function frame:**
+axis-lang/
+├── compilation_pipeline.py    # Main driver
+├── tokenization_engine.py     # Lexer
+├── syntactic_analyzer.py      # Parser + AST
+├── semantic_analyzer.py       # Type checker
+├── code_generator.py          # x86-64 codegen
+├── assembler.py               # Machine code
+├── executable_format_generator.py  # ELF64
+├── transpiler.py              # Python transpiler
+├── examples/                  # 20 example programs
+├── axis-vscode/               # VS Code extension
+└── installer/                 # Linux installer
 ```
-[rbp+0]    = saved rbp
-[rbp-4]    = first local variable (i32)
-[rbp-8]    = second local variable
-...
-```
-
-Stack size is computed at compile-time and 16-byte aligned.
 
 ---
 
 ## 🛠️ Usage
 
-### Installation
-
-**Prerequisites:**
-- **Operating System:** Linux x86-64 (Ubuntu, Debian, Fedora, Arch, openSUSE, etc.)
-- **Python:** 3.7 or higher
-- **Not supported:** Windows, macOS, ARM/ARM64
+### Commands
 
 ```bash
-git clone https://github.com/AGDNoob/axis-lang
-cd axis-lang
-```
+# Run script mode
+python compilation_pipeline.py run program.axis
 
-No additional dependencies required (Python 3.7+ only).
+# Compile to ELF64 (Linux)
+python compilation_pipeline.py program.axis -o output --elf
 
-### Compiling Programs
+# Compile with verbose output
+python compilation_pipeline.py program.axis -o output --elf -v
 
-**Generate ELF64 executable (Linux):**
-```bash
-python compilation_pipeline.py program.axis -o program --elf
-chmod +x program
-./program
-```
-
-**Generate raw machine code:**
-```bash
-python compilation_pipeline.py program.axis -o program.bin
-```
-
-**Verbose output (show assembly):**
-```bash
-python compilation_pipeline.py program.axis -o program --elf -v
-```
-
-**Hex dump only (no output file):**
-```bash
+# Show hex dump only
 python compilation_pipeline.py program.axis
 ```
 
-### VS Code Integration
+### VS Code Extension
 
-AXIS includes a VS Code extension for syntax highlighting.
-
-**Install:**
-```bash
-# Extension is already installed in: axis-vscode/
-# Reload VS Code (Ctrl+Shift+P → "Developer: Reload Window")
-```
-
-**Features:**
-- Syntax highlighting for `.axis` files
-- Auto-closing brackets
-- Line comments via `Ctrl+/`
-- Build task: `Ctrl+Shift+B`
+The `axis-vscode/` folder contains syntax highlighting for `.axis` files.
 
 ---
 
-## 📝 Examples
+## ⚠️ Platform Requirements
 
-### Hello World (Exit Code)
+**Compile mode:**
+- Linux x86-64 only (Ubuntu, Debian, Fedora, Arch, etc.)
+- Generated binaries are native ELF64 executables
 
-```python
-func main() -> i32:
-    give 42
-```
-
-```bash
-$ python compilation_pipeline.py hello.axis -o hello --elf
-$ ./hello
-$ echo $?
-42
-```
-
-### Arithmetic
-
-```python
-func main() -> i32:
-    x: i32 = 10
-    y: i32 = 20
-    z: i32 = x + y
-    give z  # 30
-```
-
-### Loops
-
-```python
-func factorial(n: i32) -> i32:
-    result: i32 = 1
-    i: i32 = 1
-    
-    while i <= n:
-        result = result * i
-        i = i + 1
-    
-    give result
-
-func main() -> i32:
-    give factorial(5)  # 120
-```
-
-### Conditionals
-
-```python
-func max(a: i32, b: i32) -> i32:
-    when a > b:
-        give a
-    give b
-
-func clamp(x: i32, min_val: i32, max_val: i32) -> i32:
-    when x < min_val:
-        give min_val
-    when x > max_val:
-        give max_val
-    give x
-```
-
-### Complex Example
-
-```python
-func is_prime(n: i32) -> bool:
-    when n <= 1:
-        give False
-    
-    i: i32 = 2
-    while i < n:
-        when n % i == 0:
-            give False
-        i = i + 1
-    
-    give True
-
-func count_primes(limit: i32) -> i32:
-    count: i32 = 0
-    i: i32 = 2
-    
-    while i < limit:
-        when is_prime(i):
-            count = count + 1
-        i = i + 1
-    
-    give count
-
-func main() -> i32:
-    give count_primes(100)
-```
-
----
-
-## 🔧 Technical Details
-
-### Calling Convention (System V AMD64)
-
-**Arguments:**
-| Position | i32 Register | i64 Register |
-|----------|-------------|--------------|
-| 1st      | edi         | rdi          |
-| 2nd      | esi         | rsi          |
-| 3rd      | edx         | rdx          |
-| 4th      | ecx         | rcx          |
-| 5th      | r8d         | r8           |
-| 6th      | r9d         | r9           |
-| 7+       | Stack       | Stack        |
-
-**Return value:** `eax` (i32) or `rax` (i64)
-
-**Preserved registers:** `rbx`, `rbp`, `r12`-`r15`
-
-### ELF64 Structure
-
-```
-Offset  | Size | Section
---------|------|-------------------
-0x0000  | 64   | ELF Header
-0x0040  | 56   | Program Header (PT_LOAD)
-0x0078  | ...  | Padding (to 0x1000)
-0x1000  | 16   | _start stub
-0x1010  | ...  | User code
-```
-
-**Entry point:** `0x401000` (_start)
-
-### Syscalls (Linux x86-64)
-
-Currently implemented:
-- `exit(code)`: rax=60, rdi=exit_code
-- `write(fd, buf, len)`: rax=1
-- `read(fd, buf, len)`: rax=0
-- `mmap(addr, len, prot, flags, fd, offset)`: rax=9
-
----
-
-## ⚠️ Current Limitations (MVP)
-
-### Not Yet Implemented
-
-- [ ] Function parameters (only `main()` without args works)
-- [ ] More than 6 function arguments
-- [ ] Structs and arrays
-- [ ] Pointer dereferencing
-- [ ] Global variables
-- [ ] Heap allocations (uses mmap with intentional leaks)
-- [ ] Type casting
-- [ ] Floating-point types
-- [ ] Standard library
-
-### Implemented ✓
-
-- [x] ELF64 executable format
-- [x] Stack-based local variables
-- [x] Control flow (`when`/`else`, `while`, `loop`/`repeat`, `break`, `continue`)
-- [x] Arithmetic (`+`, `-`, `*`, `/`, `%`)
-- [x] Bitwise (`&`, `|`, `^`, `<<`, `>>`)
-- [x] Comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`)
-- [x] Boolean type with `True`/`False` literals
-- [x] Unary operators (`-`, `!`)
-- [x] Comments (`//` and `#`)
-- [x] Function calls (basic)
-- [x] All integer types (i8-i64, u8-u64)
-- [x] VS Code syntax highlighting
-- [x] String literals and data section
-- [x] `write`/`writeln` syscall (stdout)
-- [x] `read`/`readln`/`readchar` syscall (stdin)
-
----
-
-## 🗺️ Roadmap
-
-### Phase 6: I/O ✅ Complete
-- [x] `write` syscall (stdout)
-- [x] `writeln` with automatic newline
-- [x] String literals and data section
-- [x] `read`/`readln` syscall (stdin)
-- [x] `readchar` single byte input
-- [x] `read_failed()` error checking
-
-### Phase 7: Advanced Features
-- [ ] Function parameters (full System V ABI)
-- [ ] Structs
-- [ ] Arrays (fixed-size)
-- [ ] Pointer arithmetic
-- [ ] Type casting
-
-### Phase 8: Standard Library
-- [ ] Memory allocation (`mmap`, `brk`)
-- [ ] File I/O
-- [ ] Command-line arguments
-- [ ] Environment variables
-
-### Phase 9: Developer Experience
-- [ ] Language Server Protocol (LSP)
-- [ ] Error messages with source locations
-- [ ] Debugger support (DWARF)
-- [ ] REPL (interactive mode)
-
-### Phase 10: Optimization
-- [ ] Dead code elimination
-- [ ] Constant folding
-- [ ] Register allocation optimization
-- [ ] Inline functions
+**Script mode:**
+- Any platform with Python 3.7+
+- Windows, macOS, Linux all supported
 
 ---
 
 ## 📊 Performance
 
-**Compilation:**
-- ~100ms for small programs (< 100 lines)
-- No external tools required
-
-**Runtime:**
-- **Zero overhead** – No runtime library
-- **Direct syscalls** – No libc indirection
-- **Native machine code** – Same performance as C/C++
-- **Minimal binary size** – ~4KB + code size
-
-**Comparison:**
-
-| Metric          | AXIS     | C (gcc) | Python |
-|-----------------|----------|---------|--------|
-| Startup time    | <1ms     | <1ms    | ~20ms  |
-| Binary size     | ~4KB     | ~15KB   | N/A    |
-| Runtime deps    | None     | libc    | CPython|
-| Compilation     | ~100ms   | ~200ms  | N/A    |
+| Mode | Overhead | Binary Size | Dependencies |
+|------|----------|-------------|--------------|
+| Script | ~30% vs Python | N/A | Python 3.7+ |
+| Compile | Native speed | ~4KB | None |
 
 ---
 
-## 🏛️ Project Structure
+## 🗺️ Roadmap
 
-```
-axis-lang/
-├── tokenization_engine.py          # Lexer
-├── syntactic_analyzer.py           # Parser + AST
-├── semantic_analyzer.py            # Type checker + Symbol table
-├── code_generator.py               # x86-64 code generator
-├── executable_format_generator.py  # ELF64 writer
-├── compilation_pipeline.py         # Main compiler driver
-├── tets.py                         # Assembler backend
-├── axis-vscode/                    # VS Code extension
-│   ├── package.json
-│   ├── language-configuration.json
-│   └── syntaxes/
-│       └── axis.tmLanguage.json
-├── tests/                          # Test programs
-│   ├── test_arithmetic.axis
-│   ├── test_control_flow.axis
-│   └── syntax_test.axis
-├── .vscode/
-│   └── tasks.json                  # Build tasks
-└── README.md
-```
+### Implemented ✓
+- [x] Dual-mode execution (script/compile)
+- [x] Python transpiler for script mode
+- [x] ELF64 native compilation
+- [x] All integer types (i8-i64, u8-u64)
+- [x] Control flow (when, while, repeat, stop, skip)
+- [x] Functions
+- [x] Arithmetic and bitwise operators
+- [x] I/O (write, writeln, read, readln, readchar)
+- [x] VS Code syntax highlighting
 
----
-
-## 🤝 Contributing
-
-AXIS is an experimental language project. Contributions welcome!
-
-**Areas of interest:**
-- Standard library design
-- Optimization passes
-- Language Server Protocol
-- More architectures (ARM64, RISC-V)
-- Windows support (PE format)
+### Planned
+- [ ] Function parameters in compile mode
+- [ ] Structs and arrays
+- [ ] Pointer arithmetic
+- [ ] Standard library
+- [ ] Language Server Protocol (LSP)
 
 ---
 
@@ -809,21 +365,4 @@ MIT License
 
 ---
 
-## 🎓 Learn More
-
-**Recommended reading:**
-- [x86-64 Assembly Programming](https://www.cs.cmu.edu/~fp/courses/15213-s07/misc/asm64-handout.pdf)
-- [System V AMD64 ABI](https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf)
-- [ELF Format Specification](https://refspecs.linuxfoundation.org/elf/elf.pdf)
-- [Crafting Interpreters](https://craftinginterpreters.com/)
-
-**Similar projects:**
-- [Zig](https://ziglang.org/) – Systems language with manual memory management
-- [Odin](https://odin-lang.org/) – Simple, fast, modern alternative to C
-- [V](https://vlang.io/) – Fast compilation, minimal dependencies
-
----
-
-**Built with precision. No runtime overhead. Pure machine code.**
-
-*AXIS – Where Python meets the metal.*
+**AXIS – Python syntax. Native performance. Your choice.**

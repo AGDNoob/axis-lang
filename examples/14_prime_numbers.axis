@@ -1,0 +1,25 @@
+// Example 14: Prime Number Checker
+// Check if numbers are prime
+
+mode script
+
+writeln("Prime Numbers from 2 to 50:")
+writeln("============================")
+
+num: i32 = 2
+isPrime: i32 = 1
+divisor: i32 = 2
+repeat:
+    isPrime = 1
+    divisor = 2
+    while divisor * divisor <= num:
+        when num % divisor == 0:
+            isPrime = 0
+        divisor = divisor + 1
+    when isPrime:
+        write(num)
+        write(" ")
+    num = num + 1
+    when num > 50:
+        stop
+writeln("")

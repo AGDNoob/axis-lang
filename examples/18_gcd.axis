@@ -1,0 +1,41 @@
+// Example 18: GCD (Greatest Common Divisor)
+// Euclidean algorithm
+
+mode script
+
+writeln("GCD Calculator (Euclidean Algorithm)")
+writeln("=====================================")
+
+// Calculate GCD of 48 and 18
+a: i32 = 48
+b: i32 = 18
+
+write("Finding GCD of ")
+write(a)
+write(" and ")
+writeln(b)
+writeln("")
+
+// Save originals for display
+origA: i32 = a
+origB: i32 = b
+temp: i32 = 0
+
+while b != 0:
+    write("  ")
+    write(a)
+    write(" mod ")
+    write(b)
+    write(" = ")
+    temp = a % b
+    writeln(temp)
+    a = b
+    b = temp
+
+writeln("")
+write("GCD(")
+write(origA)
+write(", ")
+write(origB)
+write(") = ")
+writeln(a)

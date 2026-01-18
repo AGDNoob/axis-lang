@@ -1,6 +1,0 @@
-// AXIS Example 01: Hello World
-// simpelste programm ever - gibt nur exit code zurück
-// expected: 42
-
-func main() -> i32:
-    give 42

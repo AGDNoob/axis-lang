@@ -1,0 +1,33 @@
+// Example 04: Conditionals
+// Using 'when' for branching
+
+mode script
+
+age: i32 = 25
+
+writeln("Conditionals Demo")
+writeln("=================")
+write("Age: ")
+writeln(age)
+
+when age >= 18:
+    writeln("You are an adult")
+when age < 18:
+    writeln("You are a minor")
+
+// Score grading
+score: i32 = 85
+
+write("Score: ")
+writeln(score)
+
+when score >= 90:
+    writeln("Grade: A - Excellent!")
+when score >= 80:
+    when score < 90:
+        writeln("Grade: B - Good!")
+when score >= 70:
+    when score < 80:
+        writeln("Grade: C - Passing")
+when score < 70:
+    writeln("Grade: F - Needs improvement")

@@ -1,0 +1,24 @@
+// Example 12: Functions
+// Defining and calling functions
+
+mode script
+
+func greet():
+    writeln("Hello from a function!")
+
+func printLine():
+    writeln("------------------------")
+
+func showMenu():
+    printLine()
+    writeln("  AXIS Demo Menu")
+    printLine()
+    writeln("  1. Start")
+    writeln("  2. Options")
+    writeln("  3. Exit")
+    printLine()
+
+// Call the functions
+greet()
+writeln("")
+showMenu()

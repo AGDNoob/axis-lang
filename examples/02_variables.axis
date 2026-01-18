@@ -1,0 +1,21 @@
+// Example 02: Variables and Types
+// AXIS supports various integer types
+
+mode script
+
+// Declare variables with type annotations
+x: i32 = 42
+y: i64 = 1000000
+small: i8 = 127
+medium: i16 = 32000
+
+writeln("Variables Demo")
+writeln("==============")
+write("x (i32) = ")
+writeln(x)
+write("y (i64) = ")
+writeln(y)
+write("small (i8) = ")
+writeln(small)
+write("medium (i16) = ")
+writeln(medium)

@@ -1,0 +1,30 @@
+// Example 03: Arithmetic Operations
+// Basic math operations in AXIS
+
+mode script
+
+a: i32 = 20
+b: i32 = 7
+
+writeln("Arithmetic Operations")
+writeln("=====================")
+write("a = ")
+writeln(a)
+write("b = ")
+writeln(b)
+writeln("")
+
+write("a + b = ")
+writeln(a + b)
+
+write("a - b = ")
+writeln(a - b)
+
+write("a * b = ")
+writeln(a * b)
+
+write("a / b = ")
+writeln(a / b)
+
+write("a % b = ")
+writeln(a % b)
