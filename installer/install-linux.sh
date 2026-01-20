@@ -15,6 +15,18 @@ MIN_PYTHON_VERSION="3.7"
 INSTALL_DIR="$HOME/.local/lib/axis"
 BIN_DIR="$HOME/.local/bin"
 
+# Available Python versions (for display in selection dialog)
+# Note: Actual version installed depends on system package manager
+PYTHON_VERSIONS=(
+    "System Default"
+    "Python 3.13"
+    "Python 3.12" 
+    "Python 3.11"
+    "Python 3.10"
+    "Python 3.9"
+    "Python 3.8"
+)
+
 FILES_TO_DOWNLOAD=(
     "compilation_pipeline.py"
     "tokenization_engine.py"
@@ -22,6 +34,9 @@ FILES_TO_DOWNLOAD=(
     "semantic_analyzer.py"
     "code_generator.py"
     "executable_format_generator.py"
+    "assembler.py"
+    "transpiler.py"
+    "requirements.txt"
 )
 
 # ============================================================================
@@ -185,6 +200,7 @@ get_python_version() {
 
 install_python() {
     local distro=""
+    local version_suffix="${1:-}"  # e.g., "3.12" or empty for default
     
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -194,10 +210,21 @@ install_python() {
     case $distro in
         ubuntu|debian|linuxmint|pop)
             sudo apt-get update
-            sudo apt-get install -y python3 python3-pip
+            if [ -n "$version_suffix" ]; then
+                # Try to install specific version
+                sudo apt-get install -y python${version_suffix} python3-pip 2>/dev/null || \
+                sudo apt-get install -y python3 python3-pip
+            else
+                sudo apt-get install -y python3 python3-pip
+            fi
             ;;
         fedora|rhel|centos)
-            sudo dnf install -y python3 python3-pip
+            if [ -n "$version_suffix" ]; then
+                sudo dnf install -y python${version_suffix} python3-pip 2>/dev/null || \
+                sudo dnf install -y python3 python3-pip
+            else
+                sudo dnf install -y python3 python3-pip
+            fi
             ;;
         arch|manjaro)
             sudo pacman -S --noconfirm python python-pip
@@ -209,6 +236,21 @@ install_python() {
             return 1
             ;;
     esac
+    
+    return 0
+}
+
+install_dependencies() {
+    # Install Python dependencies (keystone-engine)
+    local req_file="$INSTALL_DIR/requirements.txt"
+    
+    if [ -f "$req_file" ]; then
+        python3 -m pip install -r "$req_file" --quiet 2>/dev/null || \
+        python3 -m pip install keystone-engine --quiet 2>/dev/null || \
+        true  # Not fatal - fallback assembler will be used
+    else
+        python3 -m pip install keystone-engine --quiet 2>/dev/null || true
+    fi
     
     return 0
 }
@@ -356,7 +398,7 @@ main() {
         
         for file in "${FILES_TO_DOWNLOAD[@]}"; do
             current=$((current + 1))
-            percent=$((30 + (current * 40 / total)))
+            percent=$((30 + (current * 30 / total)))
             echo "$percent"
             echo "# Downloading $file..."
             
@@ -365,6 +407,10 @@ main() {
                 exit 1
             fi
         done
+        
+        echo "65"
+        echo "# Installing dependencies (keystone-engine)..."
+        install_dependencies || true  # Not fatal
         
         echo "75"
         echo "# Creating axis command..."

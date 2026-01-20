@@ -15,13 +15,26 @@ $MIN_PYTHON_VERSION = [Version]"3.7"
 $INSTALL_DIR = "$env:LOCALAPPDATA\AXIS"
 $BIN_DIR = "$env:LOCALAPPDATA\AXIS\bin"
 
+# Available Python versions for installation
+$PYTHON_VERSIONS = @(
+    @{ Version = "3.13.1"; Label = "Python 3.13 (Latest)" },
+    @{ Version = "3.12.8"; Label = "Python 3.12 (Recommended)" },
+    @{ Version = "3.11.11"; Label = "Python 3.11" },
+    @{ Version = "3.10.16"; Label = "Python 3.10" },
+    @{ Version = "3.9.21"; Label = "Python 3.9" },
+    @{ Version = "3.8.20"; Label = "Python 3.8" }
+)
+
 $FILES_TO_DOWNLOAD = @(
     "compilation_pipeline.py",
     "tokenization_engine.py",
     "syntactic_analyzer.py",
     "semantic_analyzer.py",
     "code_generator.py",
-    "executable_format_generator.py"
+    "executable_format_generator.py",
+    "assembler.py",
+    "transpiler.py",
+    "requirements.txt"
 )
 
 # ============================================================================
@@ -60,18 +73,21 @@ function Get-PythonVersion {
 }
 
 function Install-Python {
-    param([System.Windows.Forms.Label]$StatusLabel)
+    param(
+        [System.Windows.Forms.Label]$StatusLabel,
+        [string]$SelectedVersion = "3.12.8"
+    )
     
-    $StatusLabel.Text = "Downloading Python installer..."
+    $StatusLabel.Text = "Downloading Python $SelectedVersion installer..."
     $StatusLabel.Refresh()
     
-    $pythonUrl = "https://www.python.org/ftp/python/3.12.0/python-3.12.0-amd64.exe"
+    $pythonUrl = "https://www.python.org/ftp/python/$SelectedVersion/python-$SelectedVersion-amd64.exe"
     $installerPath = "$env:TEMP\python-installer.exe"
     
     try {
         Invoke-WebRequest -Uri $pythonUrl -OutFile $installerPath -UseBasicParsing
         
-        $StatusLabel.Text = "Installing Python 3.12 (this may take a minute)..."
+        $StatusLabel.Text = "Installing Python $SelectedVersion (this may take a minute)..."
         $StatusLabel.Refresh()
         
         # Install Python with PATH option
@@ -85,6 +101,29 @@ function Install-Python {
         return $true
     } catch {
         return $false
+    }
+}
+
+function Install-Dependencies {
+    param([System.Windows.Forms.Label]$StatusLabel)
+    
+    $StatusLabel.Text = "Installing dependencies (keystone-engine)..."
+    $StatusLabel.Refresh()
+    
+    try {
+        # Install from requirements.txt
+        $reqFile = "$INSTALL_DIR\requirements.txt"
+        if (Test-Path $reqFile) {
+            $result = Start-Process -FilePath "python" -ArgumentList "-m", "pip", "install", "-r", $reqFile, "--quiet" -Wait -PassThru -NoNewWindow
+            return ($result.ExitCode -eq 0)
+        } else {
+            # Fallback: install keystone directly
+            $result = Start-Process -FilePath "python" -ArgumentList "-m", "pip", "install", "keystone-engine", "--quiet" -Wait -PassThru -NoNewWindow
+            return ($result.ExitCode -eq 0)
+        }
+    } catch {
+        # Dependencies are optional - fallback assembler will be used
+        return $true
     }
 }
 
@@ -336,16 +375,43 @@ if ($pythonInfo -and $pythonInfo.Version -ge $MIN_PYTHON_VERSION) {
     $pythonReady = $true
     $pythonPath = $pythonInfo.Path
 } else {
-    $pythonLabel.Text = "[X] Python 3.7+ required (will be installed)"
+    $pythonLabel.Text = "[X] Python 3.7+ required (select version below)"
     $pythonLabel.ForeColor = [System.Drawing.Color]::Orange
     $pythonReady = $false
     $pythonPath = "python"
 }
 
+# Python Version Selector (only shown when Python not installed)
+$pythonVersionLabel = New-Object System.Windows.Forms.Label
+$pythonVersionLabel.Text = "Python version to install:"
+$pythonVersionLabel.Location = New-Object System.Drawing.Point(20, 130)
+$pythonVersionLabel.Size = New-Object System.Drawing.Size(180, 25)
+$pythonVersionLabel.ForeColor = [System.Drawing.Color]::LightGray
+$form.Controls.Add($pythonVersionLabel)
+
+$pythonVersionCombo = New-Object System.Windows.Forms.ComboBox
+$pythonVersionCombo.Location = New-Object System.Drawing.Point(200, 127)
+$pythonVersionCombo.Size = New-Object System.Drawing.Size(260, 25)
+$pythonVersionCombo.DropDownStyle = "DropDownList"
+$pythonVersionCombo.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 50)
+$pythonVersionCombo.ForeColor = [System.Drawing.Color]::White
+$pythonVersionCombo.FlatStyle = "Flat"
+foreach ($pv in $PYTHON_VERSIONS) {
+    $pythonVersionCombo.Items.Add($pv.Label) | Out-Null
+}
+$pythonVersionCombo.SelectedIndex = 1  # Default to "Recommended" (3.12)
+$form.Controls.Add($pythonVersionCombo)
+
+# Hide version selector if Python is already installed
+if ($pythonReady) {
+    $pythonVersionLabel.Visible = $false
+    $pythonVersionCombo.Visible = $false
+}
+
 # Install Location
 $locationLabel = New-Object System.Windows.Forms.Label
 $locationLabel.Text = "Install to: $INSTALL_DIR"
-$locationLabel.Location = New-Object System.Drawing.Point(20, 135)
+$locationLabel.Location = New-Object System.Drawing.Point(20, 165)
 $locationLabel.Size = New-Object System.Drawing.Size(450, 25)
 $locationLabel.ForeColor = [System.Drawing.Color]::LightGray
 $form.Controls.Add($locationLabel)
@@ -353,7 +419,7 @@ $form.Controls.Add($locationLabel)
 # VS Code Extension Checkbox
 $vscodeCheckbox = New-Object System.Windows.Forms.CheckBox
 $vscodeCheckbox.Text = "Install VS Code Extension (syntax highlighting)"
-$vscodeCheckbox.Location = New-Object System.Drawing.Point(20, 175)
+$vscodeCheckbox.Location = New-Object System.Drawing.Point(20, 195)
 $vscodeCheckbox.Size = New-Object System.Drawing.Size(400, 25)
 $vscodeCheckbox.Checked = $true
 $vscodeCheckbox.ForeColor = [System.Drawing.Color]::White
@@ -362,7 +428,7 @@ $form.Controls.Add($vscodeCheckbox)
 
 # Progress Bar
 $progressBar = New-Object System.Windows.Forms.ProgressBar
-$progressBar.Location = New-Object System.Drawing.Point(20, 230)
+$progressBar.Location = New-Object System.Drawing.Point(20, 240)
 $progressBar.Size = New-Object System.Drawing.Size(440, 25)
 $progressBar.Style = "Continuous"
 $form.Controls.Add($progressBar)
@@ -370,7 +436,7 @@ $form.Controls.Add($progressBar)
 # Status Label
 $statusLabel = New-Object System.Windows.Forms.Label
 $statusLabel.Text = "Ready to install"
-$statusLabel.Location = New-Object System.Drawing.Point(20, 260)
+$statusLabel.Location = New-Object System.Drawing.Point(20, 270)
 $statusLabel.Size = New-Object System.Drawing.Size(450, 25)
 $statusLabel.ForeColor = [System.Drawing.Color]::LightGray
 $form.Controls.Add($statusLabel)
@@ -409,18 +475,23 @@ $form.Controls.Add($uninstallButton)
 $installButton.Add_Click({
     $installButton.Enabled = $false
     $vscodeCheckbox.Enabled = $false
+    $pythonVersionCombo.Enabled = $false
     
     try {
         # Step 1: Install Python if needed
         if (-not $pythonReady) {
             $progressBar.Value = 10
-            if (-not (Install-Python -StatusLabel $statusLabel)) {
+            # Get selected version
+            $selectedIndex = $pythonVersionCombo.SelectedIndex
+            $selectedVersion = $PYTHON_VERSIONS[$selectedIndex].Version
+            
+            if (-not (Install-Python -StatusLabel $statusLabel -SelectedVersion $selectedVersion)) {
                 $statusLabel.Text = "Failed to install Python"
                 $statusLabel.ForeColor = [System.Drawing.Color]::Red
                 $installButton.Enabled = $true
                 return
             }
-            $pythonLabel.Text = "[OK] Python installed"
+            $pythonLabel.Text = "[OK] Python $selectedVersion installed"
             $pythonLabel.ForeColor = [System.Drawing.Color]::LightGreen
             $script:pythonPath = "python"
         }
@@ -434,7 +505,15 @@ $installButton.Add_Click({
             return
         }
         
-        # Step 3: Create axis command
+        # Step 3: Install Python dependencies (keystone-engine)
+        $progressBar.Value = 55
+        if (-not (Install-Dependencies -StatusLabel $statusLabel)) {
+            # Not fatal - legacy assembler will be used
+            $statusLabel.Text = "Note: Dependencies install failed, using fallback assembler"
+            $statusLabel.ForeColor = [System.Drawing.Color]::Yellow
+        }
+        
+        # Step 4: Create axis command
         $progressBar.Value = 70
         if (-not (Create-AxisCommand -StatusLabel $statusLabel -PythonPath $pythonPath)) {
             $statusLabel.Text = "Failed to create axis command"
@@ -443,7 +522,7 @@ $installButton.Add_Click({
             return
         }
         
-        # Step 4: Add to PATH
+        # Step 5: Add to PATH
         $progressBar.Value = 80
         if (-not (Add-ToPath -StatusLabel $statusLabel)) {
             $statusLabel.Text = "Failed to add to PATH"
@@ -452,7 +531,7 @@ $installButton.Add_Click({
             return
         }
         
-        # Step 5: Install VS Code extension (optional)
+        # Step 6: Install VS Code extension (optional)
         if ($vscodeCheckbox.Checked) {
             $progressBar.Value = 90
             Install-VSCodeExtension -StatusLabel $statusLabel | Out-Null

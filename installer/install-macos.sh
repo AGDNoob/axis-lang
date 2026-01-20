@@ -22,6 +22,9 @@ FILES_TO_DOWNLOAD=(
     "semantic_analyzer.py"
     "code_generator.py"
     "executable_format_generator.py"
+    "assembler.py"
+    "transpiler.py"
+    "requirements.txt"
 )
 
 # ============================================================================
@@ -97,6 +100,8 @@ get_python_version() {
 }
 
 install_python() {
+    local version="${1:-}"  # Optional version, e.g., "3.12"
+    
     # Check for Homebrew
     if ! command -v brew &> /dev/null; then
         show_info "Installing Homebrew" "Homebrew is required to install Python.\nA terminal will open to install Homebrew.\nPlease follow the instructions."
@@ -112,7 +117,29 @@ install_python() {
     fi
     
     show_progress "Installing Python via Homebrew..."
-    brew install python
+    if [ -n "$version" ]; then
+        # Try to install specific version
+        brew install python@$version 2>/dev/null || brew install python
+    else
+        brew install python
+    fi
+    
+    return 0
+}
+
+install_dependencies() {
+    # Install Python dependencies (keystone-engine)
+    local req_file="$INSTALL_DIR/requirements.txt"
+    
+    show_progress "Installing dependencies (keystone-engine)..."
+    
+    if [ -f "$req_file" ]; then
+        python3 -m pip install -r "$req_file" --quiet 2>/dev/null || \
+        python3 -m pip install keystone-engine --quiet 2>/dev/null || \
+        true  # Not fatal - fallback assembler will be used
+    else
+        python3 -m pip install keystone-engine --quiet 2>/dev/null || true
+    fi
     
     return 0
 }
@@ -238,6 +265,9 @@ Click OK to continue..."
             exit 1
         fi
     done
+    
+    # Install dependencies
+    install_dependencies || true  # Not fatal
     
     show_progress "Creating axis command..."
     

@@ -1,6 +1,155 @@
+"""
+AXIS Assembler - x86-64 machine code generation
+
+Uses Keystone Engine when available for full instruction support.
+Falls back to legacy hand-written assembler if Keystone is not installed.
+"""
+
 import re
 import sys
 from enum import Enum
+
+# Try to import Keystone Engine
+try:
+    from keystone import Ks, KS_ARCH_X86, KS_MODE_64, KsError
+    KEYSTONE_AVAILABLE = True
+except ImportError:
+    KEYSTONE_AVAILABLE = False
+
+
+class KeystoneAssembler:
+    """
+    Keystone-based x86-64 assembler.
+    
+    Provides full instruction support through the Keystone Engine.
+    Handles AXIS-specific @label syntax for string relocations.
+    """
+    
+    def __init__(self):
+        self.ks = Ks(KS_ARCH_X86, KS_MODE_64)
+        # Keystone uses Intel syntax by default for x86
+        self.string_relocations = []
+        self.labels = {}
+    
+    def _preprocess_code(self, code: str) -> tuple:
+        """
+        Preprocess assembly code to handle AXIS-specific syntax.
+        
+        Handles:
+        - movabs r64, @label -> movabs r64, 0 (placeholder) + relocation
+        
+        Returns:
+            (processed_code, relocations_info)
+        """
+        lines = code.split('\n')
+        processed_lines = []
+        relocation_info = []  # (line_index, label_name)
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip().lower()
+            
+            # Handle movabs with @label (string relocation)
+            if stripped.startswith('movabs') and '@' in line:
+                # Parse: movabs rax, @string_label
+                match = re.match(r'movabs\s+(\w+)\s*,\s*@(\w+)', stripped)
+                if match:
+                    reg = match.group(1)
+                    label = match.group(2)
+                    # Replace with placeholder (64-bit zero)
+                    processed_lines.append(f'mov {reg}, 0x0000000000000000')
+                    relocation_info.append((len(processed_lines) - 1, label))
+                    continue
+            
+            processed_lines.append(line)
+        
+        return '\n'.join(processed_lines), relocation_info
+    
+    def _calculate_relocations(self, code: str, machine_code: bytes, relocation_info: list) -> list:
+        """
+        Calculate the actual byte offsets for string relocations.
+        
+        For movabs r64, imm64, the immediate starts at offset +2 (after REX + opcode).
+        """
+        relocations = []
+        
+        if not relocation_info:
+            return relocations
+        
+        # We need to find where each movabs instruction is in the machine code
+        # This is tricky because we don't know exact offsets without parsing
+        # 
+        # Approach: Assemble line by line to track offsets
+        lines = code.split('\n')
+        current_offset = 0
+        processed_line_idx = 0
+        
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith(';') or stripped.endswith(':'):
+                continue
+            
+            # Check if this line has a relocation
+            for rel_line_idx, label in relocation_info:
+                if processed_line_idx == rel_line_idx:
+                    # movabs r64, imm64 is 10 bytes: REX (1) + opcode (1) + imm64 (8)
+                    # The immediate starts at offset +2
+                    relocations.append((current_offset + 2, label))
+            
+            # Assemble just this line to get its size
+            try:
+                line_code, _ = self.ks.asm(stripped)
+                if line_code:
+                    current_offset += len(line_code)
+            except KsError:
+                # Labels and other non-instructions
+                pass
+            
+            processed_line_idx += 1
+        
+        return relocations
+    
+    def assemble_code(self, code: str, enable_relaxation: bool = True) -> list:
+        """
+        Assemble x86-64 assembly code to machine code.
+        
+        Args:
+            code: Assembly code string
+            enable_relaxation: Ignored (Keystone handles this automatically)
+        
+        Returns:
+            List of machine code bytes
+        """
+        self.string_relocations = []
+        
+        # Preprocess to handle @label syntax
+        processed_code, relocation_info = self._preprocess_code(code)
+        
+        try:
+            machine_code, _ = self.ks.asm(processed_code)
+            if machine_code is None:
+                return []
+            
+            # Calculate relocation offsets
+            self.string_relocations = self._calculate_relocations(
+                processed_code, bytes(machine_code), relocation_info
+            )
+            
+            return list(machine_code)
+        except KsError as e:
+            print(f"Keystone assembly error: {e}")
+            return []
+    
+    def get_string_relocations(self) -> list:
+        """Returns list of (offset, label) tuples for string address patching"""
+        return self.string_relocations
+    
+    def format_hex(self, bytecode: list) -> str:
+        return ' '.join(f'{byte:02X}' for byte in bytecode)
+    
+    def write_binary(self, bytecode: list, filename: str):
+        with open(filename, 'wb') as f:
+            f.write(bytes(bytecode))
+
 
 class RegisterType(Enum):
     REG_8 = 1   # al, bl, cl, dl
@@ -8,7 +157,8 @@ class RegisterType(Enum):
     REG_32 = 3  # eax, ebx, ecx, edx
     REG_64 = 4  # rax, rbx, rcx, rdx
 
-class Assembler:
+
+class LegacyAssembler:
     def __init__(self):
         # register tables - alle x86-64 register hier
         self.reg8 = {'al': 0, 'cl': 1, 'dl': 2, 'bl': 3, 'ah': 4, 'ch': 5, 'dh': 6, 'bh': 7}
@@ -1458,5 +1608,25 @@ def main():
             traceback.print_exc()
             print()
 
+
+# ============================================================================
+# Assembler Selection - Use Keystone if available, otherwise fall back to legacy
+# ============================================================================
+
+if KEYSTONE_AVAILABLE:
+    Assembler = KeystoneAssembler
+    _ASSEMBLER_BACKEND = "Keystone"
+else:
+    Assembler = LegacyAssembler
+    _ASSEMBLER_BACKEND = "Legacy"
+
+
+def get_assembler_backend() -> str:
+    """Returns the name of the active assembler backend."""
+    return _ASSEMBLER_BACKEND
+
+
 if __name__ == '__main__':
+    print(f"Using assembler backend: {get_assembler_backend()}")
+    print()
     main()
