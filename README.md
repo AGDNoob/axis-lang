@@ -1,6 +1,6 @@
 # AXIS
 
-![Version](https://img.shields.io/badge/version-1.0.2--beta-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86--64-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/badge/version-1.1.0--beta-blue) ![Platform](https://img.shields.io/badge/platform-Linux%20x86--64-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
 
 **A minimalist programming language with Python-like syntax and dual execution modes.**
 
@@ -109,7 +109,7 @@ small: i8 = 127      # 8-bit signed integer
 flag: bool = True    # Boolean
 ```
 
-**Types:** `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `bool`, `str`, `ptr`
+**Types:** `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `bool`, `str`
 
 ### Output
 
@@ -176,6 +176,165 @@ func main() -> i32:
     x: i32 = 42
     give x
 ```
+
+### Fields
+
+Fields are custom data types that group related values together.
+
+```python
+# Define a field type
+Vec2: field:
+    x: i32 = 0
+    y: i32 = 0
+
+# Create and use a field
+pos: Vec2
+pos.x = 100
+pos.y = 200
+writeln(pos.x)   # 100
+```
+
+**Nested Fields:**
+
+```python
+Player: field:
+    name: str = ""
+    position: Vec2    # Use another field type
+
+p: Player
+p.name = "Alice"
+p.position.x = 50
+```
+
+**Inline Anonymous Fields:**
+
+```python
+Game: field:
+    home: field:          # Inline field (no separate type)
+        name: str = ""
+        score: i32 = 0
+    away: field:
+        name: str = ""
+        score: i32 = 0
+
+g: Game
+g.home.name = "Team A"
+g.home.score = 3
+```
+
+**Arrays of Fields:**
+
+```python
+# Array of a named field type
+players: (Player; 5)
+players[0].name = "Bob"
+
+# Array of inline fields
+team: field:
+    members: (field; 11): [
+        name: str = ""
+        number: i32 = 0
+    ]
+
+t: team
+t.members[0].name = "Alice"
+t.members[0].number = 10
+```
+
+**Fields with Update Modifier:**
+
+```python
+func move(update pos: Vec2, dx: i32, dy: i32):
+    pos.x = pos.x + dx
+    pos.y = pos.y + dy
+
+myPos: Vec2
+move(myPos, 10, 20)    # myPos is modified
+```
+
+**Copying Fields:**
+
+```python
+original: Vec2
+original.x = 100
+
+duplicate: Vec2 = copy original    # Deep copy (default: runtime optimized)
+duplicate.x = 999                  # Doesn't affect original
+
+# Copy modes for compile mode:
+# copy.runtime - optimized for fast execution (default)
+# copy.compile - optimized for fast compilation
+fast_copy: Vec2 = copy.runtime original   # Best runtime performance
+quick_build: Vec2 = copy.compile original # Faster to compile
+```
+
+### Enums
+
+Enums define a set of named constants with a configurable underlying integer type:
+
+```python
+# Default underlying type (i32)
+Color: enum:
+    Red
+    Green
+    Blue
+
+# Explicit underlying type
+Status: enum u8:
+    Pending = 0
+    Active = 1
+    Completed = 100
+
+Priority: enum i64:
+    Low
+    Medium
+    High
+
+c: Color = Color.Red
+s: Status = Status.Active
+
+when c == Color.Green:
+    writeln("It's green!")
+```
+
+Enum features:
+- **Underlying type**: Specify `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, or `u64` (default: `i32`)
+- **Auto-increment**: Variants without explicit values auto-increment from 0
+- **Explicit values**: Use `= value` to assign specific integer values
+
+### Match Statements
+
+Match statements provide pattern matching on values:
+
+```python
+x: i32 = 2
+match x:
+    1:
+        writeln("one")
+    2:
+        writeln("two")
+    3:
+        writeln("three")
+    _:
+        writeln("other")
+
+# Prints: two
+```
+
+Match with enums:
+
+```python
+c: Color = Color.Green
+match c:
+    Color.Red:
+        writeln("Red")
+    Color.Green:
+        writeln("Green")
+    Color.Blue:
+        writeln("Blue")
+```
+
+The `_` pattern is the wildcard/default case that matches any value.
 
 ### Operators
 
@@ -344,15 +503,15 @@ Run the same installer again and select **Uninstall**.
 - [x] ELF64 native compilation
 - [x] All integer types (i8-i64, u8-u64)
 - [x] Control flow (when, while, repeat, stop, skip)
-- [x] Functions
+- [x] Functions with update/copy modifiers
+- [x] Fields (custom data types with nesting)
+- [x] Arrays (including arrays of fields)
 - [x] Arithmetic and bitwise operators
 - [x] I/O (write, writeln, read, readln, readchar)
 - [x] VS Code syntax highlighting
 
 ### Planned
 - [ ] Function parameters in compile mode
-- [ ] Structs and arrays
-- [ ] Pointer arithmetic
 - [ ] Standard library
 - [ ] Language Server Protocol (LSP)
 

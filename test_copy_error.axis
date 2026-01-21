@@ -1,0 +1,9 @@
+mode script
+
+# Test that array assignment without copy is rejected
+
+arr1: (i32; 3) = [1, 2, 3]
+arr2: (i32; 3) = [0, 0, 0]
+
+# This should produce an error - requires 'copy' keyword
+arr2 = arr1

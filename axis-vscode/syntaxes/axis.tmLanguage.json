@@ -28,15 +28,23 @@
       "patterns": [
         {
           "name": "keyword.control.axis",
-          "match": "\\b(when|else|while|loop|repeat|break|continue)\\b"
+          "match": "\\b(when|else|while|loop|repeat|break|continue|match)\\b"
         },
         {
           "name": "keyword.control.flow.axis",
-          "match": "\\bgive\\b"
+          "match": "\\b(give|return)\\b"
         },
         {
           "name": "keyword.declaration.function.axis",
           "match": "\\bfunc\\b"
+        },
+        {
+          "name": "keyword.declaration.type.axis",
+          "match": "\\b(field|enum)\\b"
+        },
+        {
+          "name": "keyword.modifier.axis",
+          "match": "\\b(update|copy)\\b"
         },
         {
           "name": "constant.language.boolean.axis",
@@ -52,11 +60,15 @@
         },
         {
           "name": "constant.language.mode.axis",
-          "match": "\\b(script|compile)\\b"
+          "match": "\\b(script|compile|runtime)\\b"
         },
         {
           "name": "support.function.io.axis",
           "match": "\\b(write|writeln|read|readln|readchar|read_failed)\\b"
+        },
+        {
+          "name": "constant.language.wildcard.axis",
+          "match": "\\b_\\b"
         }
       ]
     },

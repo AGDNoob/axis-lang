@@ -8,23 +8,22 @@ from syntactic_analyzer import *
 TYPE_SIZES = {
     'i8': 1, 'i16': 2, 'i32': 4, 'i64': 8,
     'u8': 1, 'u16': 2, 'u32': 4, 'u64': 8,
-    'ptr': 8,
     'bool': 1,
-    'str': 8,  # poistring datanter to 
+    'str': 8,  # pointer to string data
 }
 
 SIGNED_TYPES = {'i8', 'i16', 'i32', 'i64'}
 UNSIGNED_TYPES = {'u8', 'u16', 'u32', 'u64'}
 INTEGER_TYPES = SIGNED_TYPES | UNSIGNED_TYPES
-VALID_TYPES = INTEGER_TYPES | {'ptr', 'bool', 'str'}
+SCALAR_TYPES = INTEGER_TYPES | {'bool', 'str'}
+VALID_TYPES = SCALAR_TYPES | {'array', 'field'}
 
 
 def is_integer_type(type_name: str) -> bool:
     return type_name in INTEGER_TYPES
 
 
-def is_pointer_type(type_name: str) -> bool:
-    return type_name == 'ptr'
+# Pointer functions removed in v1.1.0 - AXIS uses value semantics
 
 
 def get_type_size(type_name: str) -> int:
@@ -45,21 +44,28 @@ class Symbol:
     mutable: bool
     stack_offset: int = 0
     is_param: bool = False
+    param_modifier: Optional[str] = None  # 'update', 'copy', or None for regular params
+    array_type: 'ArrayType' = None  # For array variables
     
     def __repr__(self):
         mut = "mut " if self.mutable else ""
         param = " [param]" if self.is_param else ""
-        return f"Symbol({mut}{self.name}: {self.type} @ rbp{self.stack_offset:+d}{param})"
+        mod = f" [{self.param_modifier}]" if self.param_modifier else ""
+        arr = f" [{self.array_type}]" if self.array_type else ""
+        return f"Symbol({mut}{self.name}: {self.type}{arr} @ rbp{self.stack_offset:+d}{param}{mod})"
 
 
 @dataclass
 class FunctionSymbol:
     name: str
-    params: list[tuple[str, str]]
+    params: list['Parameter']  # Now using Parameter objects with modifiers
     return_type: Optional[str]
     
     def __repr__(self):
-        params_str = ", ".join(f"{name}: {type_}" for name, type_ in self.params)
+        params_str = ", ".join(
+            f"{p.modifier + ' ' if p.modifier else ''}{p.name}: {p.type}" 
+            for p in self.params
+        )
         ret_str = f" -> {self.return_type}" if self.return_type else ""
         return f"Function({self.name}({params_str}){ret_str})"
 
@@ -95,6 +101,8 @@ class SemanticAnalyzer:
         self.global_scope: Optional[Scope] = None
         self.current_scope: Optional[Scope] = None
         self.functions: Dict[str, FunctionSymbol] = {}
+        self.field_types: Dict[str, 'FieldDef'] = {}  # Field type definitions
+        self.enum_types: Dict[str, 'EnumDef'] = {}    # Enum type definitions
         self.current_function: Optional[Function] = None
         self.current_stack_offset: int = 0
         self.in_loop: int = 0
@@ -110,15 +118,26 @@ class SemanticAnalyzer:
             self.error("Cannot exit scope: no current scope")
         self.current_scope = self.current_scope.parent
     
-    def define_symbol(self, name: str, type_: str, mutable: bool, is_param: bool = False) -> Symbol:
+    def define_symbol(self, name: str, type_: str, mutable: bool, is_param: bool = False, 
+                       param_modifier: Optional[str] = None, array_type: 'ArrayType' = None) -> Symbol:
         if not self.current_scope:
             self.error("No current scope")
         
-        # Prüfe Typ-Validität
-        if type_ not in VALID_TYPES:
+        # Prüfe Typ-Validität - scalar types, array, field, enum, or named types
+        if type_ not in VALID_TYPES and type_ not in self.field_types and type_ not in self.enum_types:
             self.error(f"Unknown type: {type_}")
         
-        type_size = get_type_size(type_)
+        # Get type size - field types have dynamic size, enum types use their underlying type
+        if type_ in self.field_types:
+            type_size = self.get_field_size(type_)
+        elif type_ in self.enum_types:
+            # Use the enum's underlying type size
+            enum_def = self.enum_types[type_]
+            type_size = TYPE_SIZES.get(enum_def.underlying_type, 4)
+        elif type_ in TYPE_SIZES:
+            type_size = TYPE_SIZES[type_]
+        else:
+            type_size = 8  # default for arrays, etc.
         
         if is_param:
             stack_offset = 0
@@ -128,7 +147,7 @@ class SemanticAnalyzer:
             self.current_stack_offset += type_size
             stack_offset = -self.current_stack_offset
         
-        symbol = Symbol(name, type_, mutable, stack_offset, is_param)
+        symbol = Symbol(name, type_, mutable, stack_offset, is_param, param_modifier, array_type)
         self.current_scope.define(symbol)
         return symbol
     
@@ -151,6 +170,24 @@ class SemanticAnalyzer:
         self.global_scope = Scope()
         self.current_scope = self.global_scope
         
+        # Pass 0a: Collect all field type definitions
+        for field_def in program.field_defs:
+            if field_def.name in self.field_types:
+                self.error(f"Duplicate field type definition: {field_def.name}")
+            self.field_types[field_def.name] = field_def
+        
+        # Pass 0b: Collect all enum type definitions
+        for enum_def in program.enum_defs:
+            if enum_def.name in self.enum_types:
+                self.error(f"Duplicate enum type definition: {enum_def.name}")
+            if enum_def.name in self.field_types:
+                self.error(f"Enum name conflicts with field type: {enum_def.name}")
+            self.enum_types[enum_def.name] = enum_def
+        
+        # Validate all field definitions (check for undefined nested types, etc.)
+        for field_def in program.field_defs:
+            self.analyze_field_def(field_def)
+        
         # Pass 1: Sammle alle Funktions-Signaturen
         for func in program.functions:
             if func.name in self.functions:
@@ -162,6 +199,77 @@ class SemanticAnalyzer:
         # Pass 2: Analysiere Funktions-Bodies
         for func in program.functions:
             self.analyze_function(func)
+        
+        # Pass 3: Analyze top-level statements (script mode)
+        if program.statements:
+            self.current_function = None
+            self.current_stack_offset = 0
+            for stmt in program.statements:
+                self.analyze_statement(stmt)
+    
+    def analyze_field_def(self, field_def: 'FieldDef'):
+        """Validate a field definition"""
+        for member in field_def.members:
+            self.analyze_field_member(member)
+    
+    def analyze_field_member(self, member: 'FieldMember'):
+        """Validate a field member"""
+        if member.type == 'field':
+            # Inline nested field - recursively validate
+            if member.inline_field:
+                self.analyze_field_def(member.inline_field)
+        elif member.type == 'array':
+            # Array member - validate element type
+            if member.array_type:
+                elem_type = member.array_type.element_type
+                if elem_type == 'field':
+                    # Array of inline fields
+                    if member.inline_field:
+                        self.analyze_field_def(member.inline_field)
+                elif elem_type not in SCALAR_TYPES and elem_type not in self.field_types:
+                    self.error(f"Unknown array element type in field member '{member.name}': {elem_type}")
+        elif member.type not in SCALAR_TYPES and member.type not in self.field_types:
+            self.error(f"Unknown type in field member '{member.name}': {member.type}")
+        
+        # Validate default value if present
+        if member.default_value:
+            # TODO: Type check default value expression
+            pass
+    
+    def get_field_size(self, field_type_name: str) -> int:
+        """Calculate the total size of a field type"""
+        if field_type_name not in self.field_types:
+            self.error(f"Unknown field type: {field_type_name}")
+        
+        field_def = self.field_types[field_type_name]
+        return self.calculate_field_size(field_def)
+    
+    def calculate_field_size(self, field_def: 'FieldDef') -> int:
+        """Calculate size of a field definition (including inline fields)"""
+        total_size = 0
+        for member in field_def.members:
+            if member.type == 'field':
+                if member.inline_field:
+                    total_size += self.calculate_field_size(member.inline_field)
+            elif member.type == 'array':
+                if member.array_type:
+                    elem_type = member.array_type.element_type
+                    if elem_type == 'field' and member.inline_field:
+                        elem_size = self.calculate_field_size(member.inline_field)
+                    elif elem_type in self.field_types:
+                        elem_size = self.get_field_size(elem_type)
+                    elif elem_type in TYPE_SIZES:
+                        elem_size = TYPE_SIZES[elem_type]
+                    else:
+                        elem_size = 8
+                    total_size += elem_size * (member.array_type.size or 1)
+            elif member.type in self.field_types:
+                total_size += self.get_field_size(member.type)
+            elif member.type in TYPE_SIZES:
+                total_size += TYPE_SIZES[member.type]
+            else:
+                total_size += 8  # default
+        return total_size
     
     def analyze_function(self, func: Function):
         self.current_function = func
@@ -170,8 +278,55 @@ class SemanticAnalyzer:
         # Neuer Scope für Funktion
         self.enter_scope()
         
-        for param_name, param_type in func.params:
-            self.define_symbol(param_name, param_type, mutable=False, is_param=True)
+        # Track update params for pointer storage
+        func.update_param_slots = {}  # param_name -> pointer_slot_offset
+        
+        # Register parameters with modifiers
+        # Parameters are stored on stack for easy access
+        for param in func.params:
+            # 'update' params need to be mutable (they will be written back)
+            # 'copy' params create a local copy, also mutable
+            # Regular params are immutable by default
+            is_mutable = param.modifier in ('update', 'copy')
+            
+            # Allocate stack space for parameter
+            param_type = param.type
+            
+            # Get type size - handle field types
+            if param_type in self.field_types:
+                type_size = self.get_field_size(param_type)
+            elif param_type == 'array':
+                type_size = 8  # arrays passed as ptr
+            elif param_type in TYPE_SIZES:
+                type_size = TYPE_SIZES[param_type]
+            else:
+                self.error(f"Unknown parameter type: {param_type}")
+            
+            alignment = min(type_size, 8)
+            self.current_stack_offset = align_offset(self.current_stack_offset, alignment)
+            self.current_stack_offset += type_size
+            stack_offset = -self.current_stack_offset
+            
+            symbol = Symbol(
+                param.name, 
+                param_type, 
+                is_mutable, 
+                stack_offset,
+                is_param=True,
+                param_modifier=param.modifier,
+                array_type=param.array_type
+            )
+            self.current_scope.define(symbol)
+            
+            # Store param index for code generator
+            param.stack_offset = stack_offset
+            
+            # For 'update' params, allocate extra slot to store the caller's address
+            if param.modifier == 'update':
+                self.current_stack_offset = align_offset(self.current_stack_offset, 8)
+                self.current_stack_offset += 8  # pointer size
+                param.ptr_slot_offset = -self.current_stack_offset
+                func.update_param_slots[param.name] = param.ptr_slot_offset
         
         # Body analysieren
         self.analyze_block(func.body)
@@ -212,15 +367,47 @@ class SemanticAnalyzer:
             self.analyze_continue(stmt)
         elif isinstance(stmt, Write):
             self.analyze_write(stmt)
+        elif isinstance(stmt, Match):
+            self.analyze_match(stmt)
         elif isinstance(stmt, ExprStatement):
             self.analyze_expression(stmt.expression)
         else:
             self.error(f"Unknown statement type: {type(stmt).__name__}")
     
     def analyze_vardecl(self, vardecl: VarDecl):
-        # Typ validieren
-        if vardecl.type not in VALID_TYPES:
+        # Handle array declarations
+        if vardecl.type == 'array' and vardecl.array_type:
+            self.analyze_array_vardecl(vardecl)
+            return
+        
+        # Typ validieren (scalar types, field types, or enum types)
+        if vardecl.type not in VALID_TYPES and vardecl.type not in self.field_types and vardecl.type not in self.enum_types:
             self.error(f"Unknown type: {vardecl.type}")
+        
+        # Check if this is a field type variable
+        if vardecl.type in self.field_types:
+            # Field type variable - no init expression required
+            # (fields use default values from their definition)
+            symbol = self.define_symbol(vardecl.name, vardecl.type, vardecl.mutable)
+            vardecl.stack_offset = symbol.stack_offset
+            vardecl.symbol = symbol
+            vardecl.is_field = True
+            return
+        
+        # Check if this is an enum type variable
+        if vardecl.type in self.enum_types:
+            # Enum type variable - validate initialization is of correct enum type
+            if vardecl.init:
+                init_type = self.analyze_expression(vardecl.init)
+                if init_type != vardecl.type:
+                    self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}")
+            
+            # Enums are stored as i32 values
+            symbol = self.define_symbol(vardecl.name, vardecl.type, vardecl.mutable)
+            vardecl.stack_offset = symbol.stack_offset
+            vardecl.symbol = symbol
+            vardecl.is_enum = True
+            return
         
         # Init-Expression typisieren (If present)
         if vardecl.init:
@@ -252,6 +439,7 @@ class SemanticAnalyzer:
                     init_type = 'bool'
                 else:
                     self.error(f"Cannot assign non-boolean value to bool variable '{vardecl.name}'")
+            # Pointer type removed in v1.1.0 - AXIS uses value semantics
             elif init_type != vardecl.type:
                 self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}")
         
@@ -262,10 +450,105 @@ class SemanticAnalyzer:
         vardecl.stack_offset = symbol.stack_offset
         vardecl.symbol = symbol
     
+    def analyze_array_vardecl(self, vardecl: VarDecl):
+        """Analyze array variable declaration: arr: (i32; 5) = [1, 2, 3, 4, 5]"""
+        array_type = vardecl.array_type
+        element_type = array_type.element_type
+        
+        # Validate element type - can be scalar or field type
+        if element_type not in VALID_TYPES and element_type not in self.field_types:
+            self.error(f"Unknown array element type: {element_type}")
+        
+        # Check if element is a field type
+        is_field_element = element_type in self.field_types
+        
+        # Check init expression
+        if vardecl.init:
+            if is_field_element:
+                self.error(f"Arrays of field types cannot have initializers - use index assignment instead")
+            
+            # Allow array literals or copy expressions
+            if isinstance(vardecl.init, CopyExpr):
+                # CopyExpr is valid for arrays - analyze the operand
+                self.analyze_copy_expr(vardecl.init)
+            elif isinstance(vardecl.init, ArrayLiteral):
+                # Analyze the array literal with expected element type
+                self.analyze_array_literal(vardecl.init, element_type)
+                
+                # Get the actual size from the literal
+                actual_size = len(vardecl.init.elements)
+                
+                # In compile mode, size must match if specified
+                if array_type.size is not None:
+                    if actual_size != array_type.size:
+                        self.error(f"Array '{vardecl.name}' declared with size {array_type.size} but initialized with {actual_size} elements")
+                else:
+                    # Infer size from literal (script mode)
+                    array_type.size = actual_size
+            else:
+                self.error(f"Array variable '{vardecl.name}' must be initialized with an array literal or copy expression")
+            
+            # Update element type from literal if it was coerced
+            vardecl.init.element_type = element_type
+        else:
+            # No initializer - size must be specified
+            if array_type.size is None:
+                self.error(f"Array '{vardecl.name}' must be initialized or have explicit size")
+        
+        # Define symbol with array information
+        # Array takes element_size * count bytes on stack
+        if is_field_element:
+            element_size = self.get_field_size(element_type)
+        elif element_type in TYPE_SIZES:
+            element_size = TYPE_SIZES[element_type]
+        else:
+            element_size = 8
+        total_size = element_size * array_type.size
+        
+        # Create symbol
+        symbol = self.define_array_symbol(vardecl.name, array_type, vardecl.mutable, total_size)
+        symbol.is_field_array = is_field_element  # Mark as array of fields
+        
+        # AST annotieren
+        vardecl.stack_offset = symbol.stack_offset
+        vardecl.symbol = symbol
+        vardecl.total_size = total_size
+        vardecl.is_field_array = is_field_element
+    
+    def define_array_symbol(self, name: str, array_type, mutable: bool, total_size: int) -> Symbol:
+        """Define an array symbol with proper stack allocation"""
+        # Allocate stack space
+        alignment = 8  # Always align to 8 bytes for arrays
+        self.current_stack_offset = align_offset(self.current_stack_offset, alignment)
+        self.current_stack_offset += total_size
+        
+        symbol = Symbol(
+            name=name,
+            type='array',
+            mutable=mutable,
+            stack_offset=-self.current_stack_offset,
+            array_type=array_type
+        )
+        
+        self.current_scope.define(symbol)
+        return symbol
+    
     def analyze_assignment(self, assign: Assignment):
-        # Target muss Identifier sein (oder später: Deref)
+        # Handle array index assignment: arr[i] = value
+        if isinstance(assign.target, IndexAccess):
+            self.analyze_index_assignment(assign)
+            return
+        
+        # Handle field access assignment: obj.member = value
+        if isinstance(assign.target, FieldAccess):
+            self.analyze_field_assignment(assign)
+            return
+        
+        # Pointer dereference removed in v1.1.0 - AXIS uses value semantics
+        
+        # Target muss Identifier sein
         if not isinstance(assign.target, Identifier):
-            self.error("Assignment target must be an identifier")
+            self.error("Assignment target must be an identifier, array index, or field access")
         
         # Symbol lookup
         symbol = self.lookup_symbol(assign.target.name)
@@ -276,6 +559,11 @@ class SemanticAnalyzer:
         
         # Type-Check
         target_type = symbol.type
+        
+        # Check for array assignment - must use 'copy' keyword
+        if target_type == 'array':
+            if not isinstance(assign.value, CopyExpr):
+                self.error(f"Array assignment requires 'copy' keyword: {symbol.name} = copy <source_array>")
         
         # Special handling for read expressions - pass target type
         if isinstance(assign.value, Read):
@@ -303,12 +591,55 @@ class SemanticAnalyzer:
                 value_type = 'bool'
             else:
                 self.error(f"Cannot assign non-boolean value to bool variable '{symbol.name}'")
+        # Pointer type removed in v1.1.0 - AXIS uses value semantics
         elif target_type != value_type:
             self.error(f"Type mismatch in assignment to '{symbol.name}': expected {target_type}, got {value_type}")
         
         # AST annotieren
         assign.target.symbol = symbol
         assign.target.inferred_type = target_type
+    
+    def analyze_index_assignment(self, assign: Assignment):
+        """Analyze array index assignment: arr[i] = value"""
+        idx_access = assign.target
+        
+        # Analyze the index access to get element type
+        element_type = self.analyze_index_access(idx_access)
+        
+        # Analyze the value
+        value_type = self.analyze_expression(assign.value)
+        
+        # Type check - allow literal coercion
+        if value_type == 'i32' and element_type in ['i8', 'i16', 'i64', 'u8', 'u16', 'u32', 'u64']:
+            if isinstance(assign.value, Literal):
+                assign.value.inferred_type = element_type
+                value_type = element_type
+            else:
+                self.error(f"Type mismatch in array element assignment: expected {element_type}, got {value_type}")
+        elif value_type != element_type:
+            self.error(f"Type mismatch in array element assignment: expected {element_type}, got {value_type}")
+    
+    def analyze_field_assignment(self, assign: Assignment):
+        """Analyze field member assignment: obj.member = value"""
+        field_access = assign.target
+        
+        # Analyze the field access to get member type
+        member_type = self.analyze_field_access(field_access)
+        
+        # Analyze the value
+        value_type = self.analyze_expression(assign.value)
+        
+        # Type check - allow literal coercion
+        if value_type == 'i32' and member_type in ['i8', 'i16', 'i64', 'u8', 'u16', 'u32', 'u64']:
+            if isinstance(assign.value, Literal):
+                assign.value.inferred_type = member_type
+                value_type = member_type
+            else:
+                self.error(f"Type mismatch in field assignment: expected {member_type}, got {value_type}")
+        elif value_type != member_type:
+            self.error(f"Type mismatch in field assignment: expected {member_type}, got {value_type}")
+    
+    # analyze_deref_assignment removed in v1.1.0 - AXIS uses value semantics
     
     def analyze_return(self, ret: Return):
         if not self.current_function:
@@ -353,6 +684,33 @@ class SemanticAnalyzer:
         self.analyze_block(while_stmt.body)
         self.in_loop -= 1
     
+    def analyze_match(self, match_stmt: Match):
+        """Analyze a match statement"""
+        # Analyze the value being matched
+        value_type = self.analyze_expression(match_stmt.value)
+        match_stmt.value_type = value_type
+        
+        has_wildcard = False
+        
+        for arm in match_stmt.arms:
+            if arm.is_wildcard:
+                has_wildcard = True
+            else:
+                # Analyze the pattern and check type compatibility
+                pattern_type = self.analyze_expression(arm.pattern)
+                arm.pattern_type = pattern_type
+                
+                # Pattern type must match value type
+                if pattern_type != value_type:
+                    # Allow integer literal coercion
+                    if not (pattern_type == 'i32' and value_type in INTEGER_TYPES):
+                        self.error(f"Match pattern type '{pattern_type}' does not match value type '{value_type}'")
+            
+            # Analyze the body
+            self.enter_scope()
+            self.analyze_block(arm.body)
+            self.exit_scope()
+    
     def analyze_break(self, break_stmt: Break):
         if self.in_loop == 0:
             self.error("Break outside of loop")
@@ -362,11 +720,11 @@ class SemanticAnalyzer:
             self.error("Continue outside of loop")
     
     def analyze_write(self, write_stmt: Write):
-        """write() und writeln() - akzeptiert str, integers und bool"""
+        """write() und writeln() - akzeptiert str, integers, bool, and enums"""
         value_type = self.analyze_expression(write_stmt.value)
         
-        # Check ob valid output type
-        if value_type not in VALID_TYPES:
+        # Check ob valid output type (allow enum types - they're printed as integers)
+        if value_type not in VALID_TYPES and value_type not in self.enum_types:
             self.error(f"Cannot write value of type '{value_type}'")
         
         # Annotate für codegen
@@ -387,8 +745,6 @@ class SemanticAnalyzer:
             return self.analyze_unaryop(expr)
         elif isinstance(expr, Call):
             return self.analyze_call(expr)
-        elif isinstance(expr, Deref):
-            return self.analyze_deref(expr)
         elif isinstance(expr, StringLiteral):
             return self.analyze_string_literal(expr)
         elif isinstance(expr, Read):
@@ -399,6 +755,17 @@ class SemanticAnalyzer:
             return self.analyze_readchar(expr)
         elif isinstance(expr, ReadFailed):
             return self.analyze_read_failed(expr)
+        elif isinstance(expr, ArrayLiteral):
+            return self.analyze_array_literal(expr)
+        elif isinstance(expr, IndexAccess):
+            return self.analyze_index_access(expr)
+        elif isinstance(expr, CopyExpr):
+            return self.analyze_copy_expr(expr)
+        elif isinstance(expr, FieldAccess):
+            return self.analyze_field_access(expr)
+        elif isinstance(expr, EnumAccess):
+            return self.analyze_enum_access(expr)
+        # Pointer expression types removed in v1.1.0 - AXIS uses value semantics
         else:
             self.error(f"Unknown expression type: {type(expr).__name__}")
     
@@ -505,9 +872,9 @@ class SemanticAnalyzer:
         
         # Vergleichsoperatoren → bool
         if binop.op in ['==', '!=', '<', '<=', '>', '>=']:
-            # Allow comparisons on integers and bools
-            if not (is_integer_type(left_type) or left_type == 'bool'):
-                self.error(f"Comparison operator '{binop.op}' requires integer or bool types, got {left_type}")
+            # Allow comparisons on integers, bools, and enums
+            if not (is_integer_type(left_type) or left_type == 'bool' or left_type in self.enum_types):
+                self.error(f"Comparison operator '{binop.op}' requires integer, bool, or enum types, got {left_type}")
             inferred_type = 'bool'
         
         # Arithmetik → gleicher Typ
@@ -580,14 +947,15 @@ class SemanticAnalyzer:
             self.error(f"Function '{call.name}' expects {len(func_symbol.params)} arguments, got {len(call.args)}")
         
         # Argument-Typen prüfen
-        for i, (arg, (param_name, param_type)) in enumerate(zip(call.args, func_symbol.params)):
+        for i, (arg, param) in enumerate(zip(call.args, func_symbol.params)):
             arg_type = self.analyze_expression(arg)
+            # param is now a Parameter object
+            param_type = param.type if hasattr(param, 'type') else param[1]
             if arg_type != param_type:
                 self.error(f"Argument {i+1} to function '{call.name}': expected {param_type}, got {arg_type}")
-        if not func_symbol.return_type:
-            self.error(f"Function '{call.name}' has no return type and cannot be used in expression")
         
-        inferred_type = func_symbol.return_type
+        # Return type - 'void' if not specified
+        inferred_type = func_symbol.return_type if func_symbol.return_type else 'void'
         
         # AST annotieren
         call.inferred_type = inferred_type
@@ -595,15 +963,226 @@ class SemanticAnalyzer:
         
         return inferred_type
     
-    def analyze_deref(self, deref: Deref) -> str:
-        operand_type = self.analyze_expression(deref.operand)
+    # Pointer analysis functions removed in v1.1.0 - AXIS uses value semantics
+    # analyze_deref, analyze_deref_with_context, analyze_addressof, 
+    # analyze_sizeof, analyze_null_literal all removed
+    
+    def analyze_array_literal(self, arr_lit: ArrayLiteral, expected_element_type: str = None) -> str:
+        """
+        Analyze array literal [1, 2, 3].
+        All elements must have the same type.
+        Returns 'array' type and annotates with element_type and size.
+        """
+        if not arr_lit.elements:
+            self.error("Empty array literals are not allowed")
         
-        if not is_pointer_type(operand_type):
-            self.error(f"Cannot dereference non-pointer type: {operand_type}")
+        # Analyze first element to determine type
+        first_type = self.analyze_expression(arr_lit.elements[0])
         
-        # Pointer-Dereferenzierung: Wir kennen den Target-Type nicht
-        # for now: Fehler, später mit typed pointers
-        self.error("Pointer dereferencing not yet implemented (need typed pointers)")
+        # If we have an expected type from declaration, use it for coercion
+        if expected_element_type:
+            # Allow i32 literals to coerce to other integer types
+            if first_type == 'i32' and expected_element_type in INTEGER_TYPES:
+                if isinstance(arr_lit.elements[0], Literal):
+                    arr_lit.elements[0].inferred_type = expected_element_type
+                    first_type = expected_element_type
+        
+        element_type = first_type
+        
+        # Check all elements have the same type
+        for i, elem in enumerate(arr_lit.elements[1:], start=1):
+            elem_type = self.analyze_expression(elem)
+            
+            # Allow literal coercion
+            if elem_type == 'i32' and element_type in INTEGER_TYPES:
+                if isinstance(elem, Literal):
+                    elem.inferred_type = element_type
+                    elem_type = element_type
+            
+            if elem_type != element_type:
+                self.error(f"Array element {i} has type {elem_type}, expected {element_type}")
+        
+        # Annotate the array literal
+        arr_lit.inferred_type = 'array'
+        arr_lit.element_type = element_type
+        arr_lit.size = len(arr_lit.elements)
+        
+        return 'array'
+    
+    def analyze_index_access(self, idx_access: IndexAccess) -> str:
+        """
+        Analyze array index access arr[i].
+        Returns the element type of the array.
+        """
+        # Analyze the array expression
+        array_type = self.analyze_expression(idx_access.array)
+        
+        element_type = None
+        element_field_def = None
+        
+        # Get element type from the array identifier's symbol
+        if isinstance(idx_access.array, Identifier):
+            symbol = self.lookup_symbol(idx_access.array.name)
+            if symbol.type != 'array':
+                self.error(f"Cannot index non-array type: {symbol.type}")
+            
+            # Get element type from the symbol's array_type annotation
+            if hasattr(symbol, 'array_type') and symbol.array_type:
+                element_type = symbol.array_type.element_type
+            else:
+                self.error(f"Array '{idx_access.array.name}' has no element type information")
+        elif isinstance(idx_access.array, FieldAccess):
+            # Accessing array via field: obj.arr[i]
+            if array_type != 'array':
+                self.error(f"Cannot index non-array member")
+            
+            # Get element type from the member info
+            if hasattr(idx_access.array, 'member_info'):
+                member = idx_access.array.member_info
+                if member.array_type:
+                    element_type = member.array_type.element_type
+                    if element_type == 'field' and member.inline_field:
+                        element_field_def = member.inline_field
+                else:
+                    self.error("Array member has no element type")
+            else:
+                self.error("Array member has no type information")
+        else:
+            self.error("Only array variables and field members can be indexed")
+        
+        # Analyze the index - must be an integer type
+        index_type = self.analyze_expression(idx_access.index)
+        if index_type not in INTEGER_TYPES:
+            self.error(f"Array index must be an integer type, got {index_type}")
+        
+        # If element is an inline field, store its definition for further access
+        if element_field_def:
+            idx_access.element_field_def = element_field_def
+            element_type = 'field'
+        
+        # Annotate the expression
+        idx_access.inferred_type = element_type
+        idx_access.element_type = element_type
+        
+        return element_type
+
+    def analyze_copy_expr(self, copy_expr: CopyExpr) -> str:
+        """
+        Analyze copy <expr> - explicit value/array copy
+        Returns the same type as the operand
+        """
+        operand_type = self.analyze_expression(copy_expr.operand)
+        copy_expr.inferred_type = operand_type
+        copy_expr.is_copy = True  # Mark this as an explicit copy
+        return operand_type
+    
+    def analyze_field_access(self, field_access: FieldAccess) -> str:
+        """
+        Analyze field member access: obj.member
+        Returns the type of the member.
+        Also handles enum access: EnumName.VariantName
+        """
+        # Check if this is an enum access (EnumName.VariantName)
+        if isinstance(field_access.object, Identifier):
+            enum_name = field_access.object.name
+            if enum_name in self.enum_types:
+                # This is an enum variant access
+                enum_def = self.enum_types[enum_name]
+                variant_name = field_access.member
+                
+                # Find the variant
+                for variant in enum_def.variants:
+                    if variant.name == variant_name:
+                        # Convert FieldAccess to EnumAccess
+                        field_access.__class__ = EnumAccess
+                        field_access.enum_name = enum_name
+                        field_access.variant_name = variant_name
+                        field_access.inferred_type = enum_name
+                        field_access.variant_value = variant.value
+                        return enum_name
+                
+                self.error(f"Enum '{enum_name}' has no variant '{variant_name}'")
+        
+        # Analyze the object expression to get its type
+        obj_type = self.analyze_expression(field_access.object)
+        
+        # Handle inline field types (stored in the object's attributes)
+        field_def = None
+        if obj_type in self.field_types:
+            field_def = self.field_types[obj_type]
+        elif obj_type == 'field':
+            # This is an inline field - look for the field definition in various places
+            if hasattr(field_access.object, 'inline_field_def'):
+                # FieldAccess that returned an inline field
+                field_def = field_access.object.inline_field_def
+            elif hasattr(field_access.object, 'element_field_def'):
+                # IndexAccess that returned an inline field element
+                field_def = field_access.object.element_field_def
+            elif isinstance(field_access.object, IndexAccess) and hasattr(field_access.object, 'element_field_def'):
+                # Index into array of inline fields
+                field_def = field_access.object.element_field_def
+            else:
+                self.error(f"Cannot access member '{field_access.member}' - inline field has no definition")
+        elif obj_type == 'array' and hasattr(field_access.object, 'element_field_def'):
+            # This is an access to an element of an array of inline fields
+            field_def = field_access.object.element_field_def
+        else:
+            self.error(f"Cannot access member '{field_access.member}' of non-field type '{obj_type}'")
+        
+        # Find the member in the field definition
+        member, member_type = self.find_member_and_type(field_def, field_access.member)
+        if member is None:
+            self.error(f"Field type has no member '{field_access.member}'")
+        
+        # If the member is an inline field, store its definition for further access
+        if member.type == 'field' and member.inline_field:
+            field_access.inline_field_def = member.inline_field
+        elif member.type == 'array' and member.array_type and member.array_type.element_type == 'field':
+            if member.inline_field:
+                field_access.element_field_def = member.inline_field
+        
+        # Annotate the expression
+        field_access.inferred_type = member_type
+        field_access.field_def = field_def
+        field_access.member_info = member
+        
+        return member_type
+    
+    def analyze_enum_access(self, enum_access: EnumAccess) -> str:
+        """
+        Analyze enum variant access: EnumName.VariantName
+        Returns the enum type name.
+        """
+        enum_name = enum_access.enum_name
+        variant_name = enum_access.variant_name
+        
+        if enum_name not in self.enum_types:
+            self.error(f"Unknown enum type: {enum_name}")
+        
+        enum_def = self.enum_types[enum_name]
+        
+        for variant in enum_def.variants:
+            if variant.name == variant_name:
+                enum_access.inferred_type = enum_name
+                enum_access.variant_value = variant.value
+                return enum_name
+        
+        self.error(f"Enum '{enum_name}' has no variant '{variant_name}'")
+    
+    def find_member_and_type(self, field_def: 'FieldDef', member_name: str) -> tuple:
+        """Find a member and its type in a field definition"""
+        for member in field_def.members:
+            if member.name == member_name:
+                if member.type == 'field':
+                    # Inline nested field
+                    return (member, 'field')
+                elif member.type == 'array':
+                    return (member, 'array')
+                elif member.type in self.field_types:
+                    return (member, member.type)
+                else:
+                    return (member, member.type)
+        return (None, None)
 
 def print_annotated_ast(node: ASTNode, indent: int = 0):
     """Gibt annotierten AST aus"""
@@ -699,10 +1278,7 @@ def print_annotated_ast(node: ASTNode, indent: int = 0):
         for arg in node.args:
             print_annotated_ast(arg, indent + 1)
     
-    elif isinstance(node, Deref):
-        inferred_type = getattr(node, 'inferred_type', '?')
-        print(f"{prefix}Deref: → {inferred_type}")
-        print_annotated_ast(node.operand, indent + 1)
+    # Pointer AST nodes removed in v1.1.0 - AXIS uses value semantics
 
 if __name__ == '__main__':
     from tokenization_engine import Lexer

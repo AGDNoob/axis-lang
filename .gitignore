@@ -42,3 +42,5 @@ axis-vscode/out/
 # Debug
 *.log
 debug/
+
+RELEASE_NOTES_DRAFT.md

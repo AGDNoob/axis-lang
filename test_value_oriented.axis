@@ -1,0 +1,85 @@
+mode script
+
+# ================================================================
+# AXIS v1.1.0 Value-Oriented Programming Test
+# "Think in values, compile to metal"
+# ================================================================
+
+writeln("=== Value-Oriented AXIS Tests ===")
+writeln("")
+
+# Test 1: Basic function with parameters
+func add(a: i32, b: i32) i32:
+    return a + b
+
+result: i32 = add(10, 20)
+write("Test 1 - Basic function: add(10, 20) = ")
+writeln(result)
+
+# Test 2: Multiple parameters
+func calculate(a: i32, b: i32, c: i32) i32:
+    return a * b + c
+
+result = calculate(5, 3, 7)
+write("Test 2 - calculate(5, 3, 7) = ")
+writeln(result)
+
+# Test 3: Update modifier (copy-in/copy-out)
+func double(update x: i32):
+    x = x * 2
+
+num: i32 = 25
+write("Test 3 - Before double: num = ")
+writeln(num)
+double(num)
+write("Test 3 - After double:  num = ")
+writeln(num)
+
+# Test 4: Update with return value
+func increment_and_square(update x: i32) i32:
+    x = x + 1
+    return x * x
+
+val: i32 = 5
+write("Test 4 - Before: val = ")
+writeln(val)
+squared: i32 = increment_and_square(val)
+write("Test 4 - After:  val = ")
+writeln(val)
+write("Test 4 - Squared result = ")
+writeln(squared)
+
+# Test 5: Multiple update params
+func swap(update a: i32, update b: i32):
+    temp: i32 = a
+    a = b
+    b = temp
+
+x: i32 = 100
+y: i32 = 200
+write("Test 5 - Before swap: x = ")
+write(x)
+write(", y = ")
+writeln(y)
+swap(x, y)
+write("Test 5 - After swap:  x = ")
+write(x)
+write(", y = ")
+writeln(y)
+
+# Test 6: Function with return (alias for give)
+func triple(n: i32) i32:
+    return n * 3
+
+write("Test 6 - triple(7) = ")
+writeln(triple(7))
+
+# Test 7: Function with give (still works)
+func quadruple(n: i32) i32:
+    give n * 4
+
+write("Test 7 - quadruple(7) = ")
+writeln(quadruple(7))
+
+writeln("")
+writeln("=== All Tests Complete ===")

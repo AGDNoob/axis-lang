@@ -1,0 +1,52 @@
+mode script
+
+# Test 'copy' keyword for arrays
+
+writeln("=== Array Copy Test ===")
+writeln("")
+
+# Create original array
+original: (i32; 5) = [10, 20, 30, 40, 50]
+
+write("Original: ")
+i: i32 = 0
+while i < 5:
+    write(original[i])
+    write(" ")
+    i = i + 1
+writeln("")
+
+# Create explicit copy
+copied: (i32; 5) = [0, 0, 0, 0, 0]
+copied = copy original
+
+# Modify copy
+copied[0] = 999
+
+write("After modifying copied[0] = 999:")
+writeln("")
+
+write("Original: ")
+i = 0
+while i < 5:
+    write(original[i])
+    write(" ")
+    i = i + 1
+writeln("")
+
+write("Copied:   ")
+i = 0
+while i < 5:
+    write(copied[i])
+    write(" ")
+    i = i + 1
+writeln("")
+
+# Check that original is unchanged
+when original[0] == 10:
+    writeln("SUCCESS: Original array unchanged!")
+else:
+    writeln("FAIL: Original array was modified!")
+
+writeln("")
+writeln("=== Test Complete ===")

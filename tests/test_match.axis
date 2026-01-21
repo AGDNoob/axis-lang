@@ -1,0 +1,45 @@
+mode script
+// Test match statement
+
+Color: enum:
+    Red
+    Green
+    Blue
+
+// Test match with integers
+x: i32 = 2
+match x:
+    1:
+        writeln(10)
+    2:
+        writeln(20)
+    3:
+        writeln(30)
+    _:
+        writeln(0)
+
+// Should print: 20
+
+// Test match with enum
+c: Color = Color.Green
+match c:
+    Color.Red:
+        writeln(100)
+    Color.Green:
+        writeln(200)
+    Color.Blue:
+        writeln(300)
+
+// Should print: 200
+
+// Test match with wildcard
+y: i32 = 99
+match y:
+    1:
+        writeln(1)
+    2:
+        writeln(2)
+    _:
+        writeln(999)
+
+// Should print: 999

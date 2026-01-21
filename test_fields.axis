@@ -1,0 +1,29 @@
+mode script
+
+# Simple field test
+Vec2: field:
+    x: i32 = 0
+    y: i32 = 0
+
+# Create a Vec2 instance
+pos: Vec2
+writeln("Initial position:")
+writeln(pos.x)
+writeln(pos.y)
+
+# Modify the position
+pos.x = 100
+pos.y = 50
+writeln("Modified position:")
+writeln(pos.x)
+writeln(pos.y)
+
+# Test copy
+pos2: Vec2
+pos2 = copy pos
+pos2.x = 200
+writeln("After copy and modify pos2:")
+writeln("pos.x (should still be 100):")
+writeln(pos.x)
+writeln("pos2.x (should be 200):")
+writeln(pos2.x)

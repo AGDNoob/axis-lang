@@ -19,6 +19,10 @@
     ["(", ")"],
     ["\"", "\""]
   ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(func|when|else|while|loop|repeat|match|field|enum).*:\\s*$",
+    "decreaseIndentPattern": "^\\s*(else).*:\\s*$"
+  },
   "folding": {
     "markers": {
       "start": "^\\s*//\\s*#?region\\b",

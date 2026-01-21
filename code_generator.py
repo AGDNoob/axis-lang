@@ -18,12 +18,12 @@ class RegisterAllocator:
     Falls back to stack when all registers are exhausted.
     """
     
-    # Available temporary registers (callee-saved, so we save/restore them)
-    # Order: prefer r12-r15 first, then rbx (commonly used for other things)
-    TEMP_REGS_64 = ['r12', 'r13', 'r14', 'r15', 'rbx']
-    TEMP_REGS_32 = ['r12d', 'r13d', 'r14d', 'r15d', 'ebx']
-    TEMP_REGS_16 = ['r12w', 'r13w', 'r14w', 'r15w', 'bx']
-    TEMP_REGS_8 = ['r12b', 'r13b', 'r14b', 'r15b', 'bl']
+    # For now, don't use callee-saved registers to avoid stack offset conflicts
+    # All temporaries will spill to stack via push/pop
+    TEMP_REGS_64 = []
+    TEMP_REGS_32 = []
+    TEMP_REGS_16 = []
+    TEMP_REGS_8 = []
     
     def __init__(self):
         self.free_regs: List[str] = list(self.TEMP_REGS_64)  # Stack of free registers
@@ -75,7 +75,7 @@ class RegisterAllocator:
             return self.TEMP_REGS_16[idx]
         elif type_ in ['i32', 'u32', 'bool']:
             return self.TEMP_REGS_32[idx]
-        else:  # i64, u64, ptr, str
+        else:  # i64, u64, str
             return self.TEMP_REGS_64[idx]
     
     def get_save_restore_regs(self) -> List[str]:
@@ -227,37 +227,107 @@ class CodeGenerator:
         # Reset register allocator for this function
         self.reg_alloc.reset()
         
-        # Compile body first to determine which registers we need
+        # Track update parameters for copy-out on return
+        self.update_params = []  # list of (param, ptr_slot_offset, value_slot_offset, type)
+        
+        # Compile body first
         body_asm = self.asm_lines
         self.asm_lines = []
         self.compile_block(func.body)
         body_code = self.asm_lines
         self.asm_lines = body_asm
         
-        # Get registers that need saving
-        saved_regs = self.reg_alloc.get_save_restore_regs()
-        
-        # Calculate stack space needed (align to 16 bytes)
-        # Extra space for saved registers
-        extra_stack = len(saved_regs) * 8
-        total_stack = func.stack_size + extra_stack
-        # Align to 16 bytes (account for pushed rbp)
-        if (total_stack + 8) % 16 != 0:
-            total_stack += 8
-        
         # Function Label
         self.emit_label(func.name)
         
-        # Prolog - save callee-saved registers
+        # Standard prologue
         self.emit("push rbp")
         self.emit("mov rbp, rsp")
         
-        for reg in saved_regs:
-            self.emit(f"push {reg}")
-        
-        # Stack-Space allokieren
+        # Stack-Space allokieren (already 16-byte aligned by semantic analyzer)
         if func.stack_size > 0:
             self.emit(f"sub rsp, {func.stack_size}")
+        
+        # Copy parameters from registers/stack to local stack slots
+        # System V AMD64: rdi, rsi, rdx, rcx, r8, r9
+        # Args 7+ are at [rbp+16], [rbp+24], etc. (after saved rbp and return addr)
+        param_regs_64 = ['rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9']
+        param_regs_32 = ['edi', 'esi', 'edx', 'ecx', 'r8d', 'r9d']
+        param_regs_16 = ['di', 'si', 'dx', 'cx', 'r8w', 'r9w']
+        param_regs_8 = ['dil', 'sil', 'dl', 'cl', 'r8b', 'r9b']
+        
+        for i, param in enumerate(func.params):
+            offset = param.stack_offset
+            param_type = param.type
+            is_update = param.modifier == 'update'
+            
+            # Get source register or stack location
+            if i < 6:
+                src_reg_64 = param_regs_64[i]
+                src_reg_32 = param_regs_32[i]
+                src_reg_16 = param_regs_16[i]
+                src_reg_8 = param_regs_8[i]
+                from_stack = False
+            else:
+                # Args 7+ come from caller's stack
+                caller_offset = 16 + (i - 6) * 8
+                from_stack = True
+            
+            if is_update:
+                # For update params: register/stack contains a pointer to caller's variable
+                # 1. Save the pointer in ptr_slot
+                # 2. Dereference to get value into local copy (copy-in)
+                ptr_slot = param.ptr_slot_offset
+                
+                if from_stack:
+                    # Load pointer from caller's stack, store in ptr_slot
+                    self.emit(f"mov r11, qword [rbp+{caller_offset}]")
+                    self.emit(f"mov qword [rbp{ptr_slot:+d}], r11")
+                else:
+                    # Store pointer from register to ptr_slot
+                    self.emit(f"mov qword [rbp{ptr_slot:+d}], {src_reg_64}")
+                    self.emit(f"mov r11, {src_reg_64}")
+                
+                # Now dereference pointer (in r11) to copy value into local slot
+                if param_type in ['i64', 'u64', 'str']:
+                    self.emit(f"mov rax, qword [r11]")
+                    self.emit(f"mov qword [rbp{offset:+d}], rax")
+                elif param_type in ['i8', 'u8']:
+                    self.emit(f"mov al, byte [r11]")
+                    self.emit(f"mov byte [rbp{offset:+d}], al")
+                elif param_type in ['i16', 'u16']:
+                    self.emit(f"mov ax, word [r11]")
+                    self.emit(f"mov word [rbp{offset:+d}], ax")
+                else:  # i32, u32, bool
+                    self.emit(f"mov eax, dword [r11]")
+                    self.emit(f"mov dword [rbp{offset:+d}], eax")
+                
+                # Track for copy-out in epilogue
+                self.update_params.append((param, ptr_slot, offset, param_type))
+            else:
+                # Regular or copy params: just copy value to local slot
+                if from_stack:
+                    if param_type in ['i64', 'u64', 'str']:
+                        self.emit(f"mov rax, qword [rbp+{caller_offset}]")
+                        self.emit(f"mov qword [rbp{offset:+d}], rax")
+                    elif param_type in ['i8', 'u8']:
+                        self.emit(f"mov al, byte [rbp+{caller_offset}]")
+                        self.emit(f"mov byte [rbp{offset:+d}], al")
+                    elif param_type in ['i16', 'u16']:
+                        self.emit(f"mov ax, word [rbp+{caller_offset}]")
+                        self.emit(f"mov word [rbp{offset:+d}], ax")
+                    else:  # i32, u32, bool
+                        self.emit(f"mov eax, dword [rbp+{caller_offset}]")
+                        self.emit(f"mov dword [rbp{offset:+d}], eax")
+                else:
+                    if param_type in ['i64', 'u64', 'str']:
+                        self.emit(f"mov qword [rbp{offset:+d}], {src_reg_64}")
+                    elif param_type in ['i8', 'u8']:
+                        self.emit(f"mov byte [rbp{offset:+d}], {src_reg_8}")
+                    elif param_type in ['i16', 'u16']:
+                        self.emit(f"mov word [rbp{offset:+d}], {src_reg_16}")
+                    else:  # i32, u32, bool
+                        self.emit(f"mov dword [rbp{offset:+d}], {src_reg_32}")
         
         # Add body code
         self.asm_lines.extend(body_code)
@@ -265,16 +335,25 @@ class CodeGenerator:
         # Epilog (falls kein explizites Return)
         self.emit_label(f"{func.name}_epilog")
         
-        if func.stack_size > 0:
-            self.emit("mov rsp, rbp")
-            # Adjust for pushed callee-saved regs
-            if saved_regs:
-                self.emit(f"sub rsp, {len(saved_regs) * 8}")
+        # Copy-out for update parameters
+        for param, ptr_slot, value_slot, param_type in self.update_params:
+            self.emit(f"; copy-out {param.name}")
+            self.emit(f"mov r10, qword [rbp{ptr_slot:+d}]")  # load pointer
+            if param_type in ['i64', 'u64', 'str']:
+                self.emit(f"mov rax, qword [rbp{value_slot:+d}]")
+                self.emit(f"mov qword [r10], rax")
+            elif param_type in ['i8', 'u8']:
+                self.emit(f"mov al, byte [rbp{value_slot:+d}]")
+                self.emit(f"mov byte [r10], al")
+            elif param_type in ['i16', 'u16']:
+                self.emit(f"mov ax, word [rbp{value_slot:+d}]")
+                self.emit(f"mov word [r10], ax")
+            else:  # i32, u32, bool
+                self.emit(f"mov eax, dword [rbp{value_slot:+d}]")
+                self.emit(f"mov dword [r10], eax")
         
-        # Restore callee-saved registers in reverse order
-        for reg in reversed(saved_regs):
-            self.emit(f"pop {reg}")
-        
+        # Standard epilogue
+        self.emit("mov rsp, rbp")
         self.emit("pop rbp")
         self.emit("ret")
         
@@ -321,12 +400,14 @@ class CodeGenerator:
             elif var_type in ['i16', 'u16']:
                 self.emit(f"mov word [rbp{vardecl.stack_offset:+d}], ax")
             elif var_type in ['i64', 'u64', 'str']:
-                # str is a pointer, needs 64-bit
+                # str is a pointer, need 64-bit
                 self.emit(f"mov qword [rbp{vardecl.stack_offset:+d}], rax")
             else:
                 self.emit(f"mov [rbp{vardecl.stack_offset:+d}], eax")
     
     def compile_assignment(self, assign: Assignment):
+        # Pointer dereference removed in v1.1.0 - AXIS uses value semantics
+        
         # Value evaluieren -> eax
         self.compile_expression(assign.value)
         
@@ -341,10 +422,12 @@ class CodeGenerator:
         elif symbol.type in ['i16', 'u16']:
             self.emit(f"mov word [rbp{symbol.stack_offset:+d}], ax")
         elif symbol.type in ['i64', 'u64', 'str']:
-            # str is a pointer, needs 64-bit
+            # str is a pointer, need 64-bit
             self.emit(f"mov qword [rbp{symbol.stack_offset:+d}], rax")
         else:
             self.emit(f"mov [rbp{symbol.stack_offset:+d}], eax")
+    
+    # compile_deref_assignment removed in v1.1.0 - AXIS uses value semantics
     
     def compile_return(self, ret: Return):
         if ret.value:
@@ -685,6 +768,7 @@ class CodeGenerator:
             self.compile_readchar(expr)
         elif isinstance(expr, ReadFailed):
             self.compile_read_failed(expr)
+        # Pointer expression types removed in v1.1.0 - AXIS uses value semantics
         else:
             raise NotImplementedError(f"Expression type not implemented: {type(expr).__name__}")
     
@@ -727,28 +811,26 @@ class CodeGenerator:
         # load variable value vom stack in eax
         symbol = ident.symbol
         
-        if symbol.is_param:
-            raise NotImplementedError("Parameter access not yet implemented in MVP")
+        # Parameters are now stored on stack like locals, same access pattern
+        # Use type-aware load
+        if symbol.type == 'i8':
+            # Sign-extend i8 to i32
+            self.emit(f"movsx eax, byte [rbp{symbol.stack_offset:+d}]")
+        elif symbol.type == 'u8':
+            # Zero-extend u8 to i32
+            self.emit(f"movzx eax, byte [rbp{symbol.stack_offset:+d}]")
+        elif symbol.type == 'i16':
+            # Sign-extend i16 to i32
+            self.emit(f"movsx eax, word [rbp{symbol.stack_offset:+d}]")
+        elif symbol.type == 'u16':
+            # Zero-extend u16 to i32
+            self.emit(f"movzx eax, word [rbp{symbol.stack_offset:+d}]")
+        elif symbol.type in ['i64', 'u64', 'str']:
+            # Full 64-bit load (str is a pointer)
+            self.emit(f"mov rax, qword [rbp{symbol.stack_offset:+d}]")
         else:
-            # Use type-aware load
-            if symbol.type == 'i8':
-                # Sign-extend i8 to i32
-                self.emit(f"movsx eax, byte [rbp{symbol.stack_offset:+d}]")
-            elif symbol.type == 'u8':
-                # Zero-extend u8 to i32
-                self.emit(f"movzx eax, byte [rbp{symbol.stack_offset:+d}]")
-            elif symbol.type == 'i16':
-                # Sign-extend i16 to i32
-                self.emit(f"movsx eax, word [rbp{symbol.stack_offset:+d}]")
-            elif symbol.type == 'u16':
-                # Zero-extend u16 to i32
-                self.emit(f"movzx eax, word [rbp{symbol.stack_offset:+d}]")
-            elif symbol.type in ['i64', 'u64', 'str']:
-                # Full 64-bit load (str is a pointer)
-                self.emit(f"mov rax, qword [rbp{symbol.stack_offset:+d}]")
-            else:
-                # Default i32 load
-                self.emit(f"mov eax, [rbp{symbol.stack_offset:+d}]")
+            # Default i32 load
+            self.emit(f"mov eax, [rbp{symbol.stack_offset:+d}]")
     
     def compile_binaryop(self, binop: BinaryOp):
         """
@@ -912,30 +994,90 @@ class CodeGenerator:
         else:
             raise NotImplementedError(f"Unary operator '{unaryop.op}' not implemented")
     
+    # Pointer compilation functions removed in v1.1.0 - AXIS uses value semantics
+    # compile_deref, compile_addressof, compile_sizeof, compile_null_literal all removed
+    
     def compile_call(self, call: Call):
-        # System V AMD64: Args in rdi, rsi, rdx, rcx, r8, r9
-        # Für i32: edi, esi, edx, ecx, r8d, r9d
+        """
+        Compile function call with System V AMD64 calling convention.
+        - First 6 args: rdi, rsi, rdx, rcx, r8, r9
+        - Args 7+: pushed on stack in reverse order
+        - 'update' parameters: pass address, callee does copy-in/copy-out
+        """
+        # Get function info for update parameter handling
+        func_symbol = None
+        if hasattr(call, 'function_symbol'):
+            func_symbol = call.function_symbol
         
-        if len(call.args) > 6:
-            raise NotImplementedError("More than 6 arguments not supported in MVP")
+        num_args = len(call.args)
+        stack_args = max(0, num_args - 6)
         
-        # Evaluiere Argumente und lade in Register
-        # Evaluate all args and push to stack first to avoid clobbering
-        for arg in call.args:
-            self.compile_expression(arg)
+        # Need to align stack to 16 bytes before call if we push odd number of args
+        # Current stack is 16-byte aligned. Each push is 8 bytes.
+        need_alignment_padding = (stack_args % 2) == 1
+        
+        if need_alignment_padding:
+            self.emit("sub rsp, 8  ; alignment padding")
+        
+        # Push stack arguments (args 7+) in reverse order
+        for i in range(num_args - 1, 5, -1):
+            is_update = func_symbol and i < len(func_symbol.params) and func_symbol.params[i].modifier == 'update'
+            if is_update and isinstance(call.args[i], Identifier):
+                # Pass address for update params
+                symbol = call.args[i].symbol
+                self.emit(f"lea rax, [rbp{symbol.stack_offset:+d}]")
+            else:
+                self.compile_expression(call.args[i])
             self.emit("push rax")
         
-        # Pop args in reverse order into argument registers
-        for i in range(len(call.args) - 1, -1, -1):
-            self.emit("pop rax")
-            dest_reg = self.arg_regs_32[i]
-            if dest_reg != 'eax':
-                self.emit(f"mov {dest_reg}, eax")
+        # Evaluate first 6 args and push to temp stack to avoid clobbering
+        reg_arg_count = min(num_args, 6)
+        for i in range(reg_arg_count):
+            is_update = func_symbol and i < len(func_symbol.params) and func_symbol.params[i].modifier == 'update'
+            if is_update and isinstance(call.args[i], Identifier):
+                # Pass address for update params
+                symbol = call.args[i].symbol
+                self.emit(f"lea rax, [rbp{symbol.stack_offset:+d}]")
+            else:
+                self.compile_expression(call.args[i])
+            self.emit("push rax")
         
-        # Call
+        # Pop first 6 args in reverse order into argument registers
+        for i in range(reg_arg_count - 1, -1, -1):
+            self.emit("pop rax")
+            is_update = func_symbol and i < len(func_symbol.params) and func_symbol.params[i].modifier == 'update'
+            
+            if is_update:
+                # Update params pass a pointer (always 64-bit)
+                dest_reg = self.arg_regs_64[i]
+                if dest_reg != 'rax':
+                    self.emit(f"mov {dest_reg}, rax")
+            else:
+                # Determine correct register size based on arg type
+                arg_type = getattr(call.args[i], 'inferred_type', 'i32')
+                if arg_type in ['i64', 'u64', 'str']:
+                    dest_reg = self.arg_regs_64[i]
+                    if dest_reg != 'rax':
+                        self.emit(f"mov {dest_reg}, rax")
+                else:
+                    dest_reg = self.arg_regs_32[i]
+                    if dest_reg != 'eax':
+                        self.emit(f"mov {dest_reg}, eax")
+        
+        # Call the function
         self.emit(f"call {call.name}")
         
-        # Ergebnis ist bereits in eax
+        # Clean up stack args if any
+        if stack_args > 0:
+            cleanup_bytes = stack_args * 8
+            if need_alignment_padding:
+                cleanup_bytes += 8
+            self.emit(f"add rsp, {cleanup_bytes}")
+        elif need_alignment_padding:
+            self.emit("add rsp, 8  ; remove alignment padding")
+        
+        # Result is in eax/rax
+        # Note: update params are already written back by the callee via stored pointers
     
     # ==========================================================================
     # READ SYSCALL IMPLEMENTATIONS

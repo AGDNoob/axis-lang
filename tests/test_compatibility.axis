@@ -1,0 +1,123 @@
+mode script
+// Comprehensive compatibility test for AXIS v1.1.0
+// Tests all existing features still work after new additions
+
+// === Variables and Types ===
+x: i32 = 42
+y: i64 = 1000000
+small: i8 = 127
+flag: bool = True
+name: str = "AXIS"
+
+writeln(x)
+writeln(y)
+writeln(small)
+writeln(flag)
+writeln(name)
+
+// === Arithmetic ===
+a: i32 = 10
+b: i32 = 3
+writeln(a + b)   // 13
+writeln(a - b)   // 7
+writeln(a * b)   // 30
+writeln(a / b)   // 3
+writeln(a % b)   // 1
+
+// === Comparison ===
+writeln(a > b)   // True
+writeln(a < b)   // False
+writeln(a == 10) // True
+writeln(a != b)  // True
+
+// === Bitwise ===
+writeln(5 & 3)   // 1
+writeln(5 | 3)   // 7
+writeln(5 ^ 3)   // 6
+writeln(1 << 3)  // 8
+writeln(8 >> 2)  // 2
+
+// === Conditionals (when) ===
+when x > 0:
+    writeln("positive")
+
+when x < 0:
+    writeln("negative")
+else:
+    writeln("not negative")
+
+// === Loops ===
+i: i32 = 0
+while i < 3:
+    writeln(i)
+    i = i + 1
+
+// === Loop with break/continue ===
+j: i32 = 0
+repeat:
+    j = j + 1
+    when j == 2:
+        skip  // continue
+    when j >= 4:
+        stop  // break
+    writeln(j)
+
+// === Functions ===
+func add(a: i32, b: i32) i32:
+    return a + b
+
+func greet():
+    writeln("Hello from function!")
+
+greet()
+result: i32 = add(100, 200)
+writeln(result)
+
+// === Update modifier ===
+func increment(update val: i32):
+    val = val + 1
+
+counter: i32 = 5
+increment(counter)
+writeln(counter)  // 6
+
+// === Arrays ===
+arr: (i32; 5) = [1, 2, 3, 4, 5]
+writeln(arr[0])
+writeln(arr[4])
+arr[2] = 99
+writeln(arr[2])
+
+// === Fields (structs) ===
+Point: field:
+    x: i32 = 0
+    y: i32 = 0
+
+p: Point
+p.x = 10
+p.y = 20
+writeln(p.x)
+writeln(p.y)
+
+// === Nested fields ===
+Rectangle: field:
+    origin: Point
+    width: i32 = 0
+    height: i32 = 0
+
+r: Rectangle
+r.origin.x = 5
+r.origin.y = 10
+r.width = 100
+r.height = 50
+writeln(r.origin.x)
+writeln(r.width)
+
+// === Copy ===
+p2: Point = copy p
+p2.x = 999
+writeln(p.x)   // Still 10 (original unchanged)
+writeln(p2.x)  // 999
+
+// === All done ===
+writeln("All compatibility tests passed!")

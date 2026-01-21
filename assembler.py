@@ -31,6 +31,25 @@ class KeystoneAssembler:
         self.string_relocations = []
         self.labels = {}
     
+    def _normalize_syntax(self, code: str) -> str:
+        """
+        Normalize assembly syntax for Keystone compatibility.
+        
+        - Remove comments (Keystone doesn't support ; comments)
+        - Add 'ptr' after size specifiers:
+          - byte [rbp-4] -> byte ptr [rbp-4]
+          - word [rax] -> word ptr [rax]
+          - dword [rcx] -> dword ptr [rcx]
+          - qword [rdi] -> qword ptr [rdi]
+        """
+        # Remove ; comments (line comments)
+        code = re.sub(r';.*$', '', code, flags=re.MULTILINE)
+        
+        # Add 'ptr' after size specifier if not already present
+        # Match: (byte|word|dword|qword) followed by [ but not 'ptr'
+        code = re.sub(r'\b(byte|word|dword|qword)\s+\[', r'\1 ptr [', code)
+        return code
+    
     def _preprocess_code(self, code: str) -> tuple:
         """
         Preprocess assembly code to handle AXIS-specific syntax.
@@ -120,6 +139,9 @@ class KeystoneAssembler:
             List of machine code bytes
         """
         self.string_relocations = []
+        
+        # Normalize syntax for Keystone compatibility
+        code = self._normalize_syntax(code)
         
         # Preprocess to handle @label syntax
         processed_code, relocation_info = self._preprocess_code(code)

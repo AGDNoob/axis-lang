@@ -27,8 +27,14 @@ class TokenType(Enum):
     U16 = auto()
     U32 = auto()
     U64 = auto()
-    PTR = auto()
     BOOL = auto()
+    UPDATE = auto()     # update parameter modifier
+    COPY = auto()       # copy parameter modifier
+    RETURN = auto()     # return (alias for give)
+    FIELD = auto()      # field type definition
+    ENUM = auto()       # enum type definition
+    MATCH = auto()      # match expression/statement
+    DOT = auto()        # . for field access
     STR = auto()        # str type
     TRUE = auto()
     FALSE = auto()
@@ -63,6 +69,8 @@ class TokenType(Enum):
     RPAREN = auto()     # )
     LBRACE = auto()     # {
     RBRACE = auto()     # }
+    LBRACKET = auto()   # [
+    RBRACKET = auto()   # ]
     COLON = auto()      # :
     SEMICOLON = auto()  # ;
     COMMA = auto()      # ,
@@ -110,7 +118,12 @@ class Lexer:
         'u16': TokenType.U16,
         'u32': TokenType.U32,
         'u64': TokenType.U64,
-        'ptr': TokenType.PTR,
+        'update': TokenType.UPDATE,
+        'copy': TokenType.COPY,
+        'return': TokenType.RETURN,
+        'field': TokenType.FIELD,
+        'enum': TokenType.ENUM,
+        'match': TokenType.MATCH,
         'bool': TokenType.BOOL,
         'str': TokenType.STR,
         'True': TokenType.TRUE,
@@ -424,9 +437,12 @@ class Lexer:
                 ')': TokenType.RPAREN,
                 '{': TokenType.LBRACE,
                 '}': TokenType.RBRACE,
+                '[': TokenType.LBRACKET,
+                ']': TokenType.RBRACKET,
                 ':': TokenType.COLON,
                 ';': TokenType.SEMICOLON,
                 ',': TokenType.COMMA,
+                '.': TokenType.DOT,
             }
             
             if char in single_char_tokens:

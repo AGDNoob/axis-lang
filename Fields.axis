@@ -1,0 +1,25 @@
+mode script
+
+#Fields
+Game: field:
+    title: str = "Championship"
+    
+    home: field:
+        name: str = ""
+        score: i32 = 0
+        
+        players: (field; 11): [
+            name: str = ""
+            number: i32 = 0
+            
+            position: field:
+                x: i32 = 0
+                y: i32 = 0
+        ]
+    away: field:
+        name: str = ""
+        score: i32 = 0
+
+# Usage
+game: Game
+game.home.players[5].position.x = 100

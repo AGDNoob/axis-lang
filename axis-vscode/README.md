@@ -1,16 +1,22 @@
 # AXIS Language Support for VS Code
 
-Minimale VS Code Extension für AXIS-Syntax-Highlighting.
+VS Code Extension für AXIS-Syntax-Highlighting.
 
 ## Features
 
 - ✅ Syntax Highlighting für `.axis` Dateien
-- ✅ Keywords: `fn`, `let`, `mut`, `return`, `if`, `else`, `while`, `break`, `continue`
-- ✅ Typen: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `bool`, `ptr`
+- ✅ Keywords: `func`, `give`, `return`, `when`, `else`, `while`, `loop`, `repeat`, `break`, `continue`, `match`
+- ✅ Type Keywords: `field`, `enum`
+- ✅ Modifiers: `update`, `copy`
+- ✅ Typen: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `bool`, `str`
+- ✅ Mode: `mode script`, `mode compile`
+- ✅ Copy Modes: `copy.runtime`, `copy.compile`
+- ✅ I/O: `write`, `writeln`, `read`, `readln`, `readchar`, `read_failed`
 - ✅ Zahlen: Dezimal, Hex (`0xFF`), Binär (`0b1010`)
-- ✅ Kommentare: `//`
-- ✅ Operatoren: `+`, `-`, `*`, `/`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `=`, `->`
+- ✅ Kommentare: `//` und `#`
+- ✅ Operatoren: `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `=`, `->`, `&`, `|`, `^`, `<<`, `>>`
 - ✅ Auto-Closing Brackets: `{}`, `[]`, `()`
+- ✅ Wildcard Pattern: `_` (for match statements)
 
 ## Installation (Lokal)
 
@@ -34,7 +40,7 @@ Minimale VS Code Extension für AXIS-Syntax-Highlighting.
    - **Windows:** `%USERPROFILE%\.vscode\extensions\`
    - **macOS/Linux:** `~/.vscode/extensions/`
 
-2. Benenne um zu: `axis-language-0.1.0`
+2. Benenne um zu: `axis-language-0.3.0`
 
 3. Starte VS Code neu
 

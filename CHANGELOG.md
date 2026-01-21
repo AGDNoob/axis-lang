@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0-beta] - 2026-01-21
+
+### Added
+- **Enums**: Named constant types for improved code clarity
+  - Configurable underlying type: `enum u8:`, `enum i64:`, etc. (default: i32)
+  - Auto-incrementing values: `Red`, `Green`, `Blue` → 0, 1, 2
+  - Explicit values: `Active = 1`, `Completed = 100`
+  - Full type safety: `c: Color = Color.Red`
+
+- **Match Statements**: Pattern matching on values
+  - Match on integers, enums, or any comparable types
+  - Wildcard pattern `_` for default case
+  - Compile-time type checking for pattern compatibility
+
+- **Function Parameters in Compile Mode**: Full support for function parameters
+  - System V AMD64 calling convention
+  - First 6 args in registers (rdi, rsi, rdx, rcx, r8, r9)
+  - Additional args passed on stack
+  - `update` modifier for in-out parameters (copy-in/copy-out semantics)
+
+- **Copy Modes**: Control runtime vs compile-time optimization
+  - `copy` / `copy.runtime` - Optimized for fast execution (default)
+  - `copy.compile` - Optimized for faster compilation
+  - In script mode, both behave identically
+
+### Changed
+- Updated README documentation with new features
+- Improved semantic analyzer for enhanced type checking
+
+---
+
 ## [1.0.2-beta] - 2026-01-18
 
 ### Added
