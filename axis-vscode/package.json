@@ -2,7 +2,7 @@
   "name": "axis-language",
   "displayName": "AXIS Language Support",
   "description": "Syntax highlighting for AXIS - value-oriented system programming language (script & compile)",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "axis-lang",
   "engines": {
     "vscode": "^1.70.0"
@@ -17,7 +17,10 @@
     "transpiler",
     "script",
     "x86-64",
-    "value-oriented"
+    "value-oriented",
+    "enum",
+    "match",
+    "for-loop"
   ],
   "contributes": {
     "languages": [

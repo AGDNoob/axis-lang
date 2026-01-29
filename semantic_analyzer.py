@@ -92,6 +92,13 @@ class Scope:
         return self.symbols.get(name)
 
 
+# Import the new error handler
+from error_handler import (
+    AxisError, SemanticError as NewSemanticError, 
+    set_source, get_source_lines, get_source_filename
+)
+
+# Keep old SemanticError for backwards compatibility during transition
 class SemanticError(Exception):
     pass
 
@@ -106,9 +113,28 @@ class SemanticAnalyzer:
         self.current_function: Optional[Function] = None
         self.current_stack_offset: int = 0
         self.in_loop: int = 0
+        # Error tracking
+        self._current_line: int = 0
+        self._current_column: int = 0
     
-    def error(self, msg: str):
-        raise SemanticError(msg)
+    def error(self, msg: str, line: int = None, column: int = None):
+        """Raise a semantic error with optional location"""
+        if line is None:
+            line = self._current_line
+        if column is None:
+            column = self._current_column
+        
+        # Use new error format if we have location info
+        if line > 0:
+            source_lines = get_source_lines()
+            filename = get_source_filename()
+            err = NewSemanticError(msg, 
+                location=__import__('error_handler').SourceLocation(line, column),
+                source_lines=source_lines,
+                filename=filename)
+            raise err
+        else:
+            raise SemanticError(msg)
     
     def enter_scope(self):
         self.current_scope = Scope(parent=self.current_scope)
@@ -151,18 +177,18 @@ class SemanticAnalyzer:
         self.current_scope.define(symbol)
         return symbol
     
-    def lookup_symbol(self, name: str) -> Symbol:
+    def lookup_symbol(self, name: str, line: int = 0, column: int = 0) -> Symbol:
         if not self.current_scope:
             self.error("No current scope")
         
         symbol = self.current_scope.lookup(name)
         if not symbol:
-            self.error(f"Undefined variable: {name}")
+            self.error(f"Undefined variable: {name}", line, column)
         return symbol
     
-    def lookup_function(self, name: str) -> FunctionSymbol:
+    def lookup_function(self, name: str, line: int = 0, column: int = 0) -> FunctionSymbol:
         if name not in self.functions:
-            self.error(f"Undefined function: {name}")
+            self.error(f"Undefined function: {name}", line, column)
         return self.functions[name]
     
     def analyze(self, program: Program):
@@ -355,12 +381,16 @@ class SemanticAnalyzer:
             self.analyze_vardecl(stmt)
         elif isinstance(stmt, Assignment):
             self.analyze_assignment(stmt)
+        elif isinstance(stmt, CompoundAssignment):
+            self.analyze_compound_assignment(stmt)
         elif isinstance(stmt, Return):
             self.analyze_return(stmt)
         elif isinstance(stmt, If):
             self.analyze_if(stmt)
         elif isinstance(stmt, While):
             self.analyze_while(stmt)
+        elif isinstance(stmt, ForLoop):
+            self.analyze_for_loop(stmt)
         elif isinstance(stmt, Break):
             self.analyze_break(stmt)
         elif isinstance(stmt, Continue):
@@ -382,7 +412,7 @@ class SemanticAnalyzer:
         
         # Typ validieren (scalar types, field types, or enum types)
         if vardecl.type not in VALID_TYPES and vardecl.type not in self.field_types and vardecl.type not in self.enum_types:
-            self.error(f"Unknown type: {vardecl.type}")
+            self.error(f"Unknown type: {vardecl.type}", vardecl.line, vardecl.column)
         
         # Check if this is a field type variable
         if vardecl.type in self.field_types:
@@ -400,7 +430,7 @@ class SemanticAnalyzer:
             if vardecl.init:
                 init_type = self.analyze_expression(vardecl.init)
                 if init_type != vardecl.type:
-                    self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}")
+                    self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}", vardecl.line, vardecl.column)
             
             # Enums are stored as i32 values
             symbol = self.define_symbol(vardecl.name, vardecl.type, vardecl.mutable)
@@ -429,7 +459,7 @@ class SemanticAnalyzer:
                     vardecl.init.inferred_type = vardecl.type
                     init_type = vardecl.type
                 else:
-                    self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}")
+                    self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}", vardecl.line, vardecl.column)
             # Special case: Allow i32 literals 0/1 to be assigned to bool
             elif vardecl.type == 'bool' and init_type == 'i32':
                 # Check if it's a literal 0 or 1
@@ -438,10 +468,10 @@ class SemanticAnalyzer:
                     vardecl.init.inferred_type = 'bool'
                     init_type = 'bool'
                 else:
-                    self.error(f"Cannot assign non-boolean value to bool variable '{vardecl.name}'")
+                    self.error(f"Cannot assign non-boolean value to bool variable '{vardecl.name}'", vardecl.line, vardecl.column)
             # Pointer type removed in v1.1.0 - AXIS uses value semantics
             elif init_type != vardecl.type:
-                self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}")
+                self.error(f"Type mismatch in variable '{vardecl.name}': expected {vardecl.type}, got {init_type}", vardecl.line, vardecl.column)
         
         # Symbol definieren
         symbol = self.define_symbol(vardecl.name, vardecl.type, vardecl.mutable)
@@ -639,6 +669,49 @@ class SemanticAnalyzer:
         elif value_type != member_type:
             self.error(f"Type mismatch in field assignment: expected {member_type}, got {value_type}")
     
+    def analyze_compound_assignment(self, stmt: CompoundAssignment):
+        """Analyze compound assignment: x += 1, arr[i] *= 2, obj.field -= 5"""
+        
+        # Analyze target to determine type
+        if isinstance(stmt.target, Identifier):
+            # Simple variable
+            symbol = self.lookup_symbol(stmt.target.name)
+            if not symbol.mutable:
+                self.error(f"Cannot assign to immutable variable: {symbol.name}")
+            target_type = symbol.type
+            stmt.target.symbol = symbol
+            stmt.target.inferred_type = target_type
+        elif isinstance(stmt.target, IndexAccess):
+            # Array index
+            target_type = self.analyze_index_access(stmt.target)
+        elif isinstance(stmt.target, FieldAccess):
+            # Field access
+            target_type = self.analyze_field_access(stmt.target)
+        else:
+            self.error("Compound assignment target must be an identifier, array index, or field access")
+            return
+        
+        # Check that target type is numeric for arithmetic/bitwise operations
+        numeric_types = ['i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64']
+        arithmetic_ops = ['+', '-', '*', '/', '%']
+        bitwise_ops = ['&', '|', '^', '<<', '>>']
+        
+        if stmt.operator in arithmetic_ops + bitwise_ops:
+            if target_type not in numeric_types:
+                self.error(f"Compound assignment '{stmt.operator}=' requires numeric type, got {target_type}")
+        
+        # Analyze the value expression
+        value_type = self.analyze_expression(stmt.value)
+        
+        # Type check - allow literal coercion
+        if value_type == 'i32' and target_type in ['i8', 'i16', 'i64', 'u8', 'u16', 'u32', 'u64']:
+            if isinstance(stmt.value, Literal):
+                stmt.value.inferred_type = target_type
+        elif value_type != target_type:
+            # Allow some coercions for numeric types
+            if not (value_type in numeric_types and target_type in numeric_types):
+                self.error(f"Type mismatch in compound assignment: expected {target_type}, got {value_type}")
+
     # analyze_deref_assignment removed in v1.1.0 - AXIS uses value semantics
     
     def analyze_return(self, ret: Return):
@@ -683,6 +756,64 @@ class SemanticAnalyzer:
         self.in_loop += 1
         self.analyze_block(while_stmt.body)
         self.in_loop -= 1
+    
+    def analyze_for_loop(self, for_stmt: ForLoop):
+        """Analyze a for loop statement"""
+        # Enter a new scope for the loop variable
+        self.enter_scope()
+        
+        # Determine the type of the loop variable based on the iterable
+        if isinstance(for_stmt.iterable, RangeExpr):
+            # Range iteration - analyze start, end, step
+            start_type = self.analyze_expression(for_stmt.iterable.start)
+            end_type = self.analyze_expression(for_stmt.iterable.end)
+            
+            # Ensure start and end are integer types
+            if start_type not in INTEGER_TYPES and start_type != 'i32':
+                self.error(f"Range start must be an integer type, got {start_type}")
+            if end_type not in INTEGER_TYPES and end_type != 'i32':
+                self.error(f"Range end must be an integer type, got {end_type}")
+            
+            # Use i32 as default loop variable type (or the larger of start/end types)
+            var_type = 'i32'
+            if start_type in INTEGER_TYPES:
+                var_type = start_type
+            
+            if for_stmt.iterable.step:
+                step_type = self.analyze_expression(for_stmt.iterable.step)
+                if step_type not in INTEGER_TYPES and step_type != 'i32':
+                    self.error(f"Range step must be an integer type, got {step_type}")
+        
+        elif isinstance(for_stmt.iterable, Identifier):
+            # Array iteration - look up the array and get element type
+            symbol = self.lookup_symbol(for_stmt.iterable.name)
+            if symbol.type != 'array':
+                self.error(f"Cannot iterate over non-array type '{symbol.type}'")
+            
+            # Get element type from array
+            if hasattr(symbol, 'array_type') and symbol.array_type:
+                var_type = symbol.array_type.element_type
+            else:
+                self.error(f"Cannot determine element type of array '{for_stmt.iterable.name}'")
+            
+            # Store array info for code generation
+            for_stmt.iterable.symbol = symbol
+        
+        else:
+            self.error(f"Invalid iterable in for loop: {type(for_stmt.iterable).__name__}")
+            var_type = 'i32'  # fallback
+        
+        # Define loop variable
+        for_stmt.var_type = var_type
+        symbol = self.define_symbol(for_stmt.var_name, var_type, mutable=False)
+        for_stmt.var_symbol = symbol
+        
+        # Analyze body (in loop context)
+        self.in_loop += 1
+        self.analyze_block(for_stmt.body)
+        self.in_loop -= 1
+        
+        self.exit_scope()
     
     def analyze_match(self, match_stmt: Match):
         """Analyze a match statement"""
@@ -846,7 +977,8 @@ class SemanticAnalyzer:
         return 'bool'
     
     def analyze_identifier(self, ident: Identifier) -> str:
-        symbol = self.lookup_symbol(ident.name)
+        # Pass location info from the identifier for better error messages
+        symbol = self.lookup_symbol(ident.name, ident.line, ident.column)
         
         # AST annotieren
         ident.symbol = symbol
@@ -868,33 +1000,33 @@ class SemanticAnalyzer:
                 binop.right.inferred_type = left_type
                 right_type = left_type
             else:
-                self.error(f"Type mismatch in binary operation '{binop.op}': {left_type} vs {right_type}")
+                self.error(f"Type mismatch in binary operation '{binop.op}': {left_type} vs {right_type}", binop.line, binop.column)
         
         # Vergleichsoperatoren → bool
         if binop.op in ['==', '!=', '<', '<=', '>', '>=']:
             # Allow comparisons on integers, bools, and enums
             if not (is_integer_type(left_type) or left_type == 'bool' or left_type in self.enum_types):
-                self.error(f"Comparison operator '{binop.op}' requires integer, bool, or enum types, got {left_type}")
+                self.error(f"Comparison operator '{binop.op}' requires integer, bool, or enum types, got {left_type}", binop.line, binop.column)
             inferred_type = 'bool'
         
         # Arithmetik → gleicher Typ
         elif binop.op in ['+', '-', '*', '/', '%']:
             if not is_integer_type(left_type):
-                self.error(f"Arithmetic operator '{binop.op}' requires integer types, got {left_type}")
+                self.error(f"Arithmetic operator '{binop.op}' requires integer types, got {left_type}", binop.line, binop.column)
             inferred_type = left_type
         
         # Bitweise Operationen → gleicher Typ
         elif binop.op in ['&', '|', '^']:
             if not is_integer_type(left_type):
-                self.error(f"Bitwise operator '{binop.op}' requires integer types, got {left_type}")
+                self.error(f"Bitwise operator '{binop.op}' requires integer types, got {left_type}", binop.line, binop.column)
             inferred_type = left_type
         
         # Shift operations: left operand type is result, right must be valid shift count
         elif binop.op in ['<<', '>>']:
             if not is_integer_type(left_type):
-                self.error(f"Shift operator '{binop.op}' requires integer types, got {left_type}")
+                self.error(f"Shift operator '{binop.op}' requires integer types, got {left_type}", binop.line, binop.column)
             if not is_integer_type(right_type):
-                self.error(f"Shift count must be integer type, got {right_type}")
+                self.error(f"Shift count must be integer type, got {right_type}", binop.line, binop.column)
             
             # Warn if shift count is a literal and exceeds type bit width
             if isinstance(binop.right, Literal):
@@ -909,6 +1041,14 @@ class SemanticAnalyzer:
                     pass  # Could add warning system here later
             
             inferred_type = left_type
+        
+        # Logical AND/OR: both operands must be bool, result is bool
+        elif binop.op in ['and', 'or']:
+            if left_type != 'bool':
+                self.error(f"Logical operator '{binop.op}' requires bool operands, got {left_type}", binop.line, binop.column)
+            if right_type != 'bool':
+                self.error(f"Logical operator '{binop.op}' requires bool operands, got {right_type}", binop.line, binop.column)
+            inferred_type = 'bool'
         
         else:
             self.error(f"Unknown binary operator: {binop.op}")
@@ -926,10 +1066,10 @@ class SemanticAnalyzer:
                 self.error(f"Unary minus requires signed integer, got {operand_type}")
             inferred_type = operand_type
         
-        elif unaryop.op == '!':
-            # Boolean NOT: nur bool type
+        elif unaryop.op == '!' or unaryop.op == 'not':
+            # Boolean NOT: nur bool type (both ! and not keywords)
             if operand_type != 'bool':
-                self.error(f"Unary '!' requires bool type, got {operand_type}")
+                self.error(f"Logical NOT requires bool type, got {operand_type}")
             inferred_type = 'bool'
         
         else:
@@ -940,11 +1080,11 @@ class SemanticAnalyzer:
         return inferred_type
     
     def analyze_call(self, call: Call) -> str:
-        func_symbol = self.lookup_function(call.name)
+        func_symbol = self.lookup_function(call.name, call.line, call.column)
         
         # Argument-Count prüfen
         if len(call.args) != len(func_symbol.params):
-            self.error(f"Function '{call.name}' expects {len(func_symbol.params)} arguments, got {len(call.args)}")
+            self.error(f"Function '{call.name}' expects {len(func_symbol.params)} arguments, got {len(call.args)}", call.line, call.column)
         
         # Argument-Typen prüfen
         for i, (arg, param) in enumerate(zip(call.args, func_symbol.params)):
@@ -952,7 +1092,7 @@ class SemanticAnalyzer:
             # param is now a Parameter object
             param_type = param.type if hasattr(param, 'type') else param[1]
             if arg_type != param_type:
-                self.error(f"Argument {i+1} to function '{call.name}': expected {param_type}, got {arg_type}")
+                self.error(f"Argument {i+1} to function '{call.name}': expected {param_type}, got {arg_type}", call.line, call.column)
         
         # Return type - 'void' if not specified
         inferred_type = func_symbol.return_type if func_symbol.return_type else 'void'

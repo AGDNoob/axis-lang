@@ -1,56 +1,61 @@
 # AXIS Language Support for VS Code
 
-VS Code Extension für AXIS-Syntax-Highlighting.
+VS Code extension for AXIS syntax highlighting.
 
 ## Features
 
-- ✅ Syntax Highlighting für `.axis` Dateien
-- ✅ Keywords: `func`, `give`, `return`, `when`, `else`, `while`, `loop`, `repeat`, `break`, `continue`, `match`
-- ✅ Type Keywords: `field`, `enum`
+- ✅ Syntax highlighting for `.axis` files
+- ✅ Keywords: `func`, `give`, `return`, `when`, `else`, `while`, `loop`, `repeat`, `break`, `stop`, `continue`, `skip`, `match`, `for`, `in`
+- ✅ Type keywords: `field`, `enum`
 - ✅ Modifiers: `update`, `copy`
-- ✅ Typen: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `bool`, `str`
+- ✅ Logical operators: `and`, `or`, `not`
+- ✅ Types: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `bool`, `str`
 - ✅ Mode: `mode script`, `mode compile`
-- ✅ Copy Modes: `copy.runtime`, `copy.compile`
+- ✅ Copy modes: `copy.runtime`, `copy.compile`
 - ✅ I/O: `write`, `writeln`, `read`, `readln`, `readchar`, `read_failed`
-- ✅ Zahlen: Dezimal, Hex (`0xFF`), Binär (`0b1010`)
-- ✅ Kommentare: `//` und `#`
-- ✅ Operatoren: `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `=`, `->`, `&`, `|`, `^`, `<<`, `>>`
+- ✅ Built-in functions: `range`
+- ✅ Numbers: Decimal, Hex (`0xFF`), Binary (`0b1010`)
+- ✅ Comments: `//` and `#`
+- ✅ Operators: `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `=`, `->`, `&`, `|`, `^`, `<<`, `>>`
+- ✅ Compound Assignment: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
 - ✅ Auto-Closing Brackets: `{}`, `[]`, `()`
 - ✅ Wildcard Pattern: `_` (for match statements)
+- ✅ Auto-Indentation for `for` loops
 
-## Installation (Lokal)
+## Installation (Local)
 
 ### Option 1: Extension Host (Development Mode)
 
-1. Öffne VS Code im `axis-vscode` Ordner:
+1. Open VS Code in the `axis-vscode` folder:
+
    ```bash
    cd axis-vscode
    code .
    ```
 
-2. Drücke `F5` → startet Extension Development Host
+2. Press `F5` → starts Extension Development Host
 
-3. Öffne eine `.axis` Datei im neuen Fenster
+3. Open a `.axis` file in the new window
 
-4. Syntax Highlighting ist aktiv!
+4. Syntax highlighting is active!
 
-### Option 2: Manuell installieren
+### Option 2: Manual Installation
 
-1. Kopiere den `axis-vscode` Ordner nach:
+1. Copy the `axis-vscode` folder to:
    - **Windows:** `%USERPROFILE%\.vscode\extensions\`
    - **macOS/Linux:** `~/.vscode/extensions/`
 
-2. Benenne um zu: `axis-language-0.3.0`
+2. Rename to: `axis-language-0.4.0`
 
-3. Starte VS Code neu
+3. Restart VS Code
 
-4. Öffne eine `.axis` Datei
+4. Open a `.axis` file
 
-## Build-Integration (Optional)
+## Build Integration (Optional)
 
-Um AXIS-Dateien mit `Ctrl+Shift+B` zu kompilieren:
+To compile AXIS files with `Ctrl+Shift+B`:
 
-1. Im **Haupt-Workspace** (nicht in axis-vscode!) erstelle `.vscode/tasks.json`:
+1. In your **main workspace** (not in axis-vscode!), create `.vscode/tasks.json`:
 
 ```json
 {
@@ -98,21 +103,20 @@ Um AXIS-Dateien mit `Ctrl+Shift+B` zu kompilieren:
 }
 ```
 
-2. Öffne eine `.axis` Datei
+1. Open a `.axis` file
+2. Press `Ctrl+Shift+B` → select "Build AXIS"
 
-3. Drücke `Ctrl+Shift+B` → wähle "Build AXIS"
-
-## Verwendung
+## Usage
 
 ```axis
 // test.axis
-fn main() -> i32 {
-    let x: i32 = 42;
-    return x;
-}
+func main() i32:
+    x: i32 = 42
+    return x
 ```
 
-**Kompilieren:**
+**Compile:**
+
 ```bash
 python ../compilation_pipeline.py test.axis -o test --elf
 chmod +x test
@@ -120,14 +124,14 @@ chmod +x test
 echo $?  # 42
 ```
 
-## Struktur
+## Structure
 
-```
+```text
 axis-vscode/
-├── package.json                    # Extension Manifest
-├── language-configuration.json     # Brackets, Comments
+├── package.json                    # Extension manifest
+├── language-configuration.json     # Brackets, comments
 ├── syntaxes/
-│   └── axis.tmLanguage.json       # TextMate Grammar
+│   └── axis.tmLanguage.json       # TextMate grammar
 └── README.md
 ```
 

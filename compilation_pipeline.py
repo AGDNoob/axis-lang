@@ -2,6 +2,9 @@ import sys
 import argparse
 from pathlib import Path
 
+# Import error handling
+from error_handler import set_source, AxisError
+
 
 class CompilationPipeline:
     def __init__(self, verbose: bool = False):
@@ -15,6 +18,9 @@ class CompilationPipeline:
     def run_script(self, source: str, source_path: str = None) -> bool:
         """Run a script using the transpiler"""
         try:
+            # Set up source for error reporting
+            set_source(source, source_path or "<script>")
+            
             from transpiler import run_script
             if self.verbose:
                 self.log("Transpiling and executing...")
@@ -22,6 +28,13 @@ class CompilationPipeline:
             if self.verbose:
                 self.log(f"Script finished with exit code {exit_code}")
             return True
+        except AxisError as e:
+            # Pretty print AXIS errors without stack trace
+            print(str(e), file=sys.stderr)
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            return False
         except Exception as e:
             print(f"Runtime error: {e}", file=sys.stderr)
             import traceback
@@ -44,7 +57,7 @@ class CompilationPipeline:
             traceback.print_exc()
             return False
     
-    def compile(self, source_code: str) -> tuple[bytes, bytes, list, dict, bool]:
+    def compile(self, source_code: str, source_filename: str = "<unknown>") -> tuple[bytes, bytes, list, dict, bool]:
         """
         Compile source to machine code.
         
@@ -58,6 +71,9 @@ class CompilationPipeline:
         from code_generator import CodeGenerator
         sys.path.insert(0, str(Path(__file__).parent))
         from assembler import Assembler
+        
+        # Set up source for error reporting
+        set_source(source_code, source_filename)
         
         # die ganze pipeline durchlaufen: source -> tokens -> ast -> asm -> bytes
         self.log("Phase 1: Tokenization...")
@@ -128,6 +144,9 @@ class CompilationPipeline:
         with open(input_path, 'r', encoding='utf-8') as f:
             source_code = f.read()
         
+        # Set up source for error reporting (used in script mode too)
+        set_source(source_code, input_path)
+        
         # First pass: detect mode
         self.log("Detecting mode...")
         lexer = Lexer(source_code)
@@ -138,14 +157,21 @@ class CompilationPipeline:
         if ast.mode == "script":
             # Script mode: interpret
             self.log("Script mode detected - running interpreter...")
-            return self.run_script(ast)
+            return self.run_script(source_code, input_path)
         
         # Compile mode: continue with compilation
         self.log("Compile mode - generating binary...")
         
         # Compile
         try:
-            machine_code, rodata, relocations, string_offsets, needs_bss = self.compile(source_code)
+            machine_code, rodata, relocations, string_offsets, needs_bss = self.compile(source_code, input_path)
+        except AxisError as e:
+            # Pretty print AXIS errors without stack trace
+            print(str(e), file=sys.stderr)
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            return False
         except Exception as e:
             print(f"Compilation failed: {e}", file=sys.stderr)
             import traceback
@@ -306,6 +332,9 @@ Examples:
             from syntactic_analyzer import Parser
             from semantic_analyzer import SemanticAnalyzer
             
+            # Set up source for error reporting
+            set_source(source_code, input_file)
+            
             print(f"Checking {input_file}...")
             
             lexer = Lexer(source_code)
@@ -322,8 +351,11 @@ Examples:
             
             print(f"\n✓ {input_file} is valid AXIS code (mode: {ast.mode})")
             return 0
+        except AxisError as e:
+            print(str(e), file=sys.stderr)
+            return 1
         except Exception as e:
-            print(f"\n✗ Syntax error: {e}")
+            print(f"\n✗ Error: {e}")
             return 1
     
     # For forced run or auto-detect, try cache first for script mode

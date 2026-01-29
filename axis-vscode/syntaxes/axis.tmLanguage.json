@@ -28,7 +28,7 @@
       "patterns": [
         {
           "name": "keyword.control.axis",
-          "match": "\\b(when|else|while|loop|repeat|break|continue|match)\\b"
+          "match": "\\b(when|else|while|loop|repeat|break|stop|continue|skip|match|for|in)\\b"
         },
         {
           "name": "keyword.control.flow.axis",
@@ -45,6 +45,10 @@
         {
           "name": "keyword.modifier.axis",
           "match": "\\b(update|copy)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.word.axis",
+          "match": "\\b(and|or|not)\\b"
         },
         {
           "name": "constant.language.boolean.axis",
@@ -65,6 +69,10 @@
         {
           "name": "support.function.io.axis",
           "match": "\\b(write|writeln|read|readln|readchar|read_failed)\\b"
+        },
+        {
+          "name": "support.function.builtin.axis",
+          "match": "\\b(range)\\b"
         },
         {
           "name": "constant.language.wildcard.axis",
@@ -124,6 +132,10 @@
         {
           "name": "keyword.operator.comparison.axis",
           "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.assignment.compound.axis",
+          "match": "(\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=)"
         },
         {
           "name": "keyword.operator.arithmetic.axis",

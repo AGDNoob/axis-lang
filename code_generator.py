@@ -183,6 +183,10 @@ class CodeGenerator:
         self.false_label = None
         self.needs_read_failed_flag = False
         
+        # Store enum definitions for code generation
+        # Enums are compile-time constants, no code generated here
+        self.enum_defs = {e.name: e for e in program.enum_defs} if program.enum_defs else {}
+        
         # Generiere Code für alle Funktionen
         for func in program.functions:
             self.compile_function(func)
@@ -370,12 +374,16 @@ class CodeGenerator:
             self.compile_vardecl(stmt)
         elif isinstance(stmt, Assignment):
             self.compile_assignment(stmt)
+        elif isinstance(stmt, CompoundAssignment):
+            self.compile_compound_assignment(stmt)
         elif isinstance(stmt, Return):
             self.compile_return(stmt)
         elif isinstance(stmt, If):
             self.compile_if(stmt)
         elif isinstance(stmt, While):
             self.compile_while(stmt)
+        elif isinstance(stmt, ForLoop):
+            self.compile_for_loop(stmt)
         elif isinstance(stmt, Break):
             self.compile_break(stmt)
         elif isinstance(stmt, Continue):
@@ -384,6 +392,11 @@ class CodeGenerator:
             self.compile_write(stmt)
         elif isinstance(stmt, ExprStatement):
             self.compile_expression(stmt.expression)
+        elif isinstance(stmt, Match):
+            self.compile_match(stmt)
+        elif isinstance(stmt, EnumDef):
+            # Enums are compile-time constants, no code generation needed
+            pass
         else:
             raise NotImplementedError(f"Statement type not implemented: {type(stmt).__name__}")
     
@@ -427,6 +440,78 @@ class CodeGenerator:
         else:
             self.emit(f"mov [rbp{symbol.stack_offset:+d}], eax")
     
+    def compile_compound_assignment(self, stmt: CompoundAssignment):
+        """
+        Compile compound assignment: x += 1, x -= 2, etc.
+        Equivalent to: x = x op value
+        """
+        # Target muss Identifier sein
+        if not isinstance(stmt.target, Identifier):
+            raise NotImplementedError("Compound assignment target must be identifier")
+        
+        symbol = stmt.target.symbol
+        
+        # Load current value into eax/rax
+        if symbol.type in ['i8', 'u8']:
+            self.emit(f"movzx eax, byte [rbp{symbol.stack_offset:+d}]")
+        elif symbol.type in ['i16', 'u16']:
+            self.emit(f"movzx eax, word [rbp{symbol.stack_offset:+d}]")
+        elif symbol.type in ['i64', 'u64', 'str']:
+            self.emit(f"mov rax, qword [rbp{symbol.stack_offset:+d}]")
+        else:
+            self.emit(f"mov eax, [rbp{symbol.stack_offset:+d}]")
+        
+        # Push current value to save it
+        self.emit("push rax")
+        
+        # Evaluate the right-hand side value
+        self.compile_expression(stmt.value)
+        
+        # Pop current value into rcx
+        self.emit("mov rcx, rax")  # rcx = rhs value
+        self.emit("pop rax")       # rax = current value
+        
+        # Perform the operation: rax = rax op rcx
+        if stmt.operator == '+':
+            self.emit("add rax, rcx")
+        elif stmt.operator == '-':
+            self.emit("sub rax, rcx")
+        elif stmt.operator == '*':
+            self.emit("imul rax, rcx")
+        elif stmt.operator == '/':
+            # Signed division: rax = rax / rcx
+            self.emit("cqo")           # Sign-extend rax into rdx:rax
+            self.emit("idiv rcx")      # rax = rdx:rax / rcx
+        elif stmt.operator == '%':
+            # Modulo: rdx = rax % rcx
+            self.emit("cqo")
+            self.emit("idiv rcx")
+            self.emit("mov rax, rdx")  # Result is in rdx
+        elif stmt.operator == '&':
+            self.emit("and rax, rcx")
+        elif stmt.operator == '|':
+            self.emit("or rax, rcx")
+        elif stmt.operator == '^':
+            self.emit("xor rax, rcx")
+        elif stmt.operator == '<<':
+            self.emit("mov cl, cl")    # Shift amount in cl
+            self.emit("shl rax, cl")
+        elif stmt.operator == '>>':
+            self.emit("mov cl, cl")    # Shift amount in cl  
+            self.emit("sar rax, cl")   # Arithmetic shift right
+        else:
+            raise NotImplementedError(f"Compound assignment operator not implemented: {stmt.operator}")
+        
+        # Store result back to variable - type aware
+        if symbol.type in ['i8', 'u8']:
+            self.emit(f"mov byte [rbp{symbol.stack_offset:+d}], al")
+        elif symbol.type in ['i16', 'u16']:
+            self.emit(f"mov word [rbp{symbol.stack_offset:+d}], ax")
+        elif symbol.type in ['i64', 'u64', 'str']:
+            self.emit(f"mov qword [rbp{symbol.stack_offset:+d}], rax")
+        else:
+            self.emit(f"mov [rbp{symbol.stack_offset:+d}], eax")
+
     # compile_deref_assignment removed in v1.1.0 - AXIS uses value semantics
     
     def compile_return(self, ret: Return):
@@ -501,6 +586,203 @@ class CodeGenerator:
         continue_label, _ = self.loop_stack[-1]
         self.emit(f"jmp {continue_label}")
     
+    def compile_for_loop(self, for_stmt: ForLoop):
+        """
+        Compile for loop.
+        
+        For range iteration (for i in range(start, end, step)):
+            Initialize i = start
+            Loop:
+                if i >= end (or i <= end for negative step): exit
+                body
+                i = i + step
+        
+        For array iteration (for x in arr):
+            Initialize index = 0
+            Loop:
+                if index >= array_size: exit
+                x = arr[index]
+                body
+                index++
+        """
+        loop_label = self.fresh_label("for_loop")
+        end_label = self.fresh_label("for_end")
+        continue_label = self.fresh_label("for_continue")
+        
+        var_symbol = for_stmt.var_symbol
+        var_type = for_stmt.var_type
+        
+        if isinstance(for_stmt.iterable, RangeExpr):
+            # Range iteration
+            range_expr = for_stmt.iterable
+            
+            # Initialize loop variable with start value
+            self.compile_expression(range_expr.start)
+            self._store_to_stack(var_symbol.stack_offset, var_type)
+            
+            # Determine step direction
+            has_step = range_expr.step is not None
+            
+            # Loop start
+            self.emit_label(loop_label)
+            
+            # Load current value
+            self._load_from_stack(var_symbol.stack_offset, var_type)
+            self.emit("push rax")  # Save current value
+            
+            # Load end value and compare
+            self.compile_expression(range_expr.end)
+            self.emit("mov rbx, rax")  # end in rbx
+            self.emit("pop rax")       # current in rax
+            
+            # Compare: if i >= end (for positive step) or i <= end (for negative step), exit
+            # For simplicity, always use i < end for ascending (default)
+            self.emit("cmp rax, rbx")
+            self.emit(f"jge {end_label}")  # exit if i >= end
+            
+            # Loop stack for break/continue
+            self.loop_stack.append((continue_label, end_label))
+            
+            # Body
+            self.compile_block(for_stmt.body)
+            
+            # Continue label (increment)
+            self.emit_label(continue_label)
+            
+            # Increment: i = i + step (default step is 1)
+            self._load_from_stack(var_symbol.stack_offset, var_type)
+            if has_step:
+                self.emit("push rax")
+                self.compile_expression(range_expr.step)
+                self.emit("mov rbx, rax")
+                self.emit("pop rax")
+                self.emit("add rax, rbx")
+            else:
+                self.emit("inc rax")
+            self._store_to_stack(var_symbol.stack_offset, var_type)
+            
+            self.emit(f"jmp {loop_label}")
+            
+            self.emit_label(end_label)
+            self.loop_stack.pop()
+        
+        else:
+            # Array iteration - not yet implemented in compile mode
+            raise NotImplementedError("Array iteration in for loops not yet supported in compile mode")
+    
+    def _load_from_stack(self, offset: int, var_type: str):
+        """Load a value from stack into rax/eax"""
+        if var_type == 'i8':
+            self.emit(f"movsx eax, byte [rbp{offset:+d}]")
+        elif var_type == 'u8':
+            self.emit(f"movzx eax, byte [rbp{offset:+d}]")
+        elif var_type == 'i16':
+            self.emit(f"movsx eax, word [rbp{offset:+d}]")
+        elif var_type == 'u16':
+            self.emit(f"movzx eax, word [rbp{offset:+d}]")
+        elif var_type in ['i64', 'u64', 'str']:
+            self.emit(f"mov rax, qword [rbp{offset:+d}]")
+        else:
+            self.emit(f"mov eax, [rbp{offset:+d}]")
+    
+    def _store_to_stack(self, offset: int, var_type: str):
+        """Store value from rax/eax to stack"""
+        if var_type in ['i8', 'u8']:
+            self.emit(f"mov byte [rbp{offset:+d}], al")
+        elif var_type in ['i16', 'u16']:
+            self.emit(f"mov word [rbp{offset:+d}], ax")
+        elif var_type in ['i64', 'u64', 'str']:
+            self.emit(f"mov qword [rbp{offset:+d}], rax")
+        else:
+            self.emit(f"mov [rbp{offset:+d}], eax")
+    
+    def compile_match(self, match_stmt: Match):
+        """
+        Compile match statement as a chain of compare-and-jump.
+        
+        match value:
+            1:
+                do_something()
+            2:
+                do_other()
+            _:
+                default()
+        
+        Becomes:
+            eval value -> rax
+            cmp rax, 1
+            je .arm_0
+            cmp rax, 2
+            je .arm_1
+            jmp .arm_wildcard (or .end if no wildcard)
+        .arm_0:
+            do_something()
+            jmp .end
+        .arm_1:
+            do_other()
+            jmp .end
+        .arm_wildcard:
+            default()
+        .end:
+        """
+        end_label = self.fresh_label("match_end")
+        
+        # Evaluate the match value into rax
+        self.compile_expression(match_stmt.value)
+        self.emit("push rax")  # Save value for comparisons
+        
+        # Determine the type size for comparison
+        value_type = getattr(match_stmt, 'value_type', 'i32')
+        
+        # Generate labels for each arm
+        arm_labels = []
+        wildcard_label = None
+        wildcard_arm = None
+        
+        for i, arm in enumerate(match_stmt.arms):
+            if arm.is_wildcard:
+                wildcard_label = self.fresh_label("match_wildcard")
+                wildcard_arm = arm
+            else:
+                arm_labels.append((arm, self.fresh_label(f"match_arm_{i}")))
+        
+        # Generate comparison chain
+        for arm, label in arm_labels:
+            self.emit("mov rax, [rsp]")  # Reload value
+            self.compile_expression(arm.pattern)  # Pattern value in rax
+            self.emit("mov rbx, rax")  # Pattern in rbx
+            self.emit("mov rax, [rsp]")  # Value in rax
+            self.emit("cmp rax, rbx")
+            self.emit(f"je {label}")
+        
+        # Jump to wildcard or end if no match
+        if wildcard_label:
+            self.emit(f"jmp {wildcard_label}")
+        else:
+            self.emit(f"jmp {end_label}")
+        
+        # Generate arm bodies
+        for arm, label in arm_labels:
+            self.emit_label(label)
+            self.compile_block(arm.body)
+            self.emit(f"jmp {end_label}")
+        
+        # Generate wildcard body if present
+        if wildcard_arm:
+            self.emit_label(wildcard_label)
+            self.compile_block(wildcard_arm.body)
+        
+        self.emit_label(end_label)
+        self.emit("add rsp, 8")  # Clean up saved value
+    
+    def compile_enum_access(self, enum_access: EnumAccess):
+        """
+        Compile enum variant access: Color.Red -> load immediate value
+        The variant_value is set by the semantic analyzer.
+        """
+        value = enum_access.variant_value
+        self.emit(f"mov eax, {value}")
+    
     def compile_write(self, write_stmt: Write):
         """
         write() / writeln() - output to stdout via syscall
@@ -509,6 +791,7 @@ class CodeGenerator:
         - str: ptr in rax, length known from string data
         - integers: convert to decimal string, then print
         - bool: print "True" or "False"
+        - enums: print underlying integer value
         """
         value_type = write_stmt.value_type
         
@@ -517,6 +800,9 @@ class CodeGenerator:
         elif value_type == 'bool':
             self.compile_write_bool(write_stmt)
         elif value_type in ('i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64'):
+            self.compile_write_integer(write_stmt)
+        elif value_type in self.enum_defs:
+            # Enums are printed as their underlying integer value
             self.compile_write_integer(write_stmt)
         else:
             raise NotImplementedError(f"Cannot write type: {value_type}")
@@ -768,6 +1054,8 @@ class CodeGenerator:
             self.compile_readchar(expr)
         elif isinstance(expr, ReadFailed):
             self.compile_read_failed(expr)
+        elif isinstance(expr, EnumAccess):
+            self.compile_enum_access(expr)
         # Pointer expression types removed in v1.1.0 - AXIS uses value semantics
         else:
             raise NotImplementedError(f"Expression type not implemented: {type(expr).__name__}")
@@ -974,6 +1262,52 @@ class CodeGenerator:
             self.emit("mov eax, 1")
             self.emit_label(end_label)
         
+        # Logical AND with short-circuit evaluation
+        elif binop.op == 'and':
+            false_label = self.fresh_label("and_false")
+            end_label = self.fresh_label("and_end")
+            
+            # Evaluate left side
+            self.compile_expression(binop.left)
+            self.emit("test eax, eax")
+            self.emit(f"jz {false_label}")  # if left is false, skip right
+            
+            # Evaluate right side (only if left was true)
+            self.compile_expression(binop.right)
+            self.emit("test eax, eax")
+            self.emit(f"jz {false_label}")  # if right is false, result is false
+            
+            # Both true
+            self.emit("mov eax, 1")
+            self.emit(f"jmp {end_label}")
+            
+            self.emit_label(false_label)
+            self.emit("mov eax, 0")
+            self.emit_label(end_label)
+        
+        # Logical OR with short-circuit evaluation
+        elif binop.op == 'or':
+            true_label = self.fresh_label("or_true")
+            end_label = self.fresh_label("or_end")
+            
+            # Evaluate left side
+            self.compile_expression(binop.left)
+            self.emit("test eax, eax")
+            self.emit(f"jnz {true_label}")  # if left is true, skip right
+            
+            # Evaluate right side (only if left was false)
+            self.compile_expression(binop.right)
+            self.emit("test eax, eax")
+            self.emit(f"jnz {true_label}")  # if right is true, result is true
+            
+            # Both false
+            self.emit("mov eax, 0")
+            self.emit(f"jmp {end_label}")
+            
+            self.emit_label(true_label)
+            self.emit("mov eax, 1")
+            self.emit_label(end_label)
+        
         else:
             raise NotImplementedError(f"Binary operator '{binop.op}' not implemented")
     
@@ -987,7 +1321,7 @@ class CodeGenerator:
                 self.emit("neg rax")
             else:
                 self.emit("neg eax")
-        elif unaryop.op == '!':
+        elif unaryop.op == '!' or unaryop.op == 'not':
             # Boolean NOT: flip 0 to 1 and 1 to 0
             self.compile_expression(unaryop.operand)
             self.emit("xor eax, 1")  # Toggle lowest bit

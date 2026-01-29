@@ -15,12 +15,13 @@ AXIS can run as an interpreted scripting language OR compile directly to x86-64 
 Download and run the one-click GUI installer for your platform:
 
 | Platform | Installer | One-Liner |
-|----------|-----------|----------|
+| ---------- | ----------- | ---------- |
 | **Windows** | [install-windows.ps1](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-windows.ps1) | Right-click → Run with PowerShell |
 | **Linux** | [install-linux.sh](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-linux.sh) | `curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-linux.sh \| bash` |
 | **macOS** | [install-macos.sh](https://github.com/AGDNoob/axis-lang/raw/main/installer/install-macos.sh) | `curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-macos.sh \| bash` |
 
 The installer will:
+
 - ✅ Check/install Python 3.7+
 - ✅ Download all AXIS files
 - ✅ Set up the `axis` command
@@ -37,6 +38,7 @@ axis run hello.axis
 ### Hello World (Compile Mode)
 
 **Linux x86-64 only** - creates native ELF executable:
+
 ```bash
 cat > hello.axis << 'EOF'
 mode compile
@@ -55,10 +57,10 @@ axis build hello.axis -o hello --elf
 
 AXIS supports two execution modes:
 
-| Mode | Declaration | Execution | Speed | Use Case |
-|------|-------------|-----------|-------|----------|
-| **Script** | `mode script` | Transpiled to Python | Fast startup | Scripting, prototyping |
-| **Compile** | `mode compile` | Native x86-64 ELF | Maximum performance | Systems programming |
+| Mode        | Declaration    | Execution            | Speed               | Use Case               |
+| ----------- | -------------- | -------------------- | ------------------- | ---------------------- |
+| **Script**  | `mode script`  | Transpiled to Python | Fast startup        | Scripting, prototyping |
+| **Compile** | `mode compile` | Native x86-64 ELF    | Maximum performance | Systems programming    |
 
 ### Script Mode
 
@@ -73,6 +75,7 @@ writeln(x)
 ```
 
 Run with:
+
 ```bash
 axis run script.axis
 ```
@@ -91,6 +94,7 @@ func main() -> i32:
 ```
 
 Build with:
+
 ```bash
 axis build program.axis -o program --elf
 ./program
@@ -146,6 +150,7 @@ while i < 20:
 ```
 
 **Keywords:**
+
 - `repeat:` – Infinite loop
 - `while condition:` – Conditional loop  
 - `stop` – Break out of loop
@@ -298,6 +303,7 @@ when c == Color.Green:
 ```
 
 Enum features:
+
 - **Underlying type**: Specify `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, or `u64` (default: `i32`)
 - **Auto-increment**: Variants without explicit values auto-increment from 0
 - **Explicit values**: Use `= value` to assign specific integer values
@@ -358,7 +364,7 @@ The `_` pattern is the wildcard/default case that matches any value.
 The `examples/` folder contains 20 example programs:
 
 | # | Example | Description |
-|---|---------|-------------|
+| --- | --------- | ------------- |
 | 01 | `hello_world.axis` | Basic output |
 | 02 | `variables.axis` | Variable types |
 | 03 | `arithmetic.axis` | Math operations |
@@ -381,6 +387,7 @@ The `examples/` folder contains 20 example programs:
 | 20 | `compile_mode.axis` | Native compilation |
 
 Run examples:
+
 ```bash
 # Script mode (examples 01-19)
 axis run examples/01_hello_world.axis
@@ -395,7 +402,7 @@ axis build examples/20_compile_mode.axis -o demo --elf
 
 ### Compilation Pipeline
 
-```
+```text
 Source (.axis)
      │
      ▼
@@ -431,7 +438,7 @@ Source (.axis)
 
 ### Project Structure
 
-```
+```text
 axis-lang/
 ├── compilation_pipeline.py    # Main driver
 ├── tokenization_engine.py     # Lexer
@@ -477,10 +484,12 @@ Run the same installer again and select **Uninstall**.
 **All modes require Python 3.7+** to run the AXIS compiler.
 
 **Compile mode:**
+
 - Linux x86-64 only (Ubuntu, Debian, Fedora, Arch, etc.)
 - Generated binaries are native ELF64 executables (no runtime dependencies)
 
 **Script mode:**
+
 - Any platform with Python 3.7+
 - Windows, macOS, Linux all supported
 
@@ -488,16 +497,17 @@ Run the same installer again and select **Uninstall**.
 
 ## 📊 Performance
 
-| Mode | Overhead | Binary Size | Compiler Requires | Output Requires |
-|------|----------|-------------|-------------------|----------------|
-| Script | ~30% vs Python | N/A | Python 3.7+ | Python 3.7+ |
-| Compile | Native speed | ~4KB | Python 3.7+ | Nothing (standalone) |
+| Mode    | Overhead       | Binary Size | Compiler Requires | Output Requires      |
+| ------- | -------------- | ----------- | ----------------- | -------------------- |
+| Script  | ~30% vs Python | N/A         | Python 3.7+       | Python 3.7+          |
+| Compile | Native speed   | ~4KB        | Python 3.7+       | Nothing (standalone) |
 
 ---
 
 ## 🗺️ Roadmap
 
 ### Implemented ✓
+
 - [x] Dual-mode execution (script/compile)
 - [x] Python transpiler for script mode
 - [x] ELF64 native compilation
@@ -511,6 +521,7 @@ Run the same installer again and select **Uninstall**.
 - [x] VS Code syntax highlighting
 
 ### Planned
+
 - [ ] Function parameters in compile mode
 - [ ] Standard library
 - [ ] Language Server Protocol (LSP)

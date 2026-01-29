@@ -4,9 +4,10 @@ LL(1) recursive descent, ein lookahead reicht
 AST raus, keine types oder codegen hier
 """
 
-from dataclasses import dataclass
-from typing import Optional, List
+from dataclasses import dataclass, field
+from typing import Optional, List, Tuple
 from tokenization_engine import Lexer, Token, TokenType
+
 
 @dataclass
 class ASTNode:
@@ -63,11 +64,21 @@ class VarDecl(Statement):
     mutable: bool
     init: Optional['Expression']
     array_type: Optional['ArrayType'] = None  # set if this is an array declaration
+    line: int = 0  # source line for error reporting
+    column: int = 0  # source column for error reporting
 
 
 @dataclass
 class Assignment(Statement):
     target: 'Expression'
+    value: 'Expression'
+
+
+@dataclass
+class CompoundAssignment(Statement):
+    """Compound assignment: x += 1, x -= 2, etc."""
+    target: 'Expression'
+    operator: str  # '+', '-', '*', '/', '%', '&', '|', '^', '<<', '>>'
     value: 'Expression'
 
 
@@ -87,6 +98,21 @@ class If(Statement):
 class While(Statement):
     condition: 'Expression'
     body: Block
+
+
+@dataclass
+class ForLoop(Statement):
+    """
+    For loop:
+    for i in range(0, 10):       # range iteration
+        writeln(i)
+    for x in arr:                # array iteration
+        writeln(x)
+    """
+    var_name: str                # loop variable name
+    iterable: 'Expression'       # RangeExpr or Identifier (for arrays)
+    body: Block
+    var_type: Optional[str] = None  # inferred type of loop variable
 
 
 @dataclass
@@ -120,6 +146,8 @@ class BinaryOp(Expression):
     left: Expression
     op: str
     right: Expression
+    line: int = 0  # source line for error reporting
+    column: int = 0  # source column for error reporting
 
 
 @dataclass
@@ -166,12 +194,27 @@ class ReadFailed(Expression):
 @dataclass
 class Identifier(Expression):
     name: str
+    line: int = 0
+    column: int = 0
 
 
 @dataclass
 class Call(Expression):
     name: str
     args: List[Expression]
+    line: int = 0  # source line for error reporting
+    column: int = 0  # source column for error reporting
+
+
+@dataclass
+class RangeExpr(Expression):
+    """
+    range(start, end) or range(start, end, step)
+    Used in for loops: for i in range(0, 10):
+    """
+    start: Expression
+    end: Expression
+    step: Optional[Expression] = None  # defaults to 1 if None
 
 
 # Pointer-related AST nodes removed in v1.1.0
@@ -793,6 +836,9 @@ class Parser:
         if self.match(TokenType.MATCH):
             return self.parse_match()
         
+        if self.match(TokenType.FOR):
+            return self.parse_for()
+        
         if self.match(TokenType.BREAK):
             self.advance()
             self.skip_newlines()
@@ -808,6 +854,27 @@ class Parser:
         
         expr = self.parse_expression()
         
+        # Check for compound assignment operators
+        compound_ops = {
+            TokenType.PLUS_ASSIGN: '+',
+            TokenType.MINUS_ASSIGN: '-',
+            TokenType.STAR_ASSIGN: '*',
+            TokenType.SLASH_ASSIGN: '/',
+            TokenType.PERCENT_ASSIGN: '%',
+            TokenType.AMP_ASSIGN: '&',
+            TokenType.PIPE_ASSIGN: '|',
+            TokenType.CARET_ASSIGN: '^',
+            TokenType.LSHIFT_ASSIGN: '<<',
+            TokenType.RSHIFT_ASSIGN: '>>',
+        }
+        
+        for token_type, operator in compound_ops.items():
+            if self.match(token_type):
+                self.advance()
+                value = self.parse_expression()
+                self.skip_newlines()
+                return CompoundAssignment(expr, operator, value)
+        
         if self.match(TokenType.ASSIGN):
             self.advance()
             value = self.parse_expression()
@@ -821,7 +888,10 @@ class Parser:
         # Python-style: name: type = value
         # Array style: name: (i32; 5) = [1, 2, 3, 4, 5]
         # alles ist mutable by default
-        name = self.expect(TokenType.IDENTIFIER).value
+        name_token = self.expect(TokenType.IDENTIFIER)
+        name = name_token.value
+        name_line = name_token.line
+        name_column = name_token.column
         self.expect(TokenType.COLON)
         type_name, array_type = self.parse_type_or_array_type()
         
@@ -831,7 +901,7 @@ class Parser:
             init = self.parse_expression()
         
         self.skip_newlines()
-        return VarDecl(name, type_name, True, init, array_type)
+        return VarDecl(name, type_name, True, init, array_type, name_line, name_column)
     
     def parse_return(self) -> Return:
         # Accept both 'give' and 'return'
@@ -922,6 +992,56 @@ class Parser:
         self.expect(TokenType.DEDENT)
         return Match(value, arms)
     
+    def parse_for(self) -> ForLoop:
+        """
+        Parse a for loop:
+        for i in range(0, 10):
+            statements...
+        for x in array:
+            statements...
+        """
+        self.expect(TokenType.FOR)
+        
+        # Get loop variable name
+        if not self.match(TokenType.IDENTIFIER):
+            self.error("Expected identifier after 'for'")
+        var_name = self.current.value
+        self.advance()
+        
+        # Expect 'in'
+        self.expect(TokenType.IN)
+        
+        # Parse the iterable (range expression or array identifier)
+        # Check if it's range(...)
+        if self.match(TokenType.IDENTIFIER) and self.current.value == 'range':
+            self.advance()  # consume 'range'
+            self.expect(TokenType.LPAREN)
+            
+            # Parse start expression
+            start = self.parse_expression()
+            self.expect(TokenType.COMMA)
+            
+            # Parse end expression
+            end = self.parse_expression()
+            
+            # Check for optional step
+            step = None
+            if self.match(TokenType.COMMA):
+                self.advance()
+                step = self.parse_expression()
+            
+            self.expect(TokenType.RPAREN)
+            iterable = RangeExpr(start, end, step)
+        else:
+            # It's an array or other iterable
+            iterable = self.parse_expression()
+        
+        self.expect(TokenType.COLON)
+        self.skip_newlines()
+        body = self.parse_block()
+        
+        return ForLoop(var_name, iterable, body)
+    
     def parse_match_arm(self) -> MatchArm:
         """
         Parse a single match arm:
@@ -963,16 +1083,49 @@ class Parser:
         return Write(value, newline)
     
     def parse_expression(self) -> Expression:
-        return self.parse_bitwise_or()
+        return self.parse_logical_or()
+    
+    def parse_logical_or(self) -> Expression:
+        """Parse logical OR: expr or expr"""
+        expr = self.parse_logical_and()
+        
+        while self.match(TokenType.OR):
+            op_token = self.current
+            op = 'or'
+            op_line = op_token.line
+            op_column = op_token.column
+            self.advance()
+            right = self.parse_logical_and()
+            expr = BinaryOp(expr, op, right, op_line, op_column)
+        
+        return expr
+    
+    def parse_logical_and(self) -> Expression:
+        """Parse logical AND: expr and expr"""
+        expr = self.parse_bitwise_or()
+        
+        while self.match(TokenType.AND):
+            op_token = self.current
+            op = 'and'
+            op_line = op_token.line
+            op_column = op_token.column
+            self.advance()
+            right = self.parse_bitwise_or()
+            expr = BinaryOp(expr, op, right, op_line, op_column)
+        
+        return expr
     
     def parse_bitwise_or(self) -> Expression:
         expr = self.parse_bitwise_xor()
         
         while self.match(TokenType.PIPE):
-            op = self.current.value
+            op_token = self.current
+            op = op_token.value
+            op_line = op_token.line
+            op_column = op_token.column
             self.advance()
             right = self.parse_bitwise_xor()
-            expr = BinaryOp(expr, op, right)
+            expr = BinaryOp(expr, op, right, op_line, op_column)
         
         return expr
     
@@ -980,10 +1133,13 @@ class Parser:
         expr = self.parse_bitwise_and()
         
         while self.match(TokenType.CARET):
-            op = self.current.value
+            op_token = self.current
+            op = op_token.value
+            op_line = op_token.line
+            op_column = op_token.column
             self.advance()
             right = self.parse_bitwise_and()
-            expr = BinaryOp(expr, op, right)
+            expr = BinaryOp(expr, op, right, op_line, op_column)
         
         return expr
     
@@ -991,10 +1147,13 @@ class Parser:
         expr = self.parse_comparison()
         
         while self.match(TokenType.AMPERSAND):
-            op = self.current.value
+            op_token = self.current
+            op = op_token.value
+            op_line = op_token.line
+            op_column = op_token.column
             self.advance()
             right = self.parse_comparison()
-            expr = BinaryOp(expr, op, right)
+            expr = BinaryOp(expr, op, right, op_line, op_column)
         
         return expr
     
@@ -1002,10 +1161,13 @@ class Parser:
         expr = self.parse_shift()
         
         while self.match(TokenType.EQ, TokenType.NE, TokenType.LT, TokenType.LE, TokenType.GT, TokenType.GE):
-            op = self.current.value
+            op_token = self.current
+            op = op_token.value
+            op_line = op_token.line
+            op_column = op_token.column
             self.advance()
             right = self.parse_shift()
-            expr = BinaryOp(expr, op, right)
+            expr = BinaryOp(expr, op, right, op_line, op_column)
         
         return expr
     
@@ -1013,10 +1175,13 @@ class Parser:
         expr = self.parse_additive()
         
         while self.match(TokenType.LSHIFT, TokenType.RSHIFT):
-            op = self.current.value
+            op_token = self.current
+            op = op_token.value
+            op_line = op_token.line
+            op_column = op_token.column
             self.advance()
             right = self.parse_additive()
-            expr = BinaryOp(expr, op, right)
+            expr = BinaryOp(expr, op, right, op_line, op_column)
         
         return expr
     
@@ -1024,10 +1189,13 @@ class Parser:
         expr = self.parse_multiplicative()
         
         while self.match(TokenType.PLUS, TokenType.MINUS):
-            op = self.current.value
+            op_token = self.current
+            op = op_token.value
+            op_line = op_token.line
+            op_column = op_token.column
             self.advance()
             right = self.parse_multiplicative()
-            expr = BinaryOp(expr, op, right)
+            expr = BinaryOp(expr, op, right, op_line, op_column)
         
         return expr
     
@@ -1035,10 +1203,13 @@ class Parser:
         expr = self.parse_unary()
         
         while self.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT):
-            op = self.current.value
+            op_token = self.current
+            op = op_token.value
+            op_line = op_token.line
+            op_column = op_token.column
             self.advance()
             right = self.parse_unary()
-            expr = BinaryOp(expr, op, right)
+            expr = BinaryOp(expr, op, right, op_line, op_column)
         
         return expr
     
@@ -1050,8 +1221,15 @@ class Parser:
             return UnaryOp(op, operand)
         
         if self.match(TokenType.BANG):
-            # Boolean NOT
+            # Boolean NOT (!)
             op = self.current.value
+            self.advance()
+            operand = self.parse_unary()
+            return UnaryOp(op, operand)
+        
+        if self.match(TokenType.NOT):
+            # Logical NOT (not keyword)
+            op = 'not'
             self.advance()
             operand = self.parse_unary()
             return UnaryOp(op, operand)
@@ -1174,16 +1352,19 @@ class Parser:
             return ReadFailed()
         
         if self.match(TokenType.IDENTIFIER):
+            token = self.current
             name = self.current.value
+            name_line = token.line
+            name_column = token.column
             self.advance()
             
             if self.match(TokenType.LPAREN):
                 self.advance()
                 args = self.parse_args()
                 self.expect(TokenType.RPAREN)
-                return Call(name, args)
+                return Call(name, args, name_line, name_column)
             
-            return Identifier(name)
+            return Identifier(name, name_line, name_column)
         
         if self.match(TokenType.LPAREN):
             self.advance()

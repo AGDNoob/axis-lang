@@ -23,11 +23,13 @@ I actually implemented methods at one point - you could do things like `player.m
 AXIS is **value-oriented**. Data and functions are separate. Functions operate on values passed via parameters.
 
 **Instead of this (OOP style):**
-```
+
+```text
 player.move(10, 20)
 ```
 
 **AXIS does this (value-oriented):**
+
 ```axis
 move(player, 10, 20)            # Read-only
 move(update player, 10, 20)     # Modifies player
@@ -70,6 +72,129 @@ arr[i] = x + 1
 ```
 
 **Supported element types:** `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `str`
+
+---
+
+### Compound Assignment Operators
+
+All arithmetic and bitwise compound assignment operators are now supported:
+
+```axis
+x: i32 = 10
+
+// Arithmetic
+x += 5      // x = x + 5  → 15
+x -= 3      // x = x - 3  → 12
+x *= 2      // x = x * 2  → 24
+x /= 4      // x = x / 4  → 6
+x %= 4      // x = x % 4  → 2
+
+// Bitwise
+y: i32 = 12
+y &= 10     // y = y & 10  (AND)
+y |= 3      // y = y | 3   (OR)
+y ^= 5      // y = y ^ 5   (XOR)
+
+// Shift
+z: i32 = 4
+z <<= 2     // z = z << 2  → 16
+z >>= 1     // z = z >> 1  → 8
+```
+
+**Works with arrays and fields too:**
+
+```axis
+arr: (i32; 3) = [10, 20, 30]
+arr[0] += 5     // arr[0] = 15
+
+Counter: field:
+    value: i32 = 0
+
+c: Counter
+c.value = 100
+c.value += 50   // c.value = 150
+```
+
+---
+
+### For Loops
+
+Iterate over ranges or arrays with the new `for...in` syntax:
+
+```axis
+// Range iteration
+for i in range(0, 10):
+    writeln(i)              // 0 to 9
+
+for i in range(0, 10, 2):
+    writeln(i)              // 0, 2, 4, 6, 8 (step by 2)
+
+for i in range(5, 0, -1):
+    writeln(i)              // 5, 4, 3, 2, 1 (countdown)
+
+// Array iteration (script mode)
+arr: (i32; 5) = [1, 2, 3, 4, 5]
+for x in arr:
+    writeln(x)
+```
+
+**Features:**
+
+- `range(start, end)` - iterate from start to end-1
+- `range(start, end, step)` - with custom step (positive or negative)
+- `break` and `continue` work inside for loops
+- Nested for loops supported
+- Works in both script and compile mode
+
+---
+
+### Improved Error Messages
+
+Error messages now include file name, line number, column, and source context:
+
+```text
+tests/example.axis:4:10: error: Undefined variable: undefined_var
+  4 | y: i32 = undefined_var + 5
+               ^
+```
+
+**Features:**
+
+- Precise location: file name, line number, column number
+- Source line shown with visual caret pointing to error
+- Clean output without stack traces (use `-v` for verbose debugging)
+- Works for: undefined variables, type mismatches, undefined functions, etc.
+
+---
+
+### Logical Operators
+
+Boolean logic with `and`, `or`, and `not`:
+
+```axis
+// Logical AND - both conditions must be true
+when x > 0 and y < 100:
+    writeln("In range")
+
+// Logical OR - at least one condition must be true
+when is_admin or has_permission:
+    writeln("Access granted")
+
+// Logical NOT - inverts the condition
+when not is_locked:
+    writeln("Unlocked")
+
+// Combined expressions
+when (a > 0 and b > 0) or force_allow:
+    writeln("Allowed")
+```
+
+**Features:**
+
+- Short-circuit evaluation (right side not evaluated if result is known)
+- Both `not` and `!` work for logical NOT
+- Works in both script and compile modes
+- Proper operator precedence: `not` > `and` > `or`
 
 ---
 
@@ -132,6 +257,7 @@ swap(x, y)
 ```
 
 **How it works:**
+
 - On function entry: values are copied in
 - On function return: values are copied back to caller
 - No pointers, no references - just values!
@@ -157,6 +283,7 @@ writeln(copied[0])    # Output: 999
 ```
 
 **Without `copy`:**
+
 ```axis
 arr2 = arr1  # Error: Array assignment requires 'copy' keyword
 ```
@@ -201,6 +328,7 @@ writeln(pos.x)  # 100
 ```
 
 **Nested Fields:**
+
 ```axis
 Player: field:
     name: str = ""
@@ -213,6 +341,7 @@ p.position.y = 100
 ```
 
 **Inline Anonymous Fields:**
+
 ```axis
 Game: field:
     home: field:
@@ -228,6 +357,7 @@ g.home.score = 3
 ```
 
 **Arrays of Fields:**
+
 ```axis
 # Array of named field type
 players: (Player; 5)
@@ -247,6 +377,7 @@ t.members[0].number = 10
 ```
 
 **Fields work with `update` and `copy`:**
+
 ```axis
 func move(update pos: Vec2, dx: i32, dy: i32):
     pos.x = pos.x + dx
@@ -290,6 +421,7 @@ BigValues: enum i64:
 ```
 
 **Usage:**
+
 ```axis
 c: Color = Color.Red
 s: Status = Status.Active
@@ -322,6 +454,7 @@ match x:
 ```
 
 **Match with enums:**
+
 ```axis
 c: Color = Color.Green
 match c:
@@ -340,6 +473,7 @@ The `_` pattern is the wildcard/default case that matches any value.
 ### Semantic Analysis for Script Mode
 
 Script mode now runs full semantic analysis:
+
 - Type checking for all expressions
 - `copy` keyword enforcement
 - Field type checking and access validation
@@ -350,9 +484,11 @@ Script mode now runs full semantic analysis:
 ## 🔧 Technical Changes
 
 ### Tokenizer
+
 - Added: `UPDATE`, `COPY`, `RETURN`, `FIELD`, `DOT`, `ENUM`, `MATCH` tokens
 
-### Parser  
+### Parser
+
 - Added: `Parameter` dataclass with `modifier` field
 - Added: `CopyExpr` AST node for `copy <expr>`
 - Added: `ArrayType`, `ArrayLiteral`, `IndexAccess` AST nodes
@@ -364,6 +500,7 @@ Script mode now runs full semantic analysis:
 - Added: Enum definition parsing with optional underlying type
 
 ### Semantic Analyzer
+
 - Added: `analyze_copy_expr` for copy expressions
 - Added: Array assignment check (requires `copy` keyword)
 - Added: Top-level statement analysis for script mode
@@ -375,11 +512,13 @@ Script mode now runs full semantic analysis:
 - Added: Match statement analysis with pattern validation
 
 ### Code Generator
+
 - Added: Array initialization and dynamic index access
 - Added: Parameter copying from registers to stack
 - Added: Full function parameter support
 
 ### Transpiler
+
 - Added: `update` modifier handling with tuple return/unpacking
 - Added: `CopyExpr` transpilation using `list()` for arrays, `deepcopy` for fields
 - Added: Semantic analysis integration
@@ -393,6 +532,7 @@ Script mode now runs full semantic analysis:
 ## 📦 Dependencies
 
 **Optional:**
+
 - `keystone-engine>=0.9.2` - Full x86-64 assembler support
 
 ```bash
@@ -404,6 +544,7 @@ pip install keystone-engine
 ## 🧪 Examples
 
 ### Function Parameters
+
 ```axis
 mode script
 
@@ -422,6 +563,7 @@ writeln(num)  # 50
 ```
 
 ### Array Operations
+
 ```axis
 mode script
 
@@ -439,6 +581,7 @@ writeln(backup[0])  # 10 (unaffected)
 ```
 
 ### Swap Without Pointers
+
 ```axis
 mode script
 
@@ -455,6 +598,7 @@ writeln(y)  # 100
 ```
 
 ### Fields
+
 ```axis
 mode script
 
@@ -490,6 +634,7 @@ writeln(hero.pos.y)  # 30
 AXIS v1.1.0 is a major update that establishes AXIS's unique identity: **value-oriented programming that compiles to native code**.
 
 New features:
+
 - **Arrays** with dynamic indexing
 - **Fields** - custom data types with unlimited nesting
 - **Enums** - named constants with configurable underlying types

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0-beta] - 2026-01-21
 
 ### Added
+
 - **Enums**: Named constant types for improved code clarity
   - Configurable underlying type: `enum u8:`, `enum i64:`, etc. (default: i32)
   - Auto-incrementing values: `Red`, `Green`, `Blue` → 0, 1, 2
@@ -32,7 +33,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `copy.compile` - Optimized for faster compilation
   - In script mode, both behave identically
 
+- **Compound Assignment Operators**: All arithmetic and bitwise compound operators
+  - Arithmetic: `+=`, `-=`, `*=`, `/=`, `%=`
+  - Bitwise: `&=`, `|=`, `^=`
+  - Shift: `<<=`, `>>=`
+  - Works with variables, array elements, and field members
+
+- **For Loops**: Iterate over ranges or arrays with `for...in` syntax
+  - `range(start, end)` and `range(start, end, step)`
+  - Array iteration in script mode
+  - `break` and `continue` supported
+
+- **Improved Error Messages**: Better error reporting with source context
+  - File name, line number, and column in error messages
+  - Source line shown with caret pointing to error location
+  - Clean output without stack traces (use `-v` for verbose mode)
+
+- **Logical Operators**: `and`, `or`, `not` for boolean logic
+  - Short-circuit evaluation (right side not evaluated if result known)
+  - Works in both script and compile modes
+  - Example: `when x > 0 and y < 10:`
+
 ### Changed
+
 - Updated README documentation with new features
 - Improved semantic analyzer for enhanced type checking
 
@@ -41,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.2-beta] - 2026-01-18
 
 ### Added
+
 - **Dual-Mode Execution**: Two execution modes for different use cases
   - `mode script` - Cross-platform Python transpilation (Windows, macOS, Linux)
   - `mode compile` - Native x86-64 ELF64 compilation (Linux only)
@@ -57,17 +81,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Windows/macOS Uninstallers**: `uninstall.bat` and updated `uninstall.sh`
 
 ### Changed
+
 - **Simplified Architecture**: Removed interpreter/bytecode VM in favor of direct transpilation
 - **Renamed `tets.py` to `assembler.py`**: Cleaner naming for x86-64 assembler
 - **Updated Documentation**: Complete README rewrite with dual-mode and cross-platform docs
 - **Installer Reorganization**: All install files now in `installer/` folder
 
 ### Removed
+
 - `ast_compiler.py`, `interpreter.py`, `bytecode_vm.py` (replaced by transpiler)
 - `tests/` folder (replaced by `examples/`)
 - Cache system (unnecessary complexity)
 
 ### Fixed
+
 - `ExprStatement` handling in transpiler for function calls as statements
 - Right shift now uses `sar` (arithmetic) for signed types
 - Jump relaxation for large conditional jumps
@@ -79,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.1-beta] - 2026-01-14
 
 ### Added
+
 - **Type System**: `i8`-`i64`, `u8`-`u64`, `ptr`, `bool`
 - **Variables**: `let` (immutable), `let mut` (mutable)
 - **Control Flow**: `when`/`else`, `while`, `stop`, `skip`
@@ -90,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Linux Installer**: User and system-wide installation scripts
 
 ### Known Limitations
+
 - Linux x86-64 only (ELF64 format)
 - Limited function parameter support
 - No standard library

@@ -34,6 +34,11 @@ class TokenType(Enum):
     FIELD = auto()      # field type definition
     ENUM = auto()       # enum type definition
     MATCH = auto()      # match expression/statement
+    FOR = auto()        # for loop
+    IN = auto()         # in keyword for iteration
+    AND = auto()        # and (logical)
+    OR = auto()         # or (logical)
+    NOT = auto()        # not (logical)
     DOT = auto()        # . for field access
     STR = auto()        # str type
     TRUE = auto()
@@ -64,6 +69,16 @@ class TokenType(Enum):
     GT = auto()         # >
     GE = auto()         # >=
     ASSIGN = auto()     # =
+    PLUS_ASSIGN = auto()    # +=
+    MINUS_ASSIGN = auto()   # -=
+    STAR_ASSIGN = auto()    # *=
+    SLASH_ASSIGN = auto()   # /=
+    PERCENT_ASSIGN = auto() # %=
+    AMP_ASSIGN = auto()     # &=
+    PIPE_ASSIGN = auto()    # |=
+    CARET_ASSIGN = auto()   # ^=
+    LSHIFT_ASSIGN = auto()  # <<=
+    RSHIFT_ASSIGN = auto()  # >>=
     BANG = auto()       # !
     LPAREN = auto()     # (
     RPAREN = auto()     # )
@@ -124,6 +139,11 @@ class Lexer:
         'field': TokenType.FIELD,
         'enum': TokenType.ENUM,
         'match': TokenType.MATCH,
+        'for': TokenType.FOR,
+        'in': TokenType.IN,
+        'and': TokenType.AND,
+        'or': TokenType.OR,
+        'not': TokenType.NOT,
         'bool': TokenType.BOOL,
         'str': TokenType.STR,
         'True': TokenType.TRUE,
@@ -397,8 +417,12 @@ class Lexer:
                 return Token(TokenType.BANG, '!', start_line, start_column)
             
             if char == '<' and self.peek() == '<':
+                # Check for <<= first
                 self.advance()
                 self.advance()
+                if self.current_char == '=':
+                    self.advance()
+                    return Token(TokenType.LSHIFT_ASSIGN, '<<=', start_line, start_column)
                 return Token(TokenType.LSHIFT, '<<', start_line, start_column)
             
             if char == '<' and self.peek() == '=':
@@ -407,8 +431,12 @@ class Lexer:
                 return Token(TokenType.LE, '<=', start_line, start_column)
             
             if char == '>' and self.peek() == '>':
+                # Check for >>= first
                 self.advance()
                 self.advance()
+                if self.current_char == '=':
+                    self.advance()
+                    return Token(TokenType.RSHIFT_ASSIGN, '>>=', start_line, start_column)
                 return Token(TokenType.RSHIFT, '>>', start_line, start_column)
             
             if char == '>' and self.peek() == '=':
@@ -420,6 +448,47 @@ class Lexer:
                 self.advance()
                 self.advance()
                 return Token(TokenType.ARROW, '->', start_line, start_column)
+            
+            # Compound assignment operators
+            if char == '+' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.PLUS_ASSIGN, '+=', start_line, start_column)
+            
+            if char == '-' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.MINUS_ASSIGN, '-=', start_line, start_column)
+            
+            if char == '*' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.STAR_ASSIGN, '*=', start_line, start_column)
+            
+            if char == '/' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.SLASH_ASSIGN, '/=', start_line, start_column)
+            
+            if char == '%' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.PERCENT_ASSIGN, '%=', start_line, start_column)
+            
+            if char == '&' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.AMP_ASSIGN, '&=', start_line, start_column)
+            
+            if char == '|' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.PIPE_ASSIGN, '|=', start_line, start_column)
+            
+            if char == '^' and self.peek() == '=':
+                self.advance()
+                self.advance()
+                return Token(TokenType.CARET_ASSIGN, '^=', start_line, start_column)
             
             single_char_tokens = {
                 '+': TokenType.PLUS,

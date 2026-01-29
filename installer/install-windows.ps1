@@ -127,7 +127,7 @@ function Install-Dependencies {
     }
 }
 
-function Download-AxisFiles {
+function Get-AxisFiles {
     param([System.Windows.Forms.Label]$StatusLabel, [System.Windows.Forms.ProgressBar]$ProgressBar)
     
     # Create directories
@@ -156,7 +156,7 @@ function Download-AxisFiles {
     return $true
 }
 
-function Create-AxisCommand {
+function New-AxisCommand {
     param([System.Windows.Forms.Label]$StatusLabel, [string]$PythonPath)
     
     $StatusLabel.Text = "Creating axis command..."
@@ -498,7 +498,7 @@ $installButton.Add_Click({
         
         # Step 2: Download AXIS files
         $progressBar.Value = 30
-        if (-not (Download-AxisFiles -StatusLabel $statusLabel -ProgressBar $progressBar)) {
+        if (-not (Get-AxisFiles -StatusLabel $statusLabel -ProgressBar $progressBar)) {
             $statusLabel.Text = "Failed to download AXIS files"
             $statusLabel.ForeColor = [System.Drawing.Color]::Red
             $installButton.Enabled = $true
@@ -515,7 +515,7 @@ $installButton.Add_Click({
         
         # Step 4: Create axis command
         $progressBar.Value = 70
-        if (-not (Create-AxisCommand -StatusLabel $statusLabel -PythonPath $pythonPath)) {
+        if (-not (New-AxisCommand -StatusLabel $statusLabel -PythonPath $pythonPath)) {
             $statusLabel.Text = "Failed to create axis command"
             $statusLabel.ForeColor = [System.Drawing.Color]::Red
             $installButton.Enabled = $true

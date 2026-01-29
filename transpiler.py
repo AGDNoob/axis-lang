@@ -6,12 +6,13 @@ This leverages Python's own optimized bytecode compiler for maximum speed.
 
 from typing import Dict, List
 from syntactic_analyzer import (
-    Program, Function, Statement, VarDecl, Assignment, Return,
+    Program, Function, Statement, VarDecl, Assignment, CompoundAssignment, Return,
     If, While, Break, Continue, Write, BinaryOp, UnaryOp,
     Literal, StringLiteral, Identifier, Call, ExprStatement,
     Read, Readln, Readchar, ReadFailed, ArrayLiteral, IndexAccess,
     CopyExpr, FieldDef, FieldMember, FieldAccess,
-    EnumDef, EnumVariant, EnumAccess, Match, MatchArm
+    EnumDef, EnumVariant, EnumAccess, Match, MatchArm,
+    ForLoop, RangeExpr
 )
 
 
@@ -285,6 +286,23 @@ class PythonTranspiler:
                 self._emit(f"{target} = {self._transpile_expr(stmt.value)}")
             # Pointer dereference removed in v1.1.0 - AXIS uses value semantics
         
+        elif t is CompoundAssignment:
+            # Handle compound assignments: x += 1, arr[i] *= 2, obj.field -= 5
+            op_map = {'+': '+=', '-': '-=', '*': '*=', '/': '//=', '%': '%=',
+                      '&': '&=', '|': '|=', '^': '^=', '<<': '<<=', '>>': '>>='}
+            py_op = op_map.get(stmt.operator, f'{stmt.operator}=')
+            
+            if type(stmt.target) is Identifier:
+                name = stmt.target.name
+                self._emit(f"{name} {py_op} {self._transpile_expr(stmt.value)}")
+            elif type(stmt.target) is IndexAccess:
+                array = self._transpile_expr(stmt.target.array)
+                index = self._transpile_expr(stmt.target.index)
+                self._emit(f"{array}[{index}] {py_op} {self._transpile_expr(stmt.value)}")
+            elif type(stmt.target) is FieldAccess:
+                target = self._transpile_expr(stmt.target)
+                self._emit(f"{target} {py_op} {self._transpile_expr(stmt.value)}")
+        
         elif t is Return:
             # Handle update params - they need to be returned as part of a tuple
             if self.update_params:
@@ -326,6 +344,34 @@ class PythonTranspiler:
         
         elif t is While:
             self._emit(f"while {self._transpile_expr(stmt.condition)}:")
+            self.indent += 1
+            if not stmt.body.statements:
+                self._emit("pass")
+            else:
+                for s in stmt.body.statements:
+                    self._transpile_stmt(s)
+            self.indent -= 1
+        
+        elif t is ForLoop:
+            # Transpile for loop
+            var_name = stmt.var_name
+            iterable = stmt.iterable
+            
+            if isinstance(iterable, RangeExpr):
+                # for i in range(start, end) or range(start, end, step)
+                start_expr = self._transpile_expr(iterable.start)
+                end_expr = self._transpile_expr(iterable.end)
+                
+                if iterable.step:
+                    step_expr = self._transpile_expr(iterable.step)
+                    self._emit(f"for {var_name} in range({start_expr}, {end_expr}, {step_expr}):")
+                else:
+                    self._emit(f"for {var_name} in range({start_expr}, {end_expr}):")
+            else:
+                # for x in array
+                arr_expr = self._transpile_expr(iterable)
+                self._emit(f"for {var_name} in {arr_expr}:")
+            
             self.indent += 1
             if not stmt.body.statements:
                 self._emit("pass")
@@ -474,7 +520,7 @@ class PythonTranspiler:
         
         if t is UnaryOp:
             operand = self._transpile_expr(expr.operand)
-            if expr.op == '!':
+            if expr.op == '!' or expr.op == 'not':
                 return f"(not {operand})"
             return f"({expr.op}{operand})"
         
