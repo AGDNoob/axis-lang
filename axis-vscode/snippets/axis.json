@@ -1,0 +1,142 @@
+{
+  "Mode Script": {
+    "prefix": "mode",
+    "body": ["mode ${1|script,compile|}"],
+    "description": "Program mode declaration"
+  },
+  "Function Definition": {
+    "prefix": "func",
+    "body": [
+      "func ${1:name}(${2:})${3: -> ${4:i32}}:",
+      "    ${0}"
+    ],
+    "description": "Define a function"
+  },
+  "Function Main": {
+    "prefix": "main",
+    "body": [
+      "func main() -> i32:",
+      "    ${0}",
+      "    give 0"
+    ],
+    "description": "Main function (compile mode)"
+  },
+  "Variable Declaration": {
+    "prefix": "var",
+    "body": ["${1:name}: ${2:i32} = ${0}"],
+    "description": "Declare a variable with type"
+  },
+  "When Conditional": {
+    "prefix": "when",
+    "body": [
+      "when ${1:condition}:",
+      "    ${0}"
+    ],
+    "description": "when conditional block"
+  },
+  "When Else": {
+    "prefix": "whene",
+    "body": [
+      "when ${1:condition}:",
+      "    ${2}",
+      "else:",
+      "    ${0}"
+    ],
+    "description": "when/else conditional"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition}:",
+      "    ${0}"
+    ],
+    "description": "while loop"
+  },
+  "Repeat Loop": {
+    "prefix": "repeat",
+    "body": [
+      "repeat:",
+      "    ${0}",
+      "    when ${1:done}:",
+      "        stop"
+    ],
+    "description": "Infinite loop with stop condition"
+  },
+  "For Loop": {
+    "prefix": "for",
+    "body": [
+      "for ${1:i} in range(${2:0}, ${3:10}):",
+      "    ${0}"
+    ],
+    "description": "for loop with range"
+  },
+  "Match Statement": {
+    "prefix": "match",
+    "body": [
+      "match ${1:expr}:",
+      "    ${2:value}:",
+      "        ${3}",
+      "    _:",
+      "        ${0}"
+    ],
+    "description": "match pattern matching"
+  },
+  "Field Definition": {
+    "prefix": "field",
+    "body": [
+      "${1:Name}: field:",
+      "    ${2:x}: ${3:i32}",
+      "    ${0}"
+    ],
+    "description": "Define a field (struct)"
+  },
+  "Enum Definition": {
+    "prefix": "enum",
+    "body": [
+      "${1:Name}: enum ${2:i32}:",
+      "    ${3:Variant1}",
+      "    ${0}"
+    ],
+    "description": "Define an enum"
+  },
+  "Writeln": {
+    "prefix": "wl",
+    "body": ["writeln(${0})"],
+    "description": "Print with newline"
+  },
+  "Write": {
+    "prefix": "wr",
+    "body": ["write(${0})"],
+    "description": "Print without newline"
+  },
+  "Array Declaration": {
+    "prefix": "arr",
+    "body": ["${1:name}: (${2:i32}; ${3:5}) = [${0}]"],
+    "description": "Declare an array"
+  },
+  "Compile Mode Template": {
+    "prefix": "compile",
+    "body": [
+      "mode compile",
+      "",
+      "func main() -> i32:",
+      "    ${0}",
+      "    give 0"
+    ],
+    "description": "Complete compile mode template"
+  },
+  "Script Mode Template": {
+    "prefix": "script",
+    "body": [
+      "mode script",
+      "",
+      "${0}"
+    ],
+    "description": "Complete script mode template"
+  },
+  "Give Return": {
+    "prefix": "give",
+    "body": ["give ${0}"],
+    "description": "Return value from function"
+  }
+}

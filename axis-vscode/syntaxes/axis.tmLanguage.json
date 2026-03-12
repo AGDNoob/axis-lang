@@ -4,14 +4,29 @@
   "scopeName": "source.axis",
   "patterns": [
     { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#mode-declaration" },
+    { "include": "#function-definition" },
+    { "include": "#field-definition" },
+    { "include": "#enum-definition" },
+    { "include": "#return-type-arrow" },
+    { "include": "#copy-expression" },
+    { "include": "#variable-declaration" },
+    { "include": "#variable-declaration-usertype" },
+    { "include": "#array-type" },
     { "include": "#keywords" },
     { "include": "#types" },
-    { "include": "#functions" },
+    { "include": "#builtins" },
+    { "include": "#enum-access-doublecolon" },
+    { "include": "#enum-access-dot" },
+    { "include": "#member-access" },
+    { "include": "#function-calls" },
     { "include": "#numbers" },
-    { "include": "#strings" },
-    { "include": "#operators" }
+    { "include": "#operators" },
+    { "include": "#punctuation" }
   ],
   "repository": {
+
     "comments": {
       "patterns": [
         {
@@ -24,6 +39,269 @@
         }
       ]
     },
+
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.axis",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.axis" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.axis" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.axis",
+              "match": "\\\\[nrt\\\\\"0]"
+            }
+          ]
+        }
+      ]
+    },
+
+    "mode-declaration": {
+      "patterns": [
+        {
+          "match": "\\b(mode)\\s+(script|compile)\\b",
+          "captures": {
+            "1": { "name": "keyword.control.directive.axis" },
+            "2": { "name": "support.constant.mode.axis" }
+          }
+        }
+      ]
+    },
+
+    "function-definition": {
+      "patterns": [
+        {
+          "comment": "func name(params) with parameter highlighting",
+          "begin": "\\b(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(\\()",
+          "beginCaptures": {
+            "1": { "name": "keyword.declaration.function.axis" },
+            "2": { "name": "entity.name.function.definition.axis" },
+            "3": { "name": "punctuation.definition.parameters.begin.axis" }
+          },
+          "end": "(\\))",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.parameters.end.axis" }
+          },
+          "patterns": [
+            { "include": "#parameter-declaration" },
+            {
+              "match": ",",
+              "name": "punctuation.separator.parameter.axis"
+            }
+          ]
+        }
+      ]
+    },
+
+    "parameter-declaration": {
+      "patterns": [
+        {
+          "comment": "update/copy modifier + param: type",
+          "match": "\\b(update|copy)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(i8|i16|i32|i64|u8|u16|u32|u64|bool|str|ptr|void)\\b",
+          "captures": {
+            "1": { "name": "keyword.modifier.axis" },
+            "2": { "name": "variable.parameter.axis" },
+            "3": { "name": "punctuation.separator.type.axis" },
+            "4": { "name": "storage.type.axis" }
+          }
+        },
+        {
+          "comment": "update/copy modifier + param: UserType",
+          "match": "\\b(update|copy)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "keyword.modifier.axis" },
+            "2": { "name": "variable.parameter.axis" },
+            "3": { "name": "punctuation.separator.type.axis" },
+            "4": { "name": "entity.name.type.axis" }
+          }
+        },
+        {
+          "comment": "param: builtin_type",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(i8|i16|i32|i64|u8|u16|u32|u64|bool|str|ptr|void)\\b",
+          "captures": {
+            "1": { "name": "variable.parameter.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "storage.type.axis" }
+          }
+        },
+        {
+          "comment": "param: UserType",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "variable.parameter.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "entity.name.type.axis" }
+          }
+        },
+        {
+          "comment": "param: (type; size) — array type",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(\\()\\s*(i8|i16|i32|i64|u8|u16|u32|u64|bool|str|ptr)\\s*(;)\\s*(\\d+)\\s*(\\))",
+          "captures": {
+            "1": { "name": "variable.parameter.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "punctuation.definition.type.begin.axis" },
+            "4": { "name": "storage.type.axis" },
+            "5": { "name": "punctuation.separator.semicolon.axis" },
+            "6": { "name": "constant.numeric.decimal.axis" },
+            "7": { "name": "punctuation.definition.type.end.axis" }
+          }
+        },
+        {
+          "comment": "param: (UserType; size) — array of user type",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(\\()\\s*([A-Z][a-zA-Z0-9_]*)\\s*(;)\\s*(\\d+)\\s*(\\))",
+          "captures": {
+            "1": { "name": "variable.parameter.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "punctuation.definition.type.begin.axis" },
+            "4": { "name": "entity.name.type.axis" },
+            "5": { "name": "punctuation.separator.semicolon.axis" },
+            "6": { "name": "constant.numeric.decimal.axis" },
+            "7": { "name": "punctuation.definition.type.end.axis" }
+          }
+        }
+      ]
+    },
+
+    "field-definition": {
+      "patterns": [
+        {
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)\\s*(:)\\s*(field)\\s*(:)",
+          "captures": {
+            "1": { "name": "entity.name.type.field.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "keyword.declaration.type.axis" },
+            "4": { "name": "punctuation.section.block.begin.axis" }
+          }
+        }
+      ]
+    },
+
+    "enum-definition": {
+      "patterns": [
+        {
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)\\s*(:)\\s*(enum)(?:\\s+(i8|i16|i32|i64|u8|u16|u32|u64))?\\s*(:)",
+          "captures": {
+            "1": { "name": "entity.name.type.enum.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "keyword.declaration.type.axis" },
+            "4": { "name": "storage.type.axis" },
+            "5": { "name": "punctuation.section.block.begin.axis" }
+          }
+        }
+      ]
+    },
+
+    "return-type-arrow": {
+      "patterns": [
+        {
+          "comment": "-> return_type",
+          "match": "(->)\\s*(i8|i16|i32|i64|u8|u16|u32|u64|bool|str|ptr|void)\\b",
+          "captures": {
+            "1": { "name": "keyword.operator.arrow.axis" },
+            "2": { "name": "storage.type.axis" }
+          }
+        },
+        {
+          "comment": "-> UserType",
+          "match": "(->)\\s*([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "keyword.operator.arrow.axis" },
+            "2": { "name": "entity.name.type.axis" }
+          }
+        }
+      ]
+    },
+
+    "copy-expression": {
+      "patterns": [
+        {
+          "comment": "copy.runtime / copy.compile",
+          "match": "\\b(copy)(\\.)(?:(runtime|compile))\\b",
+          "captures": {
+            "1": { "name": "keyword.modifier.axis" },
+            "2": { "name": "punctuation.accessor.axis" },
+            "3": { "name": "support.constant.mode.axis" }
+          }
+        }
+      ]
+    },
+
+    "variable-declaration": {
+      "patterns": [
+        {
+          "comment": "name: (type; size) = ... — array type declaration",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(\\()\\s*(i8|i16|i32|i64|u8|u16|u32|u64|bool|str|ptr)\\s*(;)\\s*(\\d+)\\s*(\\))",
+          "captures": {
+            "1": { "name": "variable.other.declaration.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "punctuation.definition.type.begin.axis" },
+            "4": { "name": "storage.type.axis" },
+            "5": { "name": "punctuation.separator.semicolon.axis" },
+            "6": { "name": "constant.numeric.decimal.axis" },
+            "7": { "name": "punctuation.definition.type.end.axis" }
+          }
+        },
+        {
+          "comment": "name: (UserType; size) — array of user type",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(\\()\\s*([A-Z][a-zA-Z0-9_]*)\\s*(;)\\s*(\\d+)\\s*(\\))",
+          "captures": {
+            "1": { "name": "variable.other.declaration.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "punctuation.definition.type.begin.axis" },
+            "4": { "name": "entity.name.type.axis" },
+            "5": { "name": "punctuation.separator.semicolon.axis" },
+            "6": { "name": "constant.numeric.decimal.axis" },
+            "7": { "name": "punctuation.definition.type.end.axis" }
+          }
+        },
+        {
+          "comment": "name: builtin_type",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*(i8|i16|i32|i64|u8|u16|u32|u64|bool|str|ptr|void)\\b",
+          "captures": {
+            "1": { "name": "variable.other.declaration.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "storage.type.axis" }
+          }
+        }
+      ]
+    },
+
+    "variable-declaration-usertype": {
+      "patterns": [
+        {
+          "comment": "name: UserType = ... (capitalized type names)",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)\\s*([A-Z][a-zA-Z0-9_]*)\\b(?!\\s*:)",
+          "captures": {
+            "1": { "name": "variable.other.declaration.axis" },
+            "2": { "name": "punctuation.separator.type.axis" },
+            "3": { "name": "entity.name.type.axis" }
+          }
+        }
+      ]
+    },
+
+    "array-type": {
+      "patterns": [
+        {
+          "comment": "Standalone (type; size) array type annotation",
+          "match": "(\\()\\s*(i8|i16|i32|i64|u8|u16|u32|u64|bool|str|ptr)\\s*(;)\\s*(\\d+)\\s*(\\))",
+          "captures": {
+            "1": { "name": "punctuation.definition.type.begin.axis" },
+            "2": { "name": "storage.type.axis" },
+            "3": { "name": "punctuation.separator.semicolon.axis" },
+            "4": { "name": "constant.numeric.decimal.axis" },
+            "5": { "name": "punctuation.definition.type.end.axis" }
+          }
+        }
+      ]
+    },
+
     "keywords": {
       "patterns": [
         {
@@ -55,24 +333,8 @@
           "match": "\\b(True|False)\\b"
         },
         {
-          "name": "keyword.other.axis",
+          "name": "keyword.other.syscall.axis",
           "match": "\\bsyscall\\b"
-        },
-        {
-          "name": "keyword.control.mode.axis",
-          "match": "\\bmode\\b"
-        },
-        {
-          "name": "constant.language.mode.axis",
-          "match": "\\b(script|compile|runtime)\\b"
-        },
-        {
-          "name": "support.function.io.axis",
-          "match": "\\b(write|writeln|read|readln|readchar|read_failed)\\b"
-        },
-        {
-          "name": "support.function.builtin.axis",
-          "match": "\\b(range)\\b"
         },
         {
           "name": "constant.language.wildcard.axis",
@@ -80,22 +342,82 @@
         }
       ]
     },
+
     "types": {
       "patterns": [
         {
           "name": "storage.type.axis",
-          "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|bool|ptr|str)\\b"
+          "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|bool|ptr|str|void)\\b"
         }
       ]
     },
-    "functions": {
+
+    "builtins": {
       "patterns": [
         {
-          "name": "entity.name.function.axis",
-          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+          "name": "support.function.io.axis",
+          "match": "\\b(write|writeln|read|readln|readchar|read_failed)\\s*(?=\\()"
+        },
+        {
+          "name": "support.function.builtin.axis",
+          "match": "\\b(range|syscall)\\s*(?=\\()"
         }
       ]
     },
+
+    "enum-access-doublecolon": {
+      "patterns": [
+        {
+          "comment": "Enum::Variant",
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)(::)([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "entity.name.type.enum.axis" },
+            "2": { "name": "punctuation.accessor.double-colon.axis" },
+            "3": { "name": "variable.other.enummember.axis" }
+          }
+        }
+      ]
+    },
+
+    "enum-access-dot": {
+      "patterns": [
+        {
+          "comment": "Enum.Variant (capitalized.capitalized)",
+          "match": "\\b([A-Z][a-zA-Z0-9_]*)(\\.)([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "entity.name.type.enum.axis" },
+            "2": { "name": "punctuation.accessor.axis" },
+            "3": { "name": "variable.other.enummember.axis" }
+          }
+        }
+      ]
+    },
+
+    "member-access": {
+      "patterns": [
+        {
+          "comment": ".member access (after identifier or ])",
+          "match": "(?<=[a-zA-Z0-9_\\]])(\\.)([a-zA-Z_][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "punctuation.accessor.axis" },
+            "2": { "name": "variable.other.member.axis" }
+          }
+        }
+      ]
+    },
+
+    "function-calls": {
+      "patterns": [
+        {
+          "comment": "function_call( — but not keywords/builtins",
+          "match": "\\b(?!(?:when|else|while|loop|repeat|for|match|func|field|enum|mode|write|writeln|read|readln|readchar|read_failed|range|syscall|return|give|if|and|or|not|copy|update|break|stop|continue|skip|in)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.call.axis" }
+          }
+        }
+      ]
+    },
+
     "numbers": {
       "patterns": [
         {
@@ -108,54 +430,77 @@
         },
         {
           "name": "constant.numeric.decimal.axis",
-          "match": "\\b-?[0-9][0-9_]*\\b"
+          "match": "\\b[0-9][0-9_]*\\b"
         }
       ]
     },
-    "strings": {
-      "patterns": [
-        {
-          "name": "string.quoted.double.axis",
-          "begin": "\"",
-          "end": "\"",
-          "patterns": [
-            {
-              "name": "constant.character.escape.axis",
-              "match": "\\\\(n|r|t|\\\\|'|\"|0)"
-            }
-          ]
-        }
-      ]
-    },
+
     "operators": {
       "patterns": [
         {
+          "name": "keyword.operator.arrow.axis",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.range.axis",
+          "match": "\\.\\."
+        },
+        {
           "name": "keyword.operator.comparison.axis",
-          "match": "(==|!=|<=|>=|<|>)"
+          "match": "==|!=|<=|>=|<|>"
         },
         {
           "name": "keyword.operator.assignment.compound.axis",
-          "match": "(\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=)"
-        },
-        {
-          "name": "keyword.operator.arithmetic.axis",
-          "match": "(\\+|-|\\*|/|%)"
-        },
-        {
-          "name": "keyword.operator.bitwise.axis",
-          "match": "(&|\\||\\^|<<|>>)"
-        },
-        {
-          "name": "keyword.operator.logical.axis",
-          "match": "!"
+          "match": "\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>="
         },
         {
           "name": "keyword.operator.assignment.axis",
           "match": "="
         },
         {
-          "name": "keyword.operator.arrow.axis",
-          "match": "->"
+          "name": "keyword.operator.arithmetic.axis",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.bitwise.axis",
+          "match": "&|\\||\\^|<<|>>"
+        },
+        {
+          "name": "keyword.operator.logical.axis",
+          "match": "!"
+        }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.comma.axis",
+          "match": ","
+        },
+        {
+          "name": "punctuation.terminator.colon.axis",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.separator.semicolon.axis",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.brackets.round.open.axis",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.brackets.round.close.axis",
+          "match": "\\)"
+        },
+        {
+          "name": "punctuation.brackets.square.open.axis",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.brackets.square.close.axis",
+          "match": "\\]"
         }
       ]
     }

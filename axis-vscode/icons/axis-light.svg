@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="grad-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2B5EA7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3E7BCA;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="30" height="30" rx="4" ry="4" fill="url(#grad-light)" />
+  <text x="16" y="22.5" font-family="Consolas, 'Courier New', monospace" font-size="16" font-weight="bold" fill="#FFFFFF" text-anchor="middle" letter-spacing="-0.5">AX</text>
+</svg>
