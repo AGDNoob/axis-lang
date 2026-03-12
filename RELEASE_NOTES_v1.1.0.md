@@ -12,6 +12,8 @@ AXIS isn't meant to be another C. It's meant to feel like Python while compiling
 
 Instead of thinking about memory addresses, you think about values. Instead of passing pointers to modify variables, you use `update`. Instead of wondering if two arrays share memory, you explicitly `copy`. It's simpler, safer, and more AXIS.
 
+Oh, and one more thing: **Python is gone as the compiler language.** The entire compiler (AXCC) has been rewritten from scratch in C. Why? Because a language that compiles to native code shouldn't depend on an interpreter to get there. Lexer, parser, semantic analysis, IR generation, x64 codegen, PE and ELF output — all in one fast binary. No pip, no Python runtime, no dependencies. Just `axis.exe` (or `./axis` on Linux) and you get a native executable. The old Python pipeline has been retired.
+
 ---
 
 ## 🚫 Why No Methods?
@@ -48,7 +50,7 @@ AXIS v1.1.0 introduces a **value-oriented programming paradigm**:
 - **Values are first-class citizens** - you work with values, not memory locations
 - **Memory is an implementation detail** - the compiler handles it
 - **Explicit is better than implicit** - array copies require the `copy` keyword
-- **No pointers** - we have something better
+- **No pointers** - there's something better
 
 ---
 
@@ -145,6 +147,43 @@ for x in arr:
 - `break` and `continue` work inside for loops
 - Nested for loops supported
 - Works in both script and compile mode
+
+---
+
+### Windows Support for Compile Mode
+
+In v1.0.2, compile mode was **Linux-only** (ELF64). With v1.1.0, AXCC now also generates **native Windows PE executables**. You can compile AXIS programs to standalone `.exe` files — no GCC, no NASM, no linker required.
+
+```bash
+# On Windows — produces a native .exe
+axis hello.axis -o hello.exe
+
+# Cross-compilation flags
+axis hello.axis -o hello.exe --pe     # Force PE output (Windows)
+axis hello.axis -o hello --elf        # Force ELF64 output (Linux)
+```
+
+---
+
+### AXCC — Native Compiler in C
+
+The compile mode backend has been completely rewritten from Python to C. AXCC is a single-pass native compiler that takes `.axis` source files and produces **Windows PE** or **Linux ELF64** executables directly — no assembler, no linker, no external tools.
+
+**What changed:**
+
+- Compiler implementation language: **Python → C**
+- Output formats: **PE (Windows)** and **ELF64 (Linux)** — both from the same codebase
+- Calling convention: Windows x64 ABI (RCX, RDX, R8, R9) internally, with Linux syscall remapping for ELF
+- Build: `mingw32-make` on Windows, `make` on Linux — produces a single `axis.exe` / `axis` binary
+- Zero runtime dependencies — no Python, no pip, no `.dll` files needed
+
+**Architecture:**
+
+```
+.axis source → Lexer → Parser → AST → Semantic Analysis → IR → x64 Codegen → PE/ELF
+```
+
+All nine stages in ~3000 lines of C. Compilation is near-instant — most files compile in under 50ms.
 
 ---
 
@@ -303,10 +342,10 @@ arr2 = copy.runtime arr1   # Same as above
 arr3: (i32; 5) = copy.compile arr1
 ```
 
-- **`copy` / `copy.runtime`**: Uses optimized CPU instructions (REP MOVSB). Best runtime performance, slightly longer compile time.
-- **`copy.compile`**: Uses simpler code generation. Faster to compile, good for quick iteration during development.
+- **`copy` / `copy.runtime`**: Default copy mode.
+- **`copy.compile`**: Alternative copy mode for future optimization.
 
-In script mode, both behave identically.
+> **Note:** In v1.1.0, both modes produce identical code. The syntax is fully supported and parsed, but differentiated code generation (REP MOVSB for `copy.runtime`, simpler instructions for `copy.compile`) is planned for v1.2.0.
 
 ---
 
@@ -470,74 +509,41 @@ The `_` pattern is the wildcard/default case that matches any value.
 
 ---
 
-### Semantic Analysis for Script Mode
 
-Script mode now runs full semantic analysis:
+## � Benchmarks vs GCC
 
-- Type checking for all expressions
-- `copy` keyword enforcement
-- Field type checking and access validation
-- Better error messages
+AXCC produces unoptimized code (no optimization passes yet), so this is a baseline comparison.
+Four benchmarks, identical algorithms in AXIS and C, measured on the same machine (5 runs, median):
+
+| Benchmark | AXIS | GCC -O0 | GCC -O2 | vs -O0 | vs -O2 |
+|---|---:|---:|---:|---:|---:|
+| Recursive Fibonacci (63M calls) | 554ms | 256ms | 78ms | 2.2x | 7.1x |
+| Prime Counting (500K) | 161ms | 78ms | 77ms | 2.1x | 2.1x |
+| Nested Loops (100M iterations) | 686ms | 347ms | 146ms | 2.0x | 4.7x |
+| GCD Stress (2M calls) | 73ms | 52ms | 51ms | 1.4x | 1.4x |
+
+**~1.4–2.2x vs GCC without optimizations.** For a compiler with no register allocator, no constant folding, and no inlining, that's a solid starting point. The GCD benchmark (1.4x vs GCC -O2) shows that pure arithmetic workloads are already close to optimized C.
+
+All four benchmarks produce identical results between AXIS and GCC (verified via exit codes).
 
 ---
 
 ## 🔧 Technical Changes
 
-### Tokenizer
+### AXCC (Native Compiler — C)
 
-- Added: `UPDATE`, `COPY`, `RETURN`, `FIELD`, `DOT`, `ENUM`, `MATCH` tokens
+- **New**: Complete rewrite of compile mode backend in C
+- **New**: PE (Windows) executable generation
+- **New**: ELF64 (Linux) executable generation
+- **New**: Windows x64 calling convention (RCX, RDX, R8, R9 + stack for 5+ args)
+- **New**: Linux syscall remapping stubs (write, read, exit) for ELF
+- **New**: IR-based code generation pipeline
+- **New**: 26 automated tests — all passing on both Windows and Linux
 
-### Parser
+### Removed
 
-- Added: `Parameter` dataclass with `modifier` field
-- Added: `CopyExpr` AST node for `copy <expr>`
-- Added: `ArrayType`, `ArrayLiteral`, `IndexAccess` AST nodes
-- Added: `FieldDef`, `FieldMember`, `FieldAccess` AST nodes
-- Added: `EnumDef`, `EnumVariant`, `EnumAccess` AST nodes
-- Added: `Match`, `MatchArm` AST nodes for pattern matching
-- Updated: Function parsing for new return type syntax
-- Added: Field definition parsing with inline and nested support
-- Added: Enum definition parsing with optional underlying type
-
-### Semantic Analyzer
-
-- Added: `analyze_copy_expr` for copy expressions
-- Added: Array assignment check (requires `copy` keyword)
-- Added: Top-level statement analysis for script mode
-- Added: Array type checking and size validation
-- Added: Field type tracking and validation
-- Added: Field access chain analysis with nested/inline support
-- Added: Field size calculation for arrays of fields
-- Added: Enum type tracking with configurable underlying types
-- Added: Match statement analysis with pattern validation
-
-### Code Generator
-
-- Added: Array initialization and dynamic index access
-- Added: Parameter copying from registers to stack
-- Added: Full function parameter support
-
-### Transpiler
-
-- Added: `update` modifier handling with tuple return/unpacking
-- Added: `CopyExpr` transpilation using `list()` for arrays, `deepcopy` for fields
-- Added: Semantic analysis integration
-- Added: Field type transpilation to Python classes
-- Added: Field instantiation and member initialization
-- Added: Enum transpilation to Python classes with class attributes
-- Added: Match statement transpilation to if-elif-else chains
-
----
-
-## 📦 Dependencies
-
-**Optional:**
-
-- `keystone-engine>=0.9.2` - Full x86-64 assembler support
-
-```bash
-pip install keystone-engine
-```
+- **Python Pipeline**: The old Python-based compilation pipeline (`compilation_pipeline.py`, `code_generator.py`, `assembler.py`, `executable_format_generator.py`, `transpiler.py`, `tokenization_engine.py`, `syntactic_analyzer.py`, `semantic_analyzer.py`, `error_handler.py`) has been retired. AXCC replaces it entirely.
+- **keystone-engine dependency**: No longer needed — AXCC generates machine code directly.
 
 ---
 
@@ -546,8 +552,6 @@ pip install keystone-engine
 ### Function Parameters
 
 ```axis
-mode script
-
 func add(a: i32, b: i32) i32:
     return a + b
 
@@ -565,8 +569,6 @@ writeln(num)  # 50
 ### Array Operations
 
 ```axis
-mode script
-
 arr: (i32; 5) = [10, 20, 30, 40, 50]
 
 # Dynamic indexing
@@ -583,8 +585,6 @@ writeln(backup[0])  # 10 (unaffected)
 ### Swap Without Pointers
 
 ```axis
-mode script
-
 func swap(update a: i32, update b: i32):
     temp: i32 = a
     a = b
@@ -600,8 +600,6 @@ writeln(y)  # 100
 ### Fields
 
 ```axis
-mode script
-
 Vec2: field:
     x: i32 = 0
     y: i32 = 0
@@ -631,17 +629,21 @@ writeln(hero.pos.y)  # 30
 
 ## 🎉 Summary
 
-AXIS v1.1.0 is a major update that establishes AXIS's unique identity: **value-oriented programming that compiles to native code**.
+AXIS v1.1.0 is a major update that establishes AXIS's identity: **value-oriented programming that compiles to native code** — and now the compiler itself is native too.
 
-New features:
+What's new:
 
+- **AXCC** — the compiler backend rewritten from Python to C
+- **Windows PE + Linux ELF64** — compile to native executables on both platforms
 - **Arrays** with dynamic indexing
-- **Fields** - custom data types with unlimited nesting
-- **Enums** - named constants with configurable underlying types
-- **Match statements** - clean pattern matching on values
+- **Fields** — custom data types with unlimited nesting
+- **Enums** — named constants with configurable underlying types
+- **Match statements** — clean pattern matching on values
 - **`update` modifier** for modifying caller's variables
-- **`copy` keyword** with runtime/compile modes for explicit array/field copies  
+- **`copy` keyword** with runtime/compile modes for explicit array/field copies
 - **New function syntax** with `return` keyword
+- **26 automated tests** passing on Windows and Linux
+- **Benchmarks**: ~1.4–2.2x vs GCC -O0 without any optimization passes
 
 No pointers. No methods. No memory headaches. Just values.
 

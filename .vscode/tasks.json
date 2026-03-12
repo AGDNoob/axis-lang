@@ -2,15 +2,15 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Build AXIS (ELF64)",
+      "label": "Build AXIS (PE)",
       "type": "shell",
-      "command": "python",
+      "command": "${workspaceFolder}/axcc/axis",
       "args": [
-        "${workspaceFolder}/compilation_pipeline.py",
+        "build",
         "${file}",
         "-o",
-        "${fileDirname}/${fileBasenameNoExtension}",
-        "--elf"
+        "${fileDirname}/${fileBasenameNoExtension}.exe",
+        "--pe"
       ],
       "group": {
         "kind": "build",
@@ -25,14 +25,15 @@
       "problemMatcher": []
     },
     {
-      "label": "Build AXIS (Raw Binary)",
+      "label": "Build AXIS (ELF64)",
       "type": "shell",
-      "command": "python",
+      "command": "${workspaceFolder}/axcc/axis",
       "args": [
-        "${workspaceFolder}/compilation_pipeline.py",
+        "build",
         "${file}",
         "-o",
-        "${fileDirname}/${fileBasenameNoExtension}.bin"
+        "${fileDirname}/${fileBasenameNoExtension}",
+        "--elf"
       ],
       "group": "build",
       "presentation": {
@@ -46,19 +47,35 @@
     {
       "label": "Build AXIS (Verbose)",
       "type": "shell",
-      "command": "python",
+      "command": "${workspaceFolder}/axcc/axis",
       "args": [
-        "${workspaceFolder}/compilation_pipeline.py",
+        "build",
         "${file}",
         "-o",
         "${fileDirname}/${fileBasenameNoExtension}",
-        "--elf",
         "-v"
       ],
       "group": "build",
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
+        "focus": true,
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run AXIS Script",
+      "type": "shell",
+      "command": "${workspaceFolder}/axcc/axis",
+      "args": [
+        "run",
+        "${file}"
+      ],
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
         "focus": true,
         "clear": true
       },

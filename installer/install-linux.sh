@@ -1,535 +1,235 @@
-#!/bin/bash
-# AXIS Language Installer for Linux
-# Version 1.0.2-beta
-# GUI-based installer with Python check and VS Code extension support
+#!/usr/bin/env bash
+# ============================================================
+# AXIS Language — Linux/macOS Installer
+# ============================================================
+set -euo pipefail
 
-set -e
+VERSION="1.1.0-beta"
+REPO="AGDNoob/axis-lang"
+INSTALL_DIR="${AXIS_INSTALL_DIR:-$HOME/.local/bin}"
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+# ── Colors ───────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+BOLD='\033[1m'
+RESET='\033[0m'
 
-AXIS_VERSION="1.0.2-beta"
-GITHUB_RAW="https://raw.githubusercontent.com/AGDNoob/axis-lang/main"
-MIN_PYTHON_VERSION="3.7"
-INSTALL_DIR="$HOME/.local/lib/axis"
-BIN_DIR="$HOME/.local/bin"
-
-# Available Python versions (for display in selection dialog)
-# Note: Actual version installed depends on system package manager
-PYTHON_VERSIONS=(
-    "System Default"
-    "Python 3.13"
-    "Python 3.12" 
-    "Python 3.11"
-    "Python 3.10"
-    "Python 3.9"
-    "Python 3.8"
-)
-
-FILES_TO_DOWNLOAD=(
-    "compilation_pipeline.py"
-    "tokenization_engine.py"
-    "syntactic_analyzer.py"
-    "semantic_analyzer.py"
-    "code_generator.py"
-    "executable_format_generator.py"
-    "assembler.py"
-    "transpiler.py"
-    "requirements.txt"
-)
-
-# ============================================================================
-# GUI DETECTION
-# ============================================================================
-
-GUI_TOOL=""
-
-detect_gui() {
-    if command -v zenity &> /dev/null; then
-        GUI_TOOL="zenity"
-    elif command -v kdialog &> /dev/null; then
-        GUI_TOOL="kdialog"
-    elif command -v yad &> /dev/null; then
-        GUI_TOOL="yad"
-    else
-        echo "No GUI tool found. Installing zenity..."
-        install_zenity
-    fi
-}
-
-install_zenity() {
-    if command -v apt-get &> /dev/null; then
-        sudo apt-get update && sudo apt-get install -y zenity
-    elif command -v dnf &> /dev/null; then
-        sudo dnf install -y zenity
-    elif command -v pacman &> /dev/null; then
-        sudo pacman -S --noconfirm zenity
-    elif command -v zypper &> /dev/null; then
-        sudo zypper install -y zenity
-    else
-        echo "Could not install zenity. Please install it manually."
-        exit 1
-    fi
-    GUI_TOOL="zenity"
-}
-
-# ============================================================================
-# GUI FUNCTIONS
-# ============================================================================
-
-show_info() {
-    local title="$1"
-    local message="$2"
-    
-    case $GUI_TOOL in
-        zenity)
-            zenity --info --title="$title" --text="$message" --width=400
-            ;;
-        kdialog)
-            kdialog --title "$title" --msgbox "$message"
-            ;;
-        yad)
-            yad --info --title="$title" --text="$message" --width=400
-            ;;
-    esac
-}
-
-show_error() {
-    local title="$1"
-    local message="$2"
-    
-    case $GUI_TOOL in
-        zenity)
-            zenity --error --title="$title" --text="$message" --width=400
-            ;;
-        kdialog)
-            kdialog --title "$title" --error "$message"
-            ;;
-        yad)
-            yad --error --title="$title" --text="$message" --width=400
-            ;;
-    esac
-}
-
-show_question() {
-    local title="$1"
-    local message="$2"
-    
-    case $GUI_TOOL in
-        zenity)
-            zenity --question --title="$title" --text="$message" --width=400
-            return $?
-            ;;
-        kdialog)
-            kdialog --title "$title" --yesno "$message"
-            return $?
-            ;;
-        yad)
-            yad --question --title="$title" --text="$message" --width=400
-            return $?
-            ;;
-    esac
-}
-
-show_progress() {
-    local title="$1"
-    
-    case $GUI_TOOL in
-        zenity)
-            zenity --progress --title="$title" --auto-close --auto-kill --width=400
-            ;;
-        kdialog)
-            kdialog --title "$title" --progressbar "Installing..." 100
-            ;;
-        yad)
-            yad --progress --title="$title" --auto-close --width=400
-            ;;
-    esac
-}
-
-show_checklist() {
-    local title="$1"
-    local text="$2"
-    
-    case $GUI_TOOL in
-        zenity)
-            zenity --list --checklist --title="$title" --text="$text" \
-                --column="Select" --column="Option" \
-                TRUE "Install VS Code Extension (syntax highlighting)" \
-                --width=500 --height=200
-            ;;
-        kdialog)
-            kdialog --title "$title" --checklist "$text" \
-                1 "Install VS Code Extension" on
-            ;;
-        yad)
-            yad --list --checklist --title="$title" --text="$text" \
-                --column="Select" --column="Option" \
-                TRUE "Install VS Code Extension (syntax highlighting)" \
-                --width=500 --height=200
-            ;;
-    esac
-}
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-version_ge() {
-    # Returns 0 if $1 >= $2
-    printf '%s\n%s\n' "$2" "$1" | sort -V -C
-}
-
-get_python_version() {
-    local python_cmd=""
-    local version=""
-    
-    for cmd in python3 python; do
-        if command -v $cmd &> /dev/null; then
-            version=$($cmd --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
-            if [ -n "$version" ] && version_ge "$version" "$MIN_PYTHON_VERSION"; then
-                python_cmd=$cmd
-                break
-            fi
-        fi
-    done
-    
-    echo "$python_cmd:$version"
-}
-
-install_python() {
-    local distro=""
-    local version_suffix="${1:-}"  # e.g., "3.12" or empty for default
-    
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        distro=$ID
-    fi
-    
-    case $distro in
-        ubuntu|debian|linuxmint|pop)
-            sudo apt-get update
-            if [ -n "$version_suffix" ]; then
-                # Try to install specific version
-                sudo apt-get install -y python${version_suffix} python3-pip 2>/dev/null || \
-                sudo apt-get install -y python3 python3-pip
-            else
-                sudo apt-get install -y python3 python3-pip
-            fi
-            ;;
-        fedora|rhel|centos)
-            if [ -n "$version_suffix" ]; then
-                sudo dnf install -y python${version_suffix} python3-pip 2>/dev/null || \
-                sudo dnf install -y python3 python3-pip
-            else
-                sudo dnf install -y python3 python3-pip
-            fi
-            ;;
-        arch|manjaro)
-            sudo pacman -S --noconfirm python python-pip
-            ;;
-        opensuse*)
-            sudo zypper install -y python3 python3-pip
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-    
-    return 0
-}
-
-install_dependencies() {
-    # Install Python dependencies (keystone-engine)
-    local req_file="$INSTALL_DIR/requirements.txt"
-    
-    if [ -f "$req_file" ]; then
-        python3 -m pip install -r "$req_file" --quiet 2>/dev/null || \
-        python3 -m pip install keystone-engine --quiet 2>/dev/null || \
-        true  # Not fatal - fallback assembler will be used
-    else
-        python3 -m pip install keystone-engine --quiet 2>/dev/null || true
-    fi
-    
-    return 0
-}
-
-download_file() {
-    local url="$1"
-    local dest="$2"
-    
-    if command -v curl &> /dev/null; then
-        curl -fsSL "$url" -o "$dest"
-    elif command -v wget &> /dev/null; then
-        wget -q "$url" -O "$dest"
-    else
-        return 1
-    fi
-}
-
-uninstall_axis() {
-    (
-        echo "20"
-        echo "# Removing AXIS files..."
-        rm -rf "$INSTALL_DIR"
-        
-        echo "50"
-        echo "# Removing axis command..."
-        rm -f "$BIN_DIR/axis"
-        
-        echo "70"
-        echo "# Cleaning up shell configs..."
-        for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
-            if [ -f "$rc" ]; then
-                sed -i '/# AXIS Language/d' "$rc"
-                sed -i '/\.local\/bin/d' "$rc"
-            fi
-        done
-        
-        echo "90"
-        echo "# Uninstalling VS Code extension..."
-        if command -v code &> /dev/null; then
-            code --uninstall-extension AGDNoob.axis-lang 2>/dev/null || true
-        fi
-        
-        echo "100"
-        echo "# Uninstall complete!"
-    ) | show_progress "Uninstalling AXIS"
-    
-    show_info "Uninstall Complete" "AXIS has been removed.\n\nRestart your terminal to complete the process."
-}
-
-# ============================================================================
-# MAIN INSTALLATION
-# ============================================================================
-
-main() {
-    detect_gui
-    
-    # Check if already installed
-    local is_installed=false
-    if [ -d "$INSTALL_DIR" ] && [ -f "$BIN_DIR/axis" ]; then
-        is_installed=true
-    fi
-    
-    # Show action menu if installed
-    if [ "$is_installed" = true ]; then
-        local action
-        case $GUI_TOOL in
-            zenity)
-                action=$(zenity --list --title="AXIS Installer" --text="AXIS is already installed. What would you like to do?" \
-                    --column="Action" "Reinstall" "Uninstall" --width=400 --height=250)
-                ;;
-            kdialog)
-                action=$(kdialog --title "AXIS Installer" --menu "AXIS is already installed. What would you like to do?" \
-                    1 "Reinstall" 2 "Uninstall")
-                [ "$action" = "1" ] && action="Reinstall"
-                [ "$action" = "2" ] && action="Uninstall"
-                ;;
-            yad)
-                action=$(yad --list --title="AXIS Installer" --text="AXIS is already installed. What would you like to do?" \
-                    --column="Action" "Reinstall" "Uninstall" --width=400 --height=250)
-                ;;
-        esac
-        
-        if [ "$action" = "Uninstall" ]; then
-            if show_question "Confirm Uninstall" "Are you sure you want to uninstall AXIS?"; then
-                uninstall_axis
-                exit 0
-            else
-                exit 0
-            fi
-        elif [ -z "$action" ]; then
-            exit 0
-        fi
-    fi
-    
-    # Welcome message
-    local python_info=$(get_python_version)
-    local python_cmd=$(echo "$python_info" | cut -d: -f1)
-    local python_version=$(echo "$python_info" | cut -d: -f2)
-    
-    local status_text="AXIS Language Installer v$AXIS_VERSION\n\n"
-    
-    if [ -n "$python_cmd" ]; then
-        status_text+="[OK] Python $python_version found\n"
-    else
-        status_text+="[X] Python 3.7+ not found (will be installed)\n"
-    fi
-    
-    status_text+="\nInstall location: $INSTALL_DIR\n"
-    status_text+="\nClick OK to continue..."
-    
-    show_info "AXIS Installer" "$status_text"
-    
-    # Options selection
-    local options=$(show_checklist "Installation Options" "Select additional options:")
-    local install_vscode=false
-    
-    if echo "$options" | grep -qi "vscode\|extension"; then
-        install_vscode=true
-    fi
-    
-    # Start installation with progress
-    (
-        echo "10"
-        echo "# Checking Python..."
-        
-        if [ -z "$python_cmd" ]; then
-            echo "# Installing Python..."
-            if ! install_python; then
-                echo "# Failed to install Python"
-                exit 1
-            fi
-            python_cmd="python3"
-        fi
-        
-        echo "20"
-        echo "# Creating directories..."
-        mkdir -p "$INSTALL_DIR"
-        mkdir -p "$BIN_DIR"
-        
-        echo "30"
-        echo "# Downloading AXIS files..."
-        
-        local total=${#FILES_TO_DOWNLOAD[@]}
-        local current=0
-        
-        for file in "${FILES_TO_DOWNLOAD[@]}"; do
-            current=$((current + 1))
-            percent=$((30 + (current * 30 / total)))
-            echo "$percent"
-            echo "# Downloading $file..."
-            
-            if ! download_file "$GITHUB_RAW/$file" "$INSTALL_DIR/$file"; then
-                echo "# Failed to download $file"
-                exit 1
-            fi
-        done
-        
-        echo "65"
-        echo "# Installing dependencies (keystone-engine)..."
-        install_dependencies || true  # Not fatal
-        
-        echo "75"
-        echo "# Creating axis command..."
-        
-        # Create the axis wrapper script
-        cat > "$BIN_DIR/axis" << 'AXIS_SCRIPT'
-#!/bin/bash
-# AXIS Language CLI
-# Version: AXIS_VERSION_PLACEHOLDER
-
-AXIS_DIR="INSTALL_DIR_PLACEHOLDER"
-PYTHON_CMD="PYTHON_CMD_PLACEHOLDER"
-
-show_help() {
-    echo "AXIS Language vAXIS_VERSION_PLACEHOLDER"
+# ── ASCII Art ────────────────────────────────────────────────
+show_banner() {
     echo ""
-    echo "Usage: axis <command> [options]"
+    echo -e "${CYAN}"
+    echo "     █████  ██   ██ ██ ███████"
+    echo "    ██   ██  ██ ██  ██ ██     "
+    echo "    ███████   ███   ██ ███████"
+    echo "    ██   ██  ██ ██  ██      ██"
+    echo "    ██   ██ ██   ██ ██ ███████"
     echo ""
-    echo "Commands:"
-    echo "  run <file.axis>     Run an AXIS script (script mode)"
-    echo "  build <file.axis>   Compile to ELF64 binary (Linux only)"
-    echo "  check <file.axis>   Check syntax without running"
-    echo "  info                Show installation info"
-    echo "  version             Show version"
-    echo "  help                Show this help message"
+    echo -e "${RESET}"
+    echo -e "  ${BOLD}AXIS Language v${VERSION} Installer${RESET}"
     echo ""
-    echo "Examples:"
-    echo "  axis run hello.axis"
-    echo "  axis check myprogram.axis"
-    echo "  axis build program.axis -o program --elf"
 }
 
-case "$1" in
-    run)
-        if [ -z "$2" ]; then
-            echo "Error: No script file specified"
-            echo "Usage: axis run script.axis"
-            exit 1
+# ── Helpers ──────────────────────────────────────────────────
+info()    { echo -e "${CYAN}[INFO]${RESET}  $*"; }
+success() { echo -e "${GREEN}[OK]${RESET}    $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
+fail()    { echo -e "${RED}[ERROR]${RESET} $*"; exit 1; }
+
+check_cmd() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# ── Detect platform ─────────────────────────────────────────
+detect_platform() {
+    local os arch
+    os="$(uname -s)"
+    arch="$(uname -m)"
+
+    case "$os" in
+        Linux*)  OS="linux" ;;
+        Darwin*) OS="macos" ;;
+        *)       fail "Unsupported OS: $os" ;;
+    esac
+
+    case "$arch" in
+        x86_64|amd64) ARCH="x86_64" ;;
+        aarch64|arm64) ARCH="aarch64" ;;
+        *)             fail "Unsupported architecture: $arch" ;;
+    esac
+
+    info "Detected: ${OS} ${ARCH}"
+}
+
+# ── Install build tools ──────────────────────────────────────
+install_build_tools() {
+    echo ""
+    warn "gcc, make, or git not found — these are required to compile AXIS."
+    echo ""
+
+    # Detect package manager
+    local pkg_mgr=""
+    local install_cmd=""
+    if check_cmd apt-get; then
+        pkg_mgr="apt"
+        install_cmd="sudo apt-get update && sudo apt-get install -y build-essential git"
+    elif check_cmd dnf; then
+        pkg_mgr="dnf"
+        install_cmd="sudo dnf install -y gcc make git"
+    elif check_cmd yum; then
+        pkg_mgr="yum"
+        install_cmd="sudo yum install -y gcc make git"
+    elif check_cmd pacman; then
+        pkg_mgr="pacman"
+        install_cmd="sudo pacman -S --noconfirm base-devel git"
+    elif check_cmd brew; then
+        pkg_mgr="brew"
+        install_cmd="brew install gcc make git"
+    elif check_cmd zypper; then
+        pkg_mgr="zypper"
+        install_cmd="sudo zypper install -y gcc make git"
+    fi
+
+    if [ -z "$pkg_mgr" ]; then
+        fail "No supported package manager found. Please install gcc, make, and git manually."
+    fi
+
+    info "Detected package manager: ${pkg_mgr}"
+    echo -e "  Will run: ${BOLD}${install_cmd}${RESET}"
+    echo ""
+    read -rp "  Install now? [Y/n] " answer
+    answer="${answer:-Y}"
+
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        info "Installing build tools..."
+        eval "$install_cmd"
+        if ! check_cmd gcc && ! check_cmd cc; then
+            fail "Installation failed — gcc still not found."
         fi
-        "$PYTHON_CMD" "$AXIS_DIR/compilation_pipeline.py" "$2" --run
-        ;;
-    build)
-        if [ -z "$2" ]; then
-            echo "Error: No script file specified"
-            echo "Usage: axis build script.axis [-o output]"
-            exit 1
-        fi
-        shift
-        "$PYTHON_CMD" "$AXIS_DIR/compilation_pipeline.py" "$@"
-        ;;
-    check)
-        if [ -z "$2" ]; then
-            echo "Error: No script file specified"
-            echo "Usage: axis check script.axis"
-            exit 1
-        fi
-        "$PYTHON_CMD" "$AXIS_DIR/compilation_pipeline.py" "$2" --check
-        ;;
-    info)
-        echo "AXIS Language vAXIS_VERSION_PLACEHOLDER"
+        success "Build tools installed"
+    else
+        fail "Cannot continue without gcc, make, and git."
+    fi
+}
+
+# ── Build from source ───────────────────────────────────────
+build_from_source() {
+    info "Building AXIS from source..."
+
+    # Check prerequisites — offer to install if missing
+    if ! check_cmd gcc && ! check_cmd cc || ! check_cmd make || ! check_cmd git; then
+        install_build_tools
+    fi
+
+    # Clone or update
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' EXIT
+
+    info "Cloning repository..."
+    git clone --depth 1 "https://github.com/${REPO}.git" "$tmpdir/axis-lang" 2>&1 | tail -1
+
+    info "Compiling..."
+    cd "$tmpdir/axis-lang/axcc"
+    make CC="${CC:-gcc}" 2>&1 | tail -5
+
+    if [ ! -f axis ]; then
+        fail "Build failed — axis binary not found"
+    fi
+    success "Build successful"
+
+    # Install
+    mkdir -p "$INSTALL_DIR"
+    cp axis "$INSTALL_DIR/axis"
+    chmod +x "$INSTALL_DIR/axis"
+    ln -sf "$INSTALL_DIR/axis" "$INSTALL_DIR/ax"
+    success "Installed to ${INSTALL_DIR}/"
+}
+
+# ── Check PATH ───────────────────────────────────────────────
+check_path() {
+    if [[ ":$PATH:" != *":${INSTALL_DIR}:"* ]]; then
         echo ""
-        echo "Installation: $AXIS_DIR"
-        echo "Python: $PYTHON_CMD"
-        echo "Python Version: $("$PYTHON_CMD" --version 2>&1)"
-        ;;
-    version|--version|-v)
-        echo "AXIS vAXIS_VERSION_PLACEHOLDER"
-        ;;
-    help|--help|-h|"")
-        show_help
-        ;;
-    *)
-        echo "Unknown command: $1"
-        show_help
-        exit 1
-        ;;
-esac
-AXIS_SCRIPT
-        
-        # Replace placeholders
-        sed -i "s|AXIS_VERSION_PLACEHOLDER|$AXIS_VERSION|g" "$BIN_DIR/axis"
-        sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" "$BIN_DIR/axis"
-        sed -i "s|PYTHON_CMD_PLACEHOLDER|$python_cmd|g" "$BIN_DIR/axis"
-        
-        chmod +x "$BIN_DIR/axis"
-        
-        echo "85"
-        echo "# Updating PATH..."
-        
-        # Add to PATH if not already there
-        if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-            # Add to shell config
-            for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
-                if [ -f "$rc" ]; then
-                    if ! grep -q "AXIS" "$rc"; then
-                        echo "" >> "$rc"
-                        echo "# AXIS Language" >> "$rc"
-                        echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$rc"
-                    fi
-                fi
-            done
+        warn "${INSTALL_DIR} is not in your PATH."
+        echo ""
+
+        local shell_name rc_file
+        shell_name="$(basename "${SHELL:-/bin/bash}")"
+
+        case "$shell_name" in
+            zsh)  rc_file="$HOME/.zshrc" ;;
+            fish) rc_file="$HOME/.config/fish/config.fish" ;;
+            *)    rc_file="$HOME/.bashrc" ;;
+        esac
+
+        echo -e "  Add it by running:"
+        echo ""
+
+        if [ "$shell_name" = "fish" ]; then
+            echo -e "    ${BOLD}fish_add_path ${INSTALL_DIR}${RESET}"
+        else
+            echo -e "    ${BOLD}echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ${rc_file}${RESET}"
+            echo -e "    ${BOLD}source ${rc_file}${RESET}"
         fi
-        
-        if [ "$install_vscode" = true ]; then
-            echo "90"
-            echo "# Installing VS Code extension..."
-            
-            if command -v code &> /dev/null; then
-                code --install-extension AGDNoob.axis-lang 2>/dev/null || true
-            fi
-        fi
-        
-        echo "100"
-        echo "# Installation complete!"
-        
-    ) | show_progress "Installing AXIS"
-    
-    show_info "Installation Complete" "AXIS has been installed successfully!\n\nRestart your terminal and run:\n  axis help\n\nOr try:\n  axis run yourscript.axis"
+        echo ""
+    else
+        success "PATH already includes ${INSTALL_DIR}"
+    fi
 }
 
-# Run main
+# ── Success message ──────────────────────────────────────────
+show_success() {
+    echo ""
+    echo -e "${GREEN}════════════════════════════════════════${RESET}"
+    echo -e "${GREEN}  Installation complete!${RESET}"
+    echo -e "${GREEN}════════════════════════════════════════${RESET}"
+    echo ""
+    echo -e "  ${YELLOW}IMPORTANT NOTICE${RESET}"
+    echo ""
+    echo "  AXCC (the AXIS Compiler) does not use GCC, LLVM, or NASM"
+    echo "  as a backend. The entire compiler -- lexer, parser, semantic"
+    echo "  analysis, x86-64 code generation, PE/ELF emission -- is 100%"
+    echo "  handwritten by a single person."
+    echo ""
+    echo "  While AXCC has been extensively tested (26 test cases covering"
+    echo "  all language features), you may still encounter bugs."
+    echo ""
+    echo -e "  If you find a bug, please open an issue on GitHub:"
+    echo -e "  ${CYAN}https://github.com/${REPO}/issues${RESET}"
+    echo ""
+    echo -e "  ${YELLOW}════════════════════════════════════════${RESET}"
+    echo ""
+    read -rp "  Did you understand? [Y/n] " understood
+    echo ""
+    echo -e "  Quick start:"
+    echo -e "    ${BOLD}axis hello.axis -o hello${RESET}"
+    echo -e "    ${BOLD}./hello${RESET}"
+    echo ""
+    read -rp "  Would you like to download the AXIS Guide? [Y/n] " openguide
+    openguide="${openguide:-Y}"
+    if [[ "$openguide" =~ ^[Yy]$ ]]; then
+        local url="https://github.com/${REPO}/tree/main/docs/guide"
+        if check_cmd xdg-open; then
+            xdg-open "$url" 2>/dev/null &
+        elif check_cmd open; then
+            open "$url" 2>/dev/null &
+        else
+            echo -e "  Open manually: ${CYAN}${url}${RESET}"
+        fi
+    fi
+    echo ""
+    echo -e "  ${GREEN}Happy coding!${RESET}"
+    echo ""
+}
+
+# ── Main ─────────────────────────────────────────────────────
+main() {
+    show_banner
+    detect_platform
+    build_from_source
+    check_path
+    show_success
+}
+
 main "$@"
