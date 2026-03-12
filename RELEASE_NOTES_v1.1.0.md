@@ -183,7 +183,7 @@ The compile mode backend has been completely rewritten from Python to C. AXCC is
 .axis source → Lexer → Parser → AST → Semantic Analysis → IR → x64 Codegen → PE/ELF
 ```
 
-All nine stages in ~3000 lines of C. Compilation is near-instant — most files compile in under 50ms.
+All nine stages in ~9000 lines of C. Compilation is near-instant — most files compile in under 50ms.
 
 ---
 
