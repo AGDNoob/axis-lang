@@ -1,29 +1,32 @@
-# Python
+# Build artifacts
+*.o
+*.bin
+*.elf
+*.exe
+__axcache__/
+axcc/build/
+axcc/ax.bat
+axcc/ax
+
+# AXCC debug dumps
+axcc/*.txt
+
+# Installer binaries
+installer/*.exe
+
+# Python (legacy)
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-*.egg-info/
-dist/
-build/
-
-# AXIS compiled outputs
-*.bin
-*.o
-*.elf
-examples/*.bin
-examples/*_test
+.venv/
 
 # Temporary files
 *.tmp
 /tmp/
-.axis_cache/
 
 # IDE
 .vscode/*
 !.vscode/tasks.json
-!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -39,8 +42,9 @@ axis-vscode/node_modules/
 axis-vscode/*.vsix
 axis-vscode/out/
 
+# Internal / not for GitHub
+Release_Roadmap.md
+docs/BRAINSTORM.md
+
 # Debug
 *.log
-debug/
-
-RELEASE_NOTES_DRAFT.md
