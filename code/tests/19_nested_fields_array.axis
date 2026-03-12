@@ -1,0 +1,37 @@
+// Test: Arrays of fields, nested field access, complex data
+mode compile
+
+Vec2: field:
+    x: i32
+    y: i32
+
+func dot(a: Vec2, b: Vec2) i32:
+    return a.x * b.x + a.y * b.y
+func length_sq(v: Vec2) i32:
+    return v.x * v.x + v.y * v.y
+func main() i32:
+    // Array of fields — construct separately
+    p0: Vec2 = Vec2(1, 0)
+    p1: Vec2 = Vec2(0, 1)
+    p2: Vec2 = Vec2(3, 4)
+    points: (Vec2; 3) = [p0, p1, p2]
+    when points[0].x != 1:
+        return 1
+    when points[1].y != 1:
+        return 2
+    when points[2].x != 3:
+        return 3
+    // Dot product
+    a: Vec2 = Vec2(3, 4)
+    b: Vec2 = Vec2(4, 3)
+    when dot(a, b) != 24:
+        return 4
+    // Length squared
+    when length_sq(a) != 25:
+        return 5
+    // Perpendicular vectors have zero dot product
+    v1: Vec2 = Vec2(1, 0)
+    v2: Vec2 = Vec2(0, 1)
+    when dot(v1, v2) != 0:
+        return 6
+    return 0

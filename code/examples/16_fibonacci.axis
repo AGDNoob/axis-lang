@@ -1,0 +1,18 @@
+// Example 16: Fibonacci (Iterative)
+// Print the first 20 Fibonacci numbers.
+
+mode script
+
+func fibonacci(n: i32):
+    a: i32 = 0
+    b: i32 = 1
+    i: i32 = 0
+    while i < n:
+        writeln(a)
+        temp: i32 = a + b
+        a = b
+        b = temp
+        i += 1
+
+writeln("First 20 Fibonacci numbers:")
+fibonacci(20)

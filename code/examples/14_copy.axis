@@ -1,0 +1,33 @@
+// Example 14: Copy Semantics
+// Explicit copies prevent accidental aliasing.
+
+mode script
+
+// Array copy
+original: (i32; 4) = [1, 2, 3, 4]
+duplicate: (i32; 4) = copy original
+
+// Modify duplicate — original stays the same
+duplicate[0] = 99
+
+write("original[0] = ")
+writeln(original[0])
+write("duplicate[0] = ")
+writeln(duplicate[0])
+
+// Field copy
+Point: field:
+    x: i32 = 0
+    y: i32 = 0
+
+p1: Point
+p1.x = 10
+p1.y = 20
+
+p2: Point = copy p1
+p2.x = 999
+
+write("p1.x = ")
+writeln(p1.x)
+write("p2.x = ")
+writeln(p2.x)

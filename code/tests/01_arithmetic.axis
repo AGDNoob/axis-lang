@@ -1,0 +1,44 @@
+// Test: Integer arithmetic — add, sub, mul, div, mod, negation, precedence
+mode compile
+
+func main() i32:
+    // Basic ops
+    a: i32 = 10 + 20
+    when a != 30:
+        return 1
+    b: i32 = 100 - 37
+    when b != 63:
+        return 2
+    c: i32 = 7 * 8
+    when c != 56:
+        return 3
+    d: i32 = 99 / 10
+    when d != 9:
+        return 4
+    e: i32 = 99 % 10
+    when e != 9:
+        return 5
+    // Negation
+    f: i32 = -42
+    when f != -42:
+        return 6
+    g: i32 = -f
+    when g != 42:
+        return 7
+    // Precedence: mul before add
+    h: i32 = 2 + 3 * 4
+    when h != 14:
+        return 8
+    // Parentheses override precedence
+    i: i32 = (2 + 3) * 4
+    when i != 20:
+        return 9
+    // Chained operations
+    j: i32 = 1 + 2 + 3 + 4 + 5
+    when j != 15:
+        return 10
+    // Division truncates toward zero
+    k: i32 = 7 / 2
+    when k != 3:
+        return 11
+    return 0

@@ -1,0 +1,66 @@
+// Test: Unsigned type edge cases
+mode compile
+
+func main() i32:
+    // Probe 1: u8 comparisons (basic)
+    a: u8 = 200
+    b: u8 = 100
+    when a < b:
+        return 1
+    when a <= b:
+        return 2
+    c: u8 = 250
+    d: u8 = 10
+    when c < d:
+        return 3
+    // Probe 2: u32 unsigned division
+    x: u32 = 200
+    y: u32 = 3
+    q: u32 = x / y
+    when q != 66:
+        return 4
+    r: u32 = x % y
+    when r != 2:
+        return 5
+    // Probe 3: u8 right shift with high bit set
+    s: u8 = 128
+    s2: u8 = s >> 1
+    when s2 != 64:
+        return 6
+    // Probe 4: u8 array element load (sign-extension bug?)
+    arr: (u8; 4) = [200, 250, 128, 255]
+    v0: u8 = arr[0]
+    when v0 != 200:
+        return 10
+    v1: u8 = arr[1]
+    when v1 != 250:
+        return 11
+    v2: u8 = arr[2]
+    when v2 != 128:
+        return 12
+    v3: u8 = arr[3]
+    when v3 != 255:
+        return 13
+    // Probe 5: u8 array element comparison
+    when arr[0] < 100:
+        return 14
+    // Probe 6: u32 arithmetic
+    e2: u8 = 200
+    f2: u8 = 100
+    g2: u8 = e2 - f2
+    when g2 != 100:
+        return 20
+    h2: u8 = 200
+    j2: u8 = 55
+    k2: u8 = h2 + j2
+    when k2 != 255:
+        return 21
+    // Probe 7: u32 loop
+    sum: u32 = 0
+    i: u32 = 0
+    while i < 5:
+        sum = sum + i
+        i = i + 1
+    when sum != 10:
+        return 30
+    return 0

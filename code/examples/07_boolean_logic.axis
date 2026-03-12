@@ -1,0 +1,22 @@
+// Example 07: Boolean Logic
+// and, or, not — with short-circuit evaluation.
+
+mode script
+
+x: i32 = 15
+
+when x > 10 and x < 20:
+    writeln("x is between 10 and 20")
+
+when x == 5 or x == 15:
+    writeln("x is 5 or 15")
+
+flag: bool = False
+when not flag:
+    writeln("flag is False")
+
+// Combined
+a: bool = True
+b: bool = False
+when a and not b:
+    writeln("a is True and b is False")

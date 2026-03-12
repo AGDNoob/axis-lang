@@ -1,0 +1,38 @@
+// Test: Bitwise operators — and, or, xor, shift left, shift right
+mode compile
+
+func main() i32:
+    // AND
+    a: i32 = 0xFF & 0x0F
+    when a != 15:
+        return 1
+    // OR
+    b: i32 = 0xF0 | 0x0F
+    when b != 255:
+        return 2
+    // XOR
+    c: i32 = 0xFF ^ 0x0F
+    when c != 240:
+        return 3
+    // Shift left
+    d: i32 = 1 << 8
+    when d != 256:
+        return 4
+    // Shift right
+    e: i32 = 256 >> 4
+    when e != 16:
+        return 5
+    // Complex: mask and shift
+    val: i32 = 0xABCD
+    low_byte: i32 = val & 0xFF
+    when low_byte != 0xCD:
+        return 6
+    high_byte: i32 = (val >> 8) & 0xFF
+    when high_byte != 0xAB:
+        return 7
+    // XOR self = 0
+    f: i32 = 12345
+    f = f ^ f
+    when f != 0:
+        return 8
+    return 0

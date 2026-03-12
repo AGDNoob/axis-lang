@@ -1,0 +1,65 @@
+// Test: update modifier — pass by reference semantics
+mode compile
+
+func double(update x: i32) void:
+    x = x * 2
+    return
+func swap(update a: i32, update b: i32) void:
+    temp: i32 = a
+    a = b
+    b = temp
+    return
+func increment_all(update a: i32, update b: i32, update c: i32) void:
+    a += 1
+    b += 1
+    c += 1
+    return
+func clamp_update(update val: i32, lo: i32, hi: i32) void:
+    when val < lo:
+        val = lo
+    else when val > hi:
+        val = hi
+    return
+func main() i32:
+    // double
+    x: i32 = 5
+    double(x)
+    when x != 10:
+        return 1
+    // double again
+    double(x)
+    when x != 20:
+        return 2
+    // swap
+    a: i32 = 100
+    b: i32 = 200
+    swap(a, b)
+    when a != 200:
+        return 3
+    when b != 100:
+        return 4
+    // multi-update
+    p: i32 = 10
+    q: i32 = 20
+    r: i32 = 30
+    increment_all(p, q, r)
+    when p != 11:
+        return 5
+    when q != 21:
+        return 6
+    when r != 31:
+        return 7
+    // clamp_update
+    v: i32 = -50
+    clamp_update(v, 0, 100)
+    when v != 0:
+        return 8
+    v = 999
+    clamp_update(v, 0, 100)
+    when v != 100:
+        return 9
+    v = 42
+    clamp_update(v, 0, 100)
+    when v != 42:
+        return 10
+    return 0

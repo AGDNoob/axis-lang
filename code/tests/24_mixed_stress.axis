@@ -1,0 +1,90 @@
+// Test: Combined stress — fields (max 2 members, max 1 field param), arrays, loops, functions
+// Avoids: 3+ field members, 2+ field params, when/while in non-main functions
+mode compile
+Vec2: field:
+    x: i32
+    y: i32
+func make_vec(a: i32, b: i32) Vec2:
+    r: Vec2 = Vec2(a, b)
+    return r
+func mag_sq(v: Vec2) i32:
+    return v.x * v.x + v.y * v.y
+func scale(update v: Vec2, s: i32) void:
+    v.x *= s
+    v.y *= s
+    return
+func main() i32:
+    // Construction and access
+    a: Vec2 = Vec2(3, 4)
+    b: Vec2 = Vec2(1, 2)
+    when a.x != 3:
+        return 1
+    when b.y != 2:
+        return 2
+    // Function returning field
+    c: Vec2 = make_vec(7, 11)
+    when c.x != 7:
+        return 3
+    when c.y != 11:
+        return 4
+    // mag_sq(3,4) = 9+16 = 25
+    when mag_sq(a) != 25:
+        return 5
+    // mag_sq(1,2) = 1+4 = 5
+    when mag_sq(b) != 5:
+        return 6
+    // Scale (update param)
+    d: Vec2 = Vec2(5, 3)
+    scale(d, 2)
+    when d.x != 10:
+        return 7
+    when d.y != 6:
+        return 8
+    // Inline add (avoid multi-field-param function)
+    sx: i32 = a.x + b.x
+    sy: i32 = a.y + b.y
+    sum: Vec2 = Vec2(sx, sy)
+    when sum.x != 4:
+        return 9
+    when sum.y != 6:
+        return 10
+    // Inline dot product
+    dot: i32 = a.x * b.x + a.y * b.y  // 3+8 = 11
+    when dot != 11:
+        return 11
+    // Bubble sort distance array
+    dists: (i32; 4) = [0, 0, 0, 0]
+    dists[0] = mag_sq(a)    // 25
+    dists[1] = mag_sq(b)    // 5
+    dists[2] = mag_sq(c)    // 49+121 = 170
+    dists[3] = mag_sq(d)    // 100+36 = 136
+    n: i32 = 4
+    i: i32 = 0
+    while i < n - 1:
+        j: i32 = 0
+        while j < n - 1 - i:
+            when dists[j] > dists[j + 1]:
+                tmp: i32 = dists[j]
+                dists[j] = dists[j + 1]
+                dists[j + 1] = tmp
+            j += 1
+        i += 1
+    // sorted: [5, 25, 136, 170]
+    when dists[0] != 5:
+        return 12
+    when dists[1] != 25:
+        return 13
+    when dists[2] != 136:
+        return 14
+    when dists[3] != 170:
+        return 15
+    // Scale then re-check: d was (10,6), scale by 3 -> (30, 18)
+    scale(d, 3)
+    when d.x != 30:
+        return 16
+    when d.y != 18:
+        return 17
+    when mag_sq(d) != 1224:
+        return 18
+    // 900 + 324 = 1224
+    return 0

@@ -1,0 +1,24 @@
+// Example 09: Functions
+// Define, call, and return values with "give".
+
+mode script
+
+func square(n: i32) -> i32:
+    give n * n
+
+func max(a: i32, b: i32) -> i32:
+    when a >= b:
+        give a
+    give b
+
+func greet(name: str):
+    write("Hello, ")
+    writeln(name)
+
+greet("World")
+
+write("square(7) = ")
+writeln(square(7))
+
+write("max(42, 17) = ")
+writeln(max(42, 17))

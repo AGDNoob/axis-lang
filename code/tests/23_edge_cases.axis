@@ -1,0 +1,53 @@
+// Test: Edge cases — zero, boundary values, empty loops
+mode compile
+
+func identity(x: i32) i32:
+    return x
+func do_nothing() void:
+    return
+func main() i32:
+    // Zero arithmetic
+    when 0 + 0 != 0:
+        return 1
+    when 0 * 12345 != 0:
+        return 2
+    when 0 / 1 != 0:
+        return 3
+    // Identity
+    when identity(0) != 0:
+        return 4
+    when identity(-1) != -1:
+        return 5
+    // Void function call (should not crash)
+    do_nothing()
+    // While false — should not enter
+    x: i32 = 0
+    while False:
+        x = 1
+    when x != 0:
+        return 6
+    // For range(0, 0) — empty range, no iterations
+    y: i32 = 0
+    for i in range(0, 0):
+        y = 1
+    when y != 0:
+        return 7
+    // Single iteration
+    count: i32 = 0
+    for i in range(0, 1):
+        count += 1
+    when count != 1:
+        return 8
+    // Nested empty
+    z: i32 = 0
+    for i in range(0, 5):
+        for j in range(0, 0):
+            z = 1
+    when z != 0:
+        return 9
+    // Large number arithmetic
+    big: i32 = 1000000
+    big = big * 2
+    when big != 2000000:
+        return 10
+    return 0

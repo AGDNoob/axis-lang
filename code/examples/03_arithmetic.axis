@@ -1,0 +1,33 @@
+// Example 03: Arithmetic and Operators
+// +, -, *, /, %, and compound assignment.
+
+mode script
+
+a: i32 = 17
+b: i32 = 5
+
+writeln("a = 17, b = 5")
+write("a + b = ")
+writeln(a + b)
+write("a - b = ")
+writeln(a - b)
+write("a * b = ")
+writeln(a * b)
+write("a / b = ")
+writeln(a / b)
+write("a % b = ")
+writeln(a % b)
+
+// Compound assignment
+x: i32 = 10
+x += 5
+write("10 += 5 -> ")
+writeln(x)
+
+x *= 3
+write(" *= 3  -> ")
+writeln(x)
+
+x /= 9
+write(" /= 9  -> ")
+writeln(x)

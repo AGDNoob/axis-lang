@@ -1,0 +1,20 @@
+// Example 06: Loop Control — stop and skip
+// "stop" = break, "skip" = continue.
+
+mode script
+
+// Skip even numbers
+writeln("Odd numbers 1-10:")
+for i in range(1, 11):
+    when i % 2 == 0:
+        skip
+    writeln(i)
+
+// Stop early when we find what we want
+writeln("First multiple of 7 above 50:")
+n: i32 = 51
+repeat:
+    when n % 7 == 0:
+        writeln(n)
+        stop
+    n += 1

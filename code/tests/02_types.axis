@@ -1,0 +1,40 @@
+// Test: All integer types — i8, i16, i32, i64, u8, u16, u32, u64, bool
+mode compile
+
+func main() i32:
+    // Signed types
+    a8: i8 = 127
+    when a8 != 127:
+        return 1
+    a16: i16 = 32000
+    when a16 != 32000:
+        return 2
+    a32: i32 = 100000
+    when a32 != 100000:
+        return 3
+    a64: i64 = 1000000000
+    when a64 != 1000000000:
+        return 4
+    // Unsigned types
+    b8: u8 = 255
+    when b8 != 255:
+        return 5
+    b16: u16 = 65000
+    when b16 != 65000:
+        return 6
+    b32: u32 = 100000
+    when b32 != 100000:
+        return 7
+    b64: u64 = 1000000000
+    when b64 != 1000000000:
+        return 8
+    // Bool
+    t: bool = True
+    f: bool = False
+    when t == f:
+        return 9
+    when t != True:
+        return 10
+    when f != False:
+        return 11
+    return 0

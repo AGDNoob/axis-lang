@@ -1,0 +1,57 @@
+// Test: Fields — flat, nested, field access, field assignment
+mode compile
+
+Point: field:
+    x: i32
+    y: i32
+
+Rect: field:
+    origin: Point
+    w: i32
+    h: i32
+
+func area(r: Rect) i32:
+    return r.w * r.h
+func make_point(x: i32, y: i32) Point:
+    p: Point = Point(x, y)
+    return p
+func main() i32:
+    // Basic field
+    p: Point = Point(10, 20)
+    when p.x != 10:
+        return 1
+    when p.y != 20:
+        return 2
+    // Field assignment
+    p.x = 99
+    when p.x != 99:
+        return 3
+    // Compound assignment on field
+    p.y += 5
+    when p.y != 25:
+        return 4
+    // Nested field
+    r: Rect = Rect(Point(0, 0), 100, 50)
+    when r.origin.x != 0:
+        return 5
+    when r.w != 100:
+        return 6
+    when r.h != 50:
+        return 7
+    // Nested assignment
+    r.origin.x = 10
+    r.origin.y = 20
+    when r.origin.x != 10:
+        return 8
+    when r.origin.y != 20:
+        return 9
+    // Function with field param
+    when area(r) != 5000:
+        return 10
+    // Function returning field
+    p2: Point = make_point(42, 84)
+    when p2.x != 42:
+        return 11
+    when p2.y != 84:
+        return 12
+    return 0

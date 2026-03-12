@@ -1,0 +1,62 @@
+// Test: Functions — params, return, recursion, mutual calls
+mode compile
+
+func add(a: i32, b: i32) i32:
+    return a + b
+func sub(a: i32, b: i32) i32:
+    return a - b
+func factorial(n: i32) i32:
+    when n <= 1:
+        return 1
+    else:
+        return n * factorial(n - 1)
+func fib(n: i32) i32:
+    when n <= 0:
+        return 0
+    else when n == 1:
+        return 1
+    else:
+        return fib(n - 1) + fib(n - 2)
+func is_even(n: i32) i32:
+    when n == 0:
+        return 1
+    else:
+        return is_odd(n - 1)
+func is_odd(n: i32) i32:
+    when n == 0:
+        return 0
+    else:
+        return is_even(n - 1)
+func apply_twice(x: i32) i32:
+    r: i32 = add(x, x)
+    r = add(r, r)
+    return r
+func main() i32:
+    // Basic calls
+    when add(10, 20) != 30:
+        return 1
+    when sub(100, 37) != 63:
+        return 2
+    // Nested calls
+    when add(add(1, 2), add(3, 4)) != 10:
+        return 3
+    // Recursion — factorial
+    when factorial(0) != 1:
+        return 4
+    when factorial(1) != 1:
+        return 5
+    when factorial(5) != 120:
+        return 6
+    when factorial(10) != 3628800:
+        return 7
+    // Recursion — fibonacci
+    when fib(0) != 0:
+        return 8
+    when fib(1) != 1:
+        return 9
+    when fib(10) != 55:
+        return 10
+    // apply_twice: x -> 4x
+    when apply_twice(3) != 12:
+        return 11
+    return 0

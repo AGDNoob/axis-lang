@@ -1,0 +1,25 @@
+// Example 19: Guessing Game
+// Interactive number guessing with input.
+
+mode script
+
+secret: i32 = 42
+attempts: i32 = 0
+
+writeln("=== Number Guessing Game ===")
+writeln("I'm thinking of a number between 1 and 100.")
+
+repeat:
+    write("Your guess: ")
+    guess: i32 = read()
+    attempts += 1
+
+    when guess == secret:
+        write("Correct! You got it in ")
+        write(attempts)
+        writeln(" attempts!")
+        stop
+    else when guess < secret:
+        writeln("Too low!")
+    else:
+        writeln("Too high!")

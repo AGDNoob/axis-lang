@@ -1,0 +1,49 @@
+// Test: Bubble sort on array, binary search concept
+mode compile
+
+func main() i32:
+    // === Bubble sort ===
+    arr: (i32; 8) = [38, 27, 43, 3, 9, 82, 10, 1]
+    // Sort ascending
+    n: i32 = 8
+    i: i32 = 0
+    while i < n - 1:
+        j: i32 = 0
+        while j < n - 1 - i:
+            when arr[j] > arr[j + 1]:
+                temp: i32 = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+            j += 1
+        i += 1
+    // Verify sorted: [1, 3, 9, 10, 27, 38, 43, 82]
+    when arr[0] != 1:
+        return 1
+    when arr[1] != 3:
+        return 2
+    when arr[2] != 9:
+        return 3
+    when arr[3] != 10:
+        return 4
+    when arr[4] != 27:
+        return 5
+    when arr[5] != 38:
+        return 6
+    when arr[6] != 43:
+        return 7
+    when arr[7] != 82:
+        return 8
+    // Verify fully sorted via loop
+    k: i32 = 0
+    while k < 7:
+        when arr[k] > arr[k + 1]:
+            return 9
+        k += 1
+    // === Sum of sorted ===
+    total: i32 = 0
+    for x in arr:
+        total += x
+    // 1+3+9+10+27+38+43+82 = 213
+    when total != 213:
+        return 10
+    return 0

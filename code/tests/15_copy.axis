@@ -1,0 +1,21 @@
+// Test: copy — array copy, independence after copy
+mode compile
+
+func main() i32:
+    // Copy array
+    src: (i32; 5) = [1, 2, 3, 4, 5]
+    dst: (i32; 5) = copy src
+    // Verify copy
+    when dst[0] != 1:
+        return 1
+    when dst[4] != 5:
+        return 2
+    // Modify original, copy should be independent
+    src[0] = 99
+    when dst[0] != 1:
+        return 3
+    // Modify copy, original should be independent
+    dst[2] = 77
+    when src[2] != 3:
+        return 4
+    return 0

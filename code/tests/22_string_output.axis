@@ -1,0 +1,23 @@
+// Test: String output — write, writeln, string variables
+// This test uses exit code only, output is secondary
+mode compile
+
+func main() i32:
+    // String variable
+    msg: str = "hello"
+    // write/writeln should not crash
+    write("test: ")
+    writeln(msg)
+    writeln("done")
+    // Multiple writes
+    write("a")
+    write("b")
+    write("c")
+    writeln("")
+    // Integer output
+    writeln(42)
+    writeln(-1)
+    // Bool output
+    writeln(True)
+    writeln(False)
+    return 0

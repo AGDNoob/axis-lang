@@ -1,0 +1,39 @@
+// Example 13: Enums and Match
+// Named constants and pattern matching.
+
+mode script
+
+Color: enum:
+    Red
+    Green
+    Blue
+
+func describe(c: Color):
+    match c:
+        Color.Red:
+            writeln("The color is Red")
+        Color.Green:
+            writeln("The color is Green")
+        Color.Blue:
+            writeln("The color is Blue")
+
+describe(Color.Red)
+describe(Color.Green)
+describe(Color.Blue)
+
+// Match on integers
+day: i32 = 3
+write("Day 3 is ")
+match day:
+    1:
+        writeln("Monday")
+    2:
+        writeln("Tuesday")
+    3:
+        writeln("Wednesday")
+    4:
+        writeln("Thursday")
+    5:
+        writeln("Friday")
+    _:
+        writeln("Weekend")

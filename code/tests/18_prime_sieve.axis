@@ -1,0 +1,48 @@
+// Test: Prime number checking — brute force
+mode compile
+
+func is_prime(n: i32) i32:
+    when n < 2:
+        return 0
+    when n == 2:
+        return 1
+    when n % 2 == 0:
+        return 0
+    d: i32 = 3
+    while d * d <= n:
+        when n % d == 0:
+            return 0
+        d += 2
+    return 1
+func count_primes_up_to(limit: i32) i32:
+    count: i32 = 0
+    for n in range(2, limit):
+        when is_prime(n) == 1:
+            count += 1
+    return count
+func main() i32:
+    // Known primes
+    when is_prime(2) != 1:
+        return 1
+    when is_prime(3) != 1:
+        return 2
+    when is_prime(7) != 1:
+        return 3
+    when is_prime(97) != 1:
+        return 4
+    // Known non-primes
+    when is_prime(0) != 0:
+        return 5
+    when is_prime(1) != 0:
+        return 6
+    when is_prime(4) != 0:
+        return 7
+    when is_prime(100) != 0:
+        return 8
+    // Primes below 20: 2,3,5,7,11,13,17,19 = 8 primes
+    when count_primes_up_to(20) != 8:
+        return 9
+    // Primes below 100: 25 primes
+    when count_primes_up_to(100) != 25:
+        return 10
+    return 0

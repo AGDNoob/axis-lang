@@ -1,0 +1,26 @@
+// Example 18: GCD and LCM
+// Euclidean algorithm for Greatest Common Divisor.
+
+mode script
+
+func gcd(a: i32, b: i32) -> i32:
+    while b != 0:
+        temp: i32 = b
+        b = a % b
+        a = temp
+    give a
+
+func lcm(a: i32, b: i32) -> i32:
+    give (a / gcd(a, b)) * b
+
+write("gcd(48, 18) = ")
+writeln(gcd(48, 18))
+
+write("gcd(100, 75) = ")
+writeln(gcd(100, 75))
+
+write("lcm(12, 8) = ")
+writeln(lcm(12, 8))
+
+write("lcm(7, 13) = ")
+writeln(lcm(7, 13))

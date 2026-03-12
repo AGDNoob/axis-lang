@@ -1,0 +1,31 @@
+// Example 17: Prime Numbers
+// Find all primes up to 100 using trial division.
+
+mode script
+
+func is_prime(n: i32) -> bool:
+    when n < 2:
+        give False
+    when n == 2:
+        give True
+    when n % 2 == 0:
+        give False
+    d: i32 = 3
+    while d * d <= n:
+        when n % d == 0:
+            give False
+        d += 2
+    give True
+
+writeln("Primes up to 100:")
+count: i32 = 0
+for n in range(2, 101):
+    when is_prime(n):
+        write(n)
+        write(" ")
+        count += 1
+
+writeln("")
+write("Found ")
+write(count)
+writeln(" primes")

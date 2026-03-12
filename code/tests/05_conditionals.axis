@@ -1,0 +1,59 @@
+// Test: when / else when / else — nested, chained, with all comparison ops
+mode compile
+
+func classify(x: i32) i32:
+    when x < 0:
+        return -1
+    else when x == 0:
+        return 0
+    else:
+        return 1
+func max(a: i32, b: i32) i32:
+    when a >= b:
+        return a
+    else:
+        return b
+func clamp(val: i32, lo: i32, hi: i32) i32:
+    when val < lo:
+        return lo
+    else when val > hi:
+        return hi
+    else:
+        return val
+func main() i32:
+    // classify
+    when classify(-5) != -1:
+        return 1
+    when classify(0) != 0:
+        return 2
+    when classify(99) != 1:
+        return 3
+    // max
+    when max(10, 20) != 20:
+        return 4
+    when max(20, 10) != 20:
+        return 5
+    when max(7, 7) != 7:
+        return 6
+    // clamp
+    when clamp(-10, 0, 100) != 0:
+        return 7
+    when clamp(50, 0, 100) != 50:
+        return 8
+    when clamp(200, 0, 100) != 100:
+        return 9
+    // Nested when
+    a: i32 = 42
+    result: i32 = 0
+    when a > 0:
+        when a > 100:
+            result = 3
+        else when a > 10:
+            result = 2
+        else:
+            result = 1
+    else:
+        result = 0
+    when result != 2:
+        return 10
+    return 0

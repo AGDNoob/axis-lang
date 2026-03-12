@@ -1,0 +1,31 @@
+// Test: Deep recursion, Ackermann-like, power function, sum of digits
+mode compile
+
+func power(base: i32, exp: i32) i32:
+    when exp == 0:
+        return 1
+    return base * power(base, exp - 1)
+func sum_of_range(n: i32) i32:
+    when n <= 0:
+        return 0
+    return n + sum_of_range(n - 1)
+func count_down(n: i32) i32:
+    // Tail-recursive style — tests deep call stacks
+    when n == 0:
+        return 0
+    return count_down(n - 1)
+func main() i32:
+    // power
+    when power(2, 0) != 1:
+        return 1
+    when power(2, 10) != 1024:
+        return 2
+    when power(3, 5) != 243:
+        return 3
+    // sum_of_range: sum(1..100) = 5050
+    when sum_of_range(100) != 5050:
+        return 4
+    // Deep recursion — 500 frames
+    when count_down(500) != 0:
+        return 5
+    return 0

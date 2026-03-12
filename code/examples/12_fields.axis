@@ -1,0 +1,31 @@
+// Example 12: Fields (Structs)
+// Custom data types grouping related values.
+
+mode script
+
+Vec2: field:
+    x: i32 = 0
+    y: i32 = 0
+
+func move(update pos: Vec2, dx: i32, dy: i32):
+    pos.x = pos.x + dx
+    pos.y = pos.y + dy
+
+func print_vec(v: Vec2):
+    write("(")
+    write(v.x)
+    write(", ")
+    write(v.y)
+    writeln(")")
+
+origin: Vec2
+writeln("Origin:")
+print_vec(origin)
+
+move(origin, 10, 20)
+writeln("After move(10, 20):")
+print_vec(origin)
+
+move(origin, -5, 15)
+writeln("After move(-5, 15):")
+print_vec(origin)

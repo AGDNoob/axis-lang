@@ -1,0 +1,27 @@
+// Example 08: Bitwise Operations
+// &, |, ^, <<, >> on integers.
+
+mode script
+
+a: i32 = 0b1100
+b: i32 = 0b1010
+
+write("a & b  = ")
+writeln(a & b)
+
+write("a | b  = ")
+writeln(a | b)
+
+write("a ^ b  = ")
+writeln(a ^ b)
+
+write("a << 2 = ")
+writeln(a << 2)
+
+write("a >> 1 = ")
+writeln(a >> 1)
+
+// Practical: extract low nibble
+val: i32 = 0xAB
+write("0xAB & 0x0F = ")
+writeln(val & 0x0F)

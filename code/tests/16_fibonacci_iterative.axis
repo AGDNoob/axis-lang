@@ -1,0 +1,41 @@
+// Test: Iterative fibonacci — stress-test loops and variables
+mode compile
+
+func fib(n: i32) i32:
+    when n <= 0:
+        return 0
+    when n == 1:
+        return 1
+    a: i32 = 0
+    b: i32 = 1
+    i: i32 = 2
+    while i <= n:
+        temp: i32 = a + b
+        a = b
+        b = temp
+        i += 1
+    return b
+func main() i32:
+    when fib(0) != 0:
+        return 1
+    when fib(1) != 1:
+        return 2
+    when fib(2) != 1:
+        return 3
+    when fib(5) != 5:
+        return 4
+    when fib(10) != 55:
+        return 5
+    when fib(20) != 6765:
+        return 6
+    // Verify sequence via loop
+    prev: i32 = 0
+    curr: i32 = 1
+    for i in range(2, 21):
+        expected: i32 = fib(i)
+        next: i32 = prev + curr
+        when next != expected:
+            return 7
+        prev = curr
+        curr = next
+    return 0

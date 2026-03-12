@@ -1,0 +1,239 @@
+// Test: Comprehensive edge cases — signed shift, negative div/mod,
+//       5+ params, i64 large values, type boundaries, register pressure
+mode compile
+
+// ── 5+ parameter function (tests stack spilling) ──
+func sum6(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) i32:
+    return a + b + c + d + e + f
+
+func sum7(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) i32:
+    return a + b + c + d + e + f + g
+
+// ── Helper: absolute value ──
+func abs_i32(x: i32) i32:
+    when x < 0:
+        return -x
+    return x
+
+// ── Bool as param and return ──
+func bool_not(x: bool) bool:
+    when x:
+        return False
+    return True
+
+func is_positive(x: i32) bool:
+    return x > 0
+
+func main() i32:
+    // ════════════════════════════════════════════════════
+    // PROBE 1-2: Signed right shift of negative values
+    //   -1 >> 1 should be -1 (arithmetic shift / SAR)
+    // ════════════════════════════════════════════════════
+    neg1: i32 = -1
+    sr1: i32 = neg1 >> 1
+    when sr1 != -1:
+        return 1
+    // -8 >> 2 should be -2 (arithmetic shift)
+    neg8: i32 = -8
+    sr2: i32 = neg8 >> 2
+    when sr2 != -2:
+        return 2
+    // ════════════════════════════════════════════════════
+    // PROBE 3-5: Negative division and modulo sign rules
+    //   C99: (-7)/2 = -3, (-7)%2 = -1
+    // ════════════════════════════════════════════════════
+    q1: i32 = -7 / 2
+    when q1 != -3:
+        return 3
+    r1: i32 = -7 % 2
+    when r1 != -1:
+        return 4
+    // 7 / (-2) = -3, 7 % (-2) = 1
+    q2: i32 = 7 / -2
+    when q2 != -3:
+        return 5
+    // ════════════════════════════════════════════════════
+    // PROBE 6-7: 5+ function parameters (stack-passed args)
+    // ════════════════════════════════════════════════════
+    s6: i32 = sum6(1, 2, 3, 4, 5, 6)
+    when s6 != 21:
+        return 6
+    s7: i32 = sum7(10, 20, 30, 40, 50, 60, 70)
+    when s7 != 280:
+        return 7
+    // ════════════════════════════════════════════════════
+    // PROBE 8-9: i64 large values (> 2^32)
+    // ════════════════════════════════════════════════════
+    big64: i64 = 5000000000
+    when big64 != 5000000000:
+        return 8
+    big64b: i64 = big64 + 1000000000
+    when big64b != 6000000000:
+        return 9
+    // ════════════════════════════════════════════════════
+    // PROBE 10-11: Shift by 0 (should be identity)
+    // ════════════════════════════════════════════════════
+    x0: i32 = 42
+    when (x0 << 0) != 42:
+        return 10
+    when (x0 >> 0) != 42:
+        return 11
+    // ════════════════════════════════════════════════════
+    // PROBE 12-13: Bool as function param/return
+    // ════════════════════════════════════════════════════
+    when bool_not(True) != False:
+        return 12
+    when bool_not(False) != True:
+        return 13
+    // ════════════════════════════════════════════════════
+    // PROBE 14-15: is_positive returns bool, use in when
+    // ════════════════════════════════════════════════════
+    when is_positive(5) != True:
+        return 14
+    when is_positive(-3) != False:
+        return 15
+    // ════════════════════════════════════════════════════
+    // PROBE 16-17: Division edge cases: x/1 and 0/x
+    // ════════════════════════════════════════════════════
+    when 12345 / 1 != 12345:
+        return 16
+    when 0 / 7 != 0:
+        return 17
+    // ════════════════════════════════════════════════════
+    // PROBE 18: Negative negation: -(-42) = 42
+    // ════════════════════════════════════════════════════
+    nn: i32 = -42
+    nn = -nn
+    when nn != 42:
+        return 18
+    // ════════════════════════════════════════════════════
+    // PROBE 19-20: Register pressure — 6 live variables
+    // ════════════════════════════════════════════════════
+    r_a: i32 = 10
+    r_b: i32 = 20
+    r_c: i32 = 30
+    r_d: i32 = 40
+    r_e: i32 = 50
+    r_f: i32 = 60
+    rsum: i32 = r_a + r_b + r_c + r_d + r_e + r_f
+    when rsum != 210:
+        return 19
+    rprod: i32 = (r_a * r_b) + (r_c * r_d) + (r_e * r_f)
+    when rprod != 4400:
+        return 20
+    // ════════════════════════════════════════════════════
+    // PROBE 21-22: Complex array index expressions
+    // ════════════════════════════════════════════════════
+    arr: (i32; 5) = [10, 20, 30, 40, 50]
+    idx: i32 = 2
+    when arr[idx + 1] != 40:
+        return 21
+    when arr[4 - idx] != 30:
+        return 22
+    // ════════════════════════════════════════════════════
+    // PROBE 23: Deeply nested conditionals
+    // ════════════════════════════════════════════════════
+    val: i32 = 5
+    result: i32 = 0
+    when val > 0:
+        when val > 3:
+            when val > 4:
+                when val == 5:
+                    result = 1
+    when result != 1:
+        return 23
+    // ════════════════════════════════════════════════════
+    // PROBE 24: Return from inside a loop (stop path)
+    // ════════════════════════════════════════════════════
+    found: i32 = -1
+    for i in range(0, 10):
+        when arr[i % 5] == 30:
+            found = i
+            stop
+    when found != 2:
+        return 24
+    // ════════════════════════════════════════════════════
+    // PROBE 25-26: u16 arithmetic (less tested type)
+    // ════════════════════════════════════════════════════
+    w1: u16 = 60000
+    w2: u16 = 5000
+    w3: u16 = w1 + w2
+    when w3 != 65000:
+        return 25
+    w4: u16 = w1 / 3
+    when w4 != 20000:
+        return 26
+    // ════════════════════════════════════════════════════
+    // PROBE 27-28: u64 arithmetic
+    // ════════════════════════════════════════════════════
+    big_u: u64 = 4000000000
+    big_v: u64 = big_u + big_u
+    when big_v != 8000000000:
+        return 27
+    big_q: u64 = big_v / 4
+    when big_q != 2000000000:
+        return 28
+    // ════════════════════════════════════════════════════
+    // PROBE 29-30: Signed i32 boundary values
+    // ════════════════════════════════════════════════════
+    bmin: i32 = -2147483647
+    bmax: i32 = 2147483647
+    bsum: i32 = bmin + bmax
+    when bsum != 0:
+        return 29
+    // -2147483647 - 1 = -2147483648 (INT32_MIN)
+    bmin2: i32 = bmin - 1
+    when bmin2 + 1 != bmin:
+        return 30
+    // ════════════════════════════════════════════════════
+    // PROBE 31: For-loop with skip (continue)
+    // ════════════════════════════════════════════════════
+    csum: i32 = 0
+    for i in range(0, 5):
+        when i == 2:
+            skip
+        csum += i
+    // 0+1+3+4 = 8
+    when csum != 8:
+        return 31
+    // ════════════════════════════════════════════════════
+    // PROBE 32: Chained function calls
+    // ════════════════════════════════════════════════════
+    when abs_i32(abs_i32(-abs_i32(15))) != 15:
+        return 32
+    // ════════════════════════════════════════════════════
+    // PROBE 33: Multiplication overflow wrapping (i32)
+    //   100000 * 100000 = 10^10, wraps in i32
+    //   10000000000 mod 2^32 = 1410065408
+    //   As signed i32: 1410065408
+    // ════════════════════════════════════════════════════
+    ov: i32 = 100000 * 100000
+    when ov != 1410065408:
+        return 33
+    // ════════════════════════════════════════════════════
+    // PROBE 34: Large array (100 elements)
+    // ════════════════════════════════════════════════════
+    big_arr: (i32; 100) = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    for i in range(0, 100):
+        big_arr[i] = i
+    asum: i32 = 0
+    for i in range(0, 100):
+        asum += big_arr[i]
+    when asum != 4950:
+        return 34
+    // ════════════════════════════════════════════════════
+    // PROBE 35: Compound assignment with different types
+    // ════════════════════════════════════════════════════
+    ca: i32 = 10
+    ca += 5
+    ca -= 3
+    ca *= 4
+    ca /= 2
+    ca %= 5
+    // (10+5)=15, 15-3=12, 12*4=48, 48/2=24, 24%5=4
+    when ca != 4:
+        return 35
+    // ════════════════════════════════════════════════════
+    // All probes passed
+    // ════════════════════════════════════════════════════
+    return 0

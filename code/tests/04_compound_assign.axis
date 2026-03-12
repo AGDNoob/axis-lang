@@ -1,0 +1,39 @@
+// Test: Compound assignment — +=, -=, *=, /=, %=, &=, |=, ^=, <<=, >>=
+mode compile
+
+func main() i32:
+    x: i32 = 10
+    x += 5
+    when x != 15:
+        return 1
+    x -= 3
+    when x != 12:
+        return 2
+    x *= 4
+    when x != 48:
+        return 3
+    x /= 6
+    when x != 8:
+        return 4
+    x %= 3
+    when x != 2:
+        return 5
+    // Bitwise compound
+    y: i32 = 0xFF
+    y &= 0x0F
+    when y != 15:
+        return 6
+    y |= 0xF0
+    when y != 255:
+        return 7
+    y ^= 0xFF
+    when y != 0:
+        return 8
+    z: i32 = 1
+    z <<= 10
+    when z != 1024:
+        return 9
+    z >>= 5
+    when z != 32:
+        return 10
+    return 0

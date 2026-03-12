@@ -1,0 +1,25 @@
+// Example 04: Conditionals
+// AXIS uses "when" instead of "if".
+
+mode script
+
+age: i32 = 20
+
+when age >= 18:
+    writeln("Adult")
+else when age >= 13:
+    writeln("Teenager")
+else:
+    writeln("Child")
+
+// Nested conditions
+score: i32 = 85
+
+when score >= 90:
+    writeln("Grade: A")
+else when score >= 80:
+    writeln("Grade: B")
+else when score >= 70:
+    writeln("Grade: C")
+else:
+    writeln("Grade: F")

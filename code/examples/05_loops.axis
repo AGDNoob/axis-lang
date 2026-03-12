@@ -1,0 +1,25 @@
+// Example 05: Loops
+// for-range, while, and repeat loops.
+
+mode script
+
+// For loop with range
+writeln("Counting 1 to 5:")
+for i in range(1, 6):
+    writeln(i)
+
+// While loop
+writeln("Powers of 2:")
+n: i32 = 1
+while n <= 256:
+    writeln(n)
+    n = n * 2
+
+// Repeat (infinite loop with explicit stop)
+writeln("Repeat until 3:")
+counter: i32 = 0
+repeat:
+    counter += 1
+    writeln(counter)
+    when counter == 3:
+        stop

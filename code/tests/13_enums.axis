@@ -1,0 +1,47 @@
+// Test: Enums — declaration, access, comparison
+mode compile
+
+Color: enum i32:
+    Red = 0
+    Green = 1
+    Blue = 2
+
+Direction: enum i32:
+    North = 0
+    East = 1
+    South = 2
+    West = 3
+
+func main() i32:
+    // Enum values are distinct
+    when Color.Red == Color.Green:
+        return 1
+    when Color.Green == Color.Blue:
+        return 2
+    when Color.Red == Color.Blue:
+        return 3
+    // Enum variable
+    c: Color = Color.Blue
+    when c != Color.Blue:
+        return 4
+    when c == Color.Red:
+        return 5
+    // Direction enum values are distinct
+    when Direction.North == Direction.South:
+        return 6
+    when Direction.East == Direction.West:
+        return 7
+    // Direction variable
+    d: Direction = Direction.East
+    when d != Direction.East:
+        return 8
+    // Reassign enum variable
+    d = Direction.West
+    when d != Direction.West:
+        return 9
+    // Multiple enum variables
+    d1: Direction = Direction.North
+    d2: Direction = Direction.South
+    when d1 == d2:
+        return 10
+    return 0

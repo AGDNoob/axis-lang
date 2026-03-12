@@ -1,0 +1,77 @@
+// Test: match statement — values, wildcard, fallthrough-free
+mode compile
+
+func grade(score: i32) i32:
+    // Return letter grade code: A=1, B=2, C=3, D=4, F=5
+    // Using nested when inside match for range checking
+    result: i32 = 0
+    match score:
+        100:
+            result = 1
+        90:
+            result = 1
+        80:
+            result = 2
+        70:
+            result = 3
+        60:
+            result = 4
+        _:
+            result = 5
+    return result
+func day_type(day: i32) i32:
+    // 0=Sunday..6=Saturday, returns 1=weekend, 0=weekday
+    result: i32 = 0
+    match day:
+        0:
+            result = 1
+        6:
+            result = 1
+        _:
+            result = 0
+    return result
+func main() i32:
+    // grade function
+    when grade(100) != 1:
+        return 1
+    when grade(90) != 1:
+        return 2
+    when grade(80) != 2:
+        return 3
+    when grade(60) != 4:
+        return 4
+    when grade(42) != 5:
+        return 5
+    // day_type
+    when day_type(0) != 1:
+        return 6
+    when day_type(6) != 1:
+        return 7
+    when day_type(1) != 0:
+        return 8
+    when day_type(3) != 0:
+        return 9
+    // Match with variable
+    x: i32 = 3
+    result: i32 = 0
+    match x:
+        1:
+            result = 10
+        2:
+            result = 20
+        3:
+            result = 30
+        _:
+            result = -1
+    when result != 30:
+        return 10
+    // Wildcard catch
+    x = 999
+    match x:
+        1:
+            result = 10
+        _:
+            result = -1
+    when result != -1:
+        return 11
+    return 0

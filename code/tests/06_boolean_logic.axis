@@ -1,0 +1,43 @@
+// Test: Boolean operators — and, or, not, combinations
+mode compile
+
+func main() i32:
+    t: bool = True
+    f: bool = False
+    // and
+    when (t and t) != True:
+        return 1
+    when (t and f) != False:
+        return 2
+    when (f and t) != False:
+        return 3
+    when (f and f) != False:
+        return 4
+    // or
+    when (t or t) != True:
+        return 5
+    when (t or f) != True:
+        return 6
+    when (f or t) != True:
+        return 7
+    when (f or f) != False:
+        return 8
+    // not
+    when (not t) != False:
+        return 9
+    when (not f) != True:
+        return 10
+    // Complex: De Morgan's
+    a: bool = True
+    b: bool = False
+    // not (a and b) == (not a) or (not b)
+    lhs: bool = not (a and b)
+    rhs: bool = (not a) or (not b)
+    when lhs != rhs:
+        return 11
+    // not (a or b) == (not a) and (not b)
+    lhs = not (a or b)
+    rhs = (not a) and (not b)
+    when lhs != rhs:
+        return 12
+    return 0
