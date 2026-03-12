@@ -1,0 +1,24 @@
+// Benchmark 2: Prime Counting (trial division)
+// Tests: loops, modulo, comparison, branches
+// Counts primes up to 500000
+mode compile
+func is_prime(n: i32) i32:
+    when n < 2:
+        return 0
+    when n == 2:
+        return 1
+    when n % 2 == 0:
+        return 0
+    d: i32 = 3
+    while d * d <= n:
+        when n % d == 0:
+            return 0
+        d = d + 2
+    return 1
+func main() i32:
+    count: i32 = 0
+    n: i32 = 2
+    while n <= 500000:
+        count = count + is_prime(n)
+        n = n + 1
+    return count & 255

@@ -1,0 +1,20 @@
+// Benchmark 4: GCD Stress (Euclidean Algorithm)
+// Tests: function calls, while loops, modulo
+// 2 million GCD computations
+mode compile
+func gcd(x: i32, y: i32) i32:
+    a: i32 = x
+    b: i32 = y
+    t: i32 = 0
+    while b != 0:
+        t = b
+        b = a % b
+        a = t
+    return a
+func main() i32:
+    sum: i32 = 0
+    i: i32 = 1
+    while i <= 2000000:
+        sum = sum + gcd(i, i + 7)
+        i = i + 1
+    return sum & 255
