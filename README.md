@@ -41,6 +41,10 @@ axis hello.axis
 axis hello.axis -o hello            # default format for current OS
 axis hello.axis -o hello --pe       # Windows PE
 axis hello.axis -o hello --elf      # Linux ELF64
+
+# Check mode — validate without compiling
+axis check program.axis             # syntax + semantic errors
+axis check program.axis --all       # + dead code + unused variable warnings
 ```
 
 ## Documentation
@@ -51,7 +55,7 @@ axis hello.axis -o hello --elf      # Linux ELF64
 | [Examples](code/examples/) | 20 example programs |
 | [Technical](docs/technical/) | How AXCC works internally |
 | [Benchmarks](docs/Benchmarks.md) | Performance measurements |
-| [Release Notes](RELEASE_NOTES_v1.1.0.md) | v1.1.0 changes and design philosophy |
+| [Release Notes](RELEASE_NOTES_v1.2.0.md) | v1.2.0 changes and design philosophy |
 | [Changelog](docs/CHANGELOG.md) | Version history |
 
 ## License

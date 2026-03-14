@@ -19,9 +19,9 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 ; ── Version info ─────────────────────────────────────────────
-VIProductVersion "1.1.0.0"
+VIProductVersion "1.2.0.0"
 VIAddVersionKey "ProductName" "AXIS Language"
-VIAddVersionKey "ProductVersion" "1.1.0"
+VIAddVersionKey "ProductVersion" "1.2.0"
 VIAddVersionKey "FileDescription" "AXIS Language Installer"
 VIAddVersionKey "LegalCopyright" "MIT License"
 
@@ -92,7 +92,7 @@ Section "AXIS Compiler" SecMain
     FileWrite $0 "echo     AA   AA  XX XX  II      SS$\r$\n"
     FileWrite $0 "echo     AA   AA XX   XX II SSSSSSS$\r$\n"
     FileWrite $0 "echo.$\r$\n"
-    FileWrite $0 "echo   AXIS Language v1.1.0$\r$\n"
+    FileWrite $0 "echo   AXIS Language v1.2.0$\r$\n"
     FileWrite $0 "echo   Installation complete!$\r$\n"
     FileWrite $0 "echo.$\r$\n"
     FileWrite $0 "echo   ============================================================$\r$\n"
@@ -135,7 +135,7 @@ Section "AXIS Compiler" SecMain
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AXIS" \
         "UninstallString" '"$INSTDIR\uninstall.exe"'
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AXIS" \
-        "DisplayVersion" "1.1.0"
+        "DisplayVersion" "1.2.0"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AXIS" \
         "Publisher" "AXIS Language"
     WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\AXIS" \
