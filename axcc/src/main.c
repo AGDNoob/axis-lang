@@ -44,6 +44,7 @@ typedef enum {
     CMD_NONE,       /* auto-detect */
     CMD_RUN,        /* axis run file.axis   */
     CMD_BUILD,      /* axis build file.axis */
+    CMD_CHECK,      /* axis check file.axis */
     CMD_HELP,
     CMD_VERSION,
 } CmdMode;
@@ -68,6 +69,10 @@ typedef struct {
     bool         dump_ir;
     bool         dump_x64;
     bool         verbose;
+    /* check mode flags */
+    bool         check_dead;
+    bool         check_unused;
+    bool         check_all;
 } Options;
 
 /* ═════════════════════════════════════════════════════════════
@@ -82,6 +87,7 @@ static void print_usage(const char *prog) {
         "  %s <file.axis>                   Auto-detect mode and run/compile\n"
         "  %s run <file.axis>               Run a script (mode script)\n"
         "  %s build <file.axis> [-o out]    Compile to binary (mode compile)\n"
+        "  %s check <file.axis> [flags]     Check source for errors\n"
         "\n"
         "Options:\n"
         "  -o <file>       Output file (build mode)\n"
@@ -94,11 +100,17 @@ static void print_usage(const char *prog) {
         "  --version       Show version\n"
         "  -h, --help      Show this help\n"
         "\n"
+        "Check flags:\n"
+        "  --unused        Warn about unused variables\n"
+        "  --dead          Warn about dead code\n"
+        "  --all           Enable all check warnings\n"
+        "\n"
         "Examples:\n"
         "  %s hello.axis                    # auto-detect and run/compile\n"
         "  %s run script.axis               # run script mode file\n"
-        "  %s build prog.axis -o prog.exe   # compile to binary\n",
-        AXIS_VERSION_STR, prog, prog, prog, prog, prog, prog);
+        "  %s build prog.axis -o prog.exe   # compile to binary\n"
+        "  %s check prog.axis --all         # check for all issues\n",
+        AXIS_VERSION_STR, prog, prog, prog, prog, prog, prog, prog, prog);
 }
 
 static void print_version(void) {
@@ -137,6 +149,9 @@ static int parse_args(int argc, char **argv, Options *opts) {
     } else if (strcmp(first, "build") == 0) {
         opts->command = CMD_BUILD;
         arg_start = 2;
+    } else if (strcmp(first, "check") == 0) {
+        opts->command = CMD_CHECK;
+        arg_start = 2;
     }
 
     /* Parse remaining arguments */
@@ -161,6 +176,9 @@ static int parse_args(int argc, char **argv, Options *opts) {
         }
         if (strcmp(arg, "--pe") == 0)          { opts->format = FMT_PE; continue; }
         if (strcmp(arg, "--elf") == 0)         { opts->format = FMT_ELF; continue; }
+        if (strcmp(arg, "--unused") == 0)      { opts->check_unused = true; continue; }
+        if (strcmp(arg, "--dead") == 0)        { opts->check_dead = true; continue; }
+        if (strcmp(arg, "--all") == 0)         { opts->check_all = true; continue; }
         if (strcmp(arg, "--dump-tokens") == 0) { opts->dump_tokens = true; continue; }
         if (strcmp(arg, "--dump-ir") == 0)     { opts->dump_ir = true; continue; }
         if (strcmp(arg, "--dump-x64") == 0)    { opts->dump_x64 = true; continue; }
@@ -473,6 +491,18 @@ static int compile_to_exe(const char *input_path, const char *output_path,
     ir_program_init(&ir, &arena);
     ir_generate(&ir, ast, input_path);
 
+    /* ── Optimization passes (compile mode only) ──────── */
+    if (ast->mode == MODE_COMPILE) {
+        if (opts->verbose) fprintf(stderr, "[axis] running optimization passes...\n");
+        opt_dce(&ir);
+        opt_constfold(&ir);
+        opt_strength_reduce(&ir);
+        opt_loadstore_elim(&ir);
+        opt_dce(&ir);   /* second DCE pass to clean up after folding */
+    } else if (opts->verbose) {
+        fprintf(stderr, "[axis] skipping optimizations (script mode)\n");
+    }
+
     if (opts->dump_ir) ir_dump(&ir, stderr);
     if (opts->verbose) {
         fprintf(stderr, "[axis] %d IR functions, %d strings\n",
@@ -628,6 +658,72 @@ static void default_output_path(const char *input, OutputFormat format,
 }
 
 /* ═════════════════════════════════════════════════════════════
+ * Check file (axis check)
+ * Runs lexer + parser + optionally semantic analysis,
+ * collecting and reporting ALL errors.
+ * ═════════════════════════════════════════════════════════════ */
+
+static int check_file(const char *input_path, const Options *opts) {
+    size_t src_len = 0;
+    char *source = read_source(input_path, &src_len);
+    if (!source) return 1;
+
+    Arena arena;
+    arena_init(&arena);
+
+    int total_errors = 0;
+
+    /* ── Lex ──────────────────────────────────────────── */
+    Lexer lex;
+    lexer_init(&lex, source, src_len, input_path, &arena);
+    lex.check_mode = true;
+
+    int token_count = 0;
+    Token *tokens = lexer_tokenize_all(&lex, &token_count);
+    total_errors += lex.error_count;
+
+    if (!tokens) {
+        fprintf(stderr, "error: lexer produced no tokens\n");
+        free(source); arena_free(&arena);
+        return 1;
+    }
+
+    /* ── Parse ────────────────────────────────────────── */
+    Parser parser;
+    parser_init(&parser, tokens, token_count, &arena, input_path, source);
+    parser.check_mode = true;
+
+    ASTProgram *ast = parser_parse(&parser);
+    total_errors += parser.error_count;
+
+    /* ── Semantic (only with --unused, --dead, or --all) ─ */
+    bool run_semantic = opts->check_unused || opts->check_dead || opts->check_all;
+
+    if (run_semantic && ast && parser.error_count == 0) {
+        Semantic sem;
+        semantic_init(&sem, &arena, input_path);
+        sem.check_mode   = true;
+        sem.check_unused = opts->check_unused || opts->check_all;
+        sem.check_dead   = opts->check_dead   || opts->check_all;
+
+        semantic_analyze(&sem, ast);
+        total_errors += sem.error_count;
+    }
+
+    /* ── Summary ──────────────────────────────────────── */
+    if (total_errors == 0) {
+        fprintf(stderr, "%s: OK\n", input_path);
+    } else {
+        fprintf(stderr, "\n%d error%s found in %s\n",
+                total_errors, total_errors == 1 ? "" : "s", input_path);
+    }
+
+    free(source);
+    arena_free(&arena);
+    return total_errors > 0 ? 1 : 0;
+}
+
+/* ═════════════════════════════════════════════════════════════
  * Main
  * ═════════════════════════════════════════════════════════════ */
 
@@ -644,6 +740,11 @@ int main(int argc, char **argv) {
     if (opts.command == CMD_VERSION) {
         print_version();
         return 0;
+    }
+
+    /* ── CMD_CHECK: syntax/semantic check ───────────────── */
+    if (opts.command == CMD_CHECK) {
+        return check_file(opts.input_file, &opts);
     }
 
     /* ── CMD_RUN: compile to cache, execute ─────────────── */

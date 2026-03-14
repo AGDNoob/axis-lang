@@ -12,6 +12,7 @@
 
 #include "axis_semantic.h"
 #include <stdarg.h>
+#include <setjmp.h>
 
 /* ═════════════════════════════════════════════════════════════
  * Forward declarations
@@ -20,14 +21,15 @@
 static const char *analyze_expr(Semantic *s, ASTExpr *e);
 static void        analyze_stmt(Semantic *s, ASTStmt *st);
 static void        analyze_function(Semantic *s, ASTFunction *func);
+static void        check_block_dead_code(Semantic *s, ASTStmt **stmts, int count);
 static int         calc_field_size(Semantic *s, ASTFieldDef *fd);
 
 /* ═════════════════════════════════════════════════════════════
  * Error reporting
  * ═════════════════════════════════════════════════════════════ */
 
-static _Noreturn void sem_error(Semantic *s, SrcLoc loc,
-                                const char *fmt, ...)
+static void sem_error(Semantic *s, SrcLoc loc,
+                      const char *fmt, ...)
 {
     fprintf(stderr, "%s:%d:%d: semantic error: ",
             s->filename ? s->filename : "<unknown>", loc.line, loc.col);
@@ -36,6 +38,10 @@ static _Noreturn void sem_error(Semantic *s, SrcLoc loc,
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
+    s->error_count++;
+    if (s->check_mode) {
+        longjmp(s->err_jmp, 1);
+    }
     exit(1);
 }
 
@@ -115,6 +121,16 @@ static void enter_scope(Semantic *s)
 static void exit_scope(Semantic *s)
 {
     assert(s->current_scope);
+    /* Check for unused variables when in check mode with --unused */
+    if (s->check_unused) {
+        for (Symbol *sym = s->current_scope->symbols; sym; sym = sym->next) {
+            if (!sym->used && !sym->is_param) {
+                fprintf(stderr, "%s:%d:%d: warning: unused variable '%s'\n",
+                        s->filename ? s->filename : "<unknown>",
+                        sym->def_loc.line, sym->def_loc.col, sym->name);
+            }
+        }
+    }
     s->current_scope = s->current_scope->parent;
 }
 
@@ -133,7 +149,10 @@ static Symbol *scope_lookup(Scope *sc, const char *name)
 {
     for (; sc; sc = sc->parent)
         for (Symbol *sym = sc->symbols; sym; sym = sym->next)
-            if (strcmp(sym->name, name) == 0) return sym;
+            if (strcmp(sym->name, name) == 0) {
+                sym->used = true;
+                return sym;
+            }
     return NULL;
 }
 
@@ -274,6 +293,8 @@ static Symbol *define_symbol(Semantic *s, const char *name,
     sym->is_update   = is_update;
     sym->array_type  = array_type;
     sym->next        = NULL;
+    sym->used        = false;
+    sym->def_loc     = loc;
 
     scope_define(s, sym, loc);
     return sym;
@@ -295,6 +316,8 @@ static Symbol *define_array_symbol(Semantic *s, const char *name,
     sym->is_update   = false;
     sym->array_type  = arr_type;
     sym->next        = NULL;
+    sym->used        = false;
+    sym->def_loc     = loc;
 
     scope_define(s, sym, loc);
     return sym;
@@ -427,7 +450,7 @@ static const char *analyze_binop(Semantic *s, ASTExpr *e)
     }
 
     sem_error(s, e->loc, "Unknown binary operator");
-    /* unreachable */
+    return NULL; /* unreachable */
 }
 
 /* ── Unary op ───────────────────────────────────────────── */
@@ -450,6 +473,7 @@ static const char *analyze_unary(Semantic *s, ASTExpr *e)
     }
 
     sem_error(s, e->loc, "Unknown unary operator");
+    return NULL; /* unreachable */
 }
 
 /* ── Call ────────────────────────────────────────────────── */
@@ -577,6 +601,7 @@ static const char *analyze_field_access_on(Semantic *s, ASTExpr *obj,
             return type_name_of_node(fd->members[i].type_node);
 
     sem_error(s, loc, "Field '%s' has no member '%s'", ot, member);
+    return NULL; /* unreachable */
 }
 
 static const char *analyze_field_access(Semantic *s, ASTExpr *e)
@@ -617,6 +642,7 @@ static const char *analyze_enum_access(Semantic *s, ASTExpr *e)
 
     sem_error(s, e->loc, "Enum '%s' has no variant '%s'",
               en, e->enum_access.variant);
+    return NULL; /* unreachable */
 }
 
 /* ── Array literal ──────────────────────────────────────── */
@@ -719,6 +745,7 @@ static const char *analyze_expr(Semantic *s, ASTExpr *e)
     }
 
     sem_error(s, e->loc, "Unknown expression kind");
+    return NULL; /* unreachable */
 }
 
 /* ═════════════════════════════════════════════════════════════
@@ -933,12 +960,14 @@ static void analyze_if(Semantic *s, ASTStmt *st)
                   "'when' condition must be bool or integer, got %s", ct);
 
     enter_scope(s);
+    check_block_dead_code(s, st->if_stmt.body, st->if_stmt.body_count);
     for (int i = 0; i < st->if_stmt.body_count; i++)
         analyze_stmt(s, st->if_stmt.body[i]);
     exit_scope(s);
 
     if (st->if_stmt.else_body) {
         enter_scope(s);
+        check_block_dead_code(s, st->if_stmt.else_body, st->if_stmt.else_count);
         for (int i = 0; i < st->if_stmt.else_count; i++)
             analyze_stmt(s, st->if_stmt.else_body[i]);
         exit_scope(s);
@@ -954,6 +983,7 @@ static void analyze_while(Semantic *s, ASTStmt *w)
 
     s->loop_depth++;
     enter_scope(s);
+    check_block_dead_code(s, w->while_loop.body, w->while_loop.body_count);
     for (int i = 0; i < w->while_loop.body_count; i++)
         analyze_stmt(s, w->while_loop.body[i]);
     exit_scope(s);
@@ -964,6 +994,7 @@ static void analyze_repeat(Semantic *s, ASTStmt *r)
 {
     s->loop_depth++;
     enter_scope(s);
+    check_block_dead_code(s, r->repeat_loop.body, r->repeat_loop.body_count);
     for (int i = 0; i < r->repeat_loop.body_count; i++)
         analyze_stmt(s, r->repeat_loop.body[i]);
     exit_scope(s);
@@ -1011,6 +1042,7 @@ static void analyze_for(Semantic *s, ASTStmt *f)
                   false, false, false, NULL, f->loc);
 
     s->loop_depth++;
+    check_block_dead_code(s, f->for_loop.body, f->for_loop.body_count);
     for (int i = 0; i < f->for_loop.body_count; i++)
         analyze_stmt(s, f->for_loop.body[i]);
     s->loop_depth--;
@@ -1034,6 +1066,7 @@ static void analyze_match(Semantic *s, ASTStmt *m)
             }
         }
         enter_scope(s);
+        check_block_dead_code(s, arm->body, arm->body_count);
         for (int i = 0; i < arm->body_count; i++)
             analyze_stmt(s, arm->body[i]);
         exit_scope(s);
@@ -1051,6 +1084,27 @@ static void analyze_read_stmt(Semantic *s, ASTStmt *r)
     /* Target type checked at codegen */
     AXIS_UNUSED(s);
     AXIS_UNUSED(r);
+}
+
+/* ── Dead-code check for a statement block ──────────────── */
+
+static void check_block_dead_code(Semantic *s, ASTStmt **stmts, int count)
+{
+    if (!s->check_dead) return;
+    for (int i = 0; i < count; i++) {
+        StmtKind k = stmts[i]->kind;
+        if ((k == STMT_RETURN || k == STMT_BREAK || k == STMT_CONTINUE)
+            && i + 1 < count)
+        {
+            fprintf(stderr, "%s:%d:%d: warning: unreachable code after %s\n",
+                    s->filename,
+                    stmts[i + 1]->loc.line,
+                    stmts[i + 1]->loc.col,
+                    k == STMT_RETURN ? "return" :
+                    k == STMT_BREAK  ? "break"  : "continue");
+            break;  /* one warning per block is enough */
+        }
+    }
 }
 
 /* ── Statement dispatch ─────────────────────────────────── */
@@ -1145,6 +1199,7 @@ static void analyze_function(Semantic *s, ASTFunction *func)
     }
 
     /* Body */
+    check_block_dead_code(s, func->body, func->body_count);
     for (int i = 0; i < func->body_count; i++)
         analyze_stmt(s, func->body[i]);
 
@@ -1217,16 +1272,25 @@ int semantic_analyze(Semantic *s, ASTProgram *prog)
     }
 
     /* Pass 2 – analyse function bodies */
-    for (int i = 0; i < prog->func_count; i++)
+    for (int i = 0; i < prog->func_count; i++) {
+        if (s->check_mode && setjmp(s->err_jmp)) {
+            /* Recovery: skip this function, continue with next */
+            continue;
+        }
         analyze_function(s, &prog->functions[i]);
+    }
 
     /* Pass 3 – top-level statements */
     if (prog->stmt_count > 0) {
         s->current_func = NULL;
         s->stack_offset = 0;
-        for (int i = 0; i < prog->stmt_count; i++)
+        for (volatile int i = 0; i < prog->stmt_count; i++) {
+            if (s->check_mode && setjmp(s->err_jmp)) {
+                continue;
+            }
             analyze_stmt(s, prog->statements[i]);
+        }
     }
 
-    return 0;
+    return s->error_count;
 }

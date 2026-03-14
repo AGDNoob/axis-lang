@@ -35,6 +35,10 @@ typedef struct {
 
     /* Arena for string values */
     Arena *arena;
+
+    /* Check mode: collect errors instead of aborting */
+    bool check_mode;
+    int  error_count;
 } Lexer;
 
 void   lexer_init(Lexer *lex, const char *src, size_t len,

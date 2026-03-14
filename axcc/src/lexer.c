@@ -258,7 +258,9 @@ static bool handle_indent(Lexer *lex, Token *out)
         if (lex->indent_stack[lex->indent_top] != indent) {
             fprintf(stderr, "%s:%d: indentation error: level %d doesn't match any outer level\n",
                     lex->filename, lex->line, indent);
-            exit(1);
+            lex->error_count++;
+            if (!lex->check_mode) exit(1);
+            /* recover: snap to nearest known level */
         }
         /* Return first DEDENT, rest go to pending */
         *out = pop_pending(lex);
@@ -334,14 +336,18 @@ static Token read_string(Lexer *lex)
         else if (cur(lex) == '\n') {
             fprintf(stderr, "%s:%d:%d: unterminated string literal\n",
                     lex->filename, lex->line, lex->col);
-            exit(1);
+            lex->error_count++;
+            if (!lex->check_mode) exit(1);
+            break;
         }
         else { slen++; adv(lex); }
     }
     if (lex->pos >= lex->src_len) {
         fprintf(stderr, "%s:%d:%d: unterminated string literal\n",
                 lex->filename, sl, sc);
-        exit(1);
+        lex->error_count++;
+        if (!lex->check_mode) exit(1);
+        return mktok(TOK_STRING_LIT, sl, sc, "", 0);
     }
 
     /* Second pass: copy with escapes */
@@ -358,7 +364,9 @@ static Token read_string(Lexer *lex)
             if (esc == 0 && cur(lex) != '0') {
                 fprintf(stderr, "%s:%d:%d: unknown escape sequence: \\%c\n",
                         lex->filename, lex->line, lex->col, cur(lex));
-                exit(1);
+                lex->error_count++;
+                if (!lex->check_mode) exit(1);
+                esc = cur(lex);  /* use literal char as fallback */
             }
             buf[bi++] = esc;
             adv(lex);
@@ -540,7 +548,10 @@ Token lexer_next(Lexer *lex)
 
         fprintf(stderr, "%s:%d:%d: unexpected character: '%c' (0x%02x)\n",
                 lex->filename, lex->line, lex->col, c, (unsigned char)c);
-        exit(1);
+        lex->error_count++;
+        if (!lex->check_mode) exit(1);
+        adv(lex);  /* skip bad character */
+        continue;
     }
 
     /* EOF: emit remaining DEDENTs */

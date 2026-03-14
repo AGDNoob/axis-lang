@@ -18,12 +18,13 @@
 
 #include "axis_parser.h"
 #include <stdarg.h>
+#include <setjmp.h>
 
 /* ═════════════════════════════════════════════════════════════
  * Helpers
  * ═════════════════════════════════════════════════════════════ */
 
-static _Noreturn void parse_error(Parser *p, const char *fmt, ...)
+static void parse_error(Parser *p, const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
@@ -33,6 +34,10 @@ static _Noreturn void parse_error(Parser *p, const char *fmt, ...)
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
+    p->error_count++;
+    if (p->check_mode) {
+        longjmp(p->err_jmp, 1);
+    }
     exit(1);
 }
 
@@ -207,6 +212,7 @@ static ASTTypeNode *parse_type_node(Parser *p)
     }
     parse_error(p, "expected type, got %s",
                 p->cur ? token_type_name(p->cur->type) : "EOF");
+    return NULL; /* unreachable */
 }
 
 /* ═════════════════════════════════════════════════════════════
@@ -405,6 +411,7 @@ static ASTExpr *parse_primary(Parser *p)
 
     parse_error(p, "unexpected token in expression: %s",
                 p->cur ? token_type_name(p->cur->type) : "EOF");
+    return NULL; /* unreachable */
 }
 
 /* ---- postfix: [index], .member ---- */
@@ -1288,6 +1295,16 @@ ASTProgram *parser_parse(Parser *p)
     while (!at_end(p)) {
         if (match(p, TOK_NEWLINE)) { advance(p); continue; }
 
+        /* In check mode, wrap each top-level item in setjmp so we can
+           recover from parse errors and keep going.                   */
+        if (p->check_mode && setjmp(p->err_jmp)) {
+            /* Panic-mode recovery: skip tokens until top-level newline */
+            while (!at_end(p) && !match(p, TOK_NEWLINE))
+                advance(p);
+            skip_newlines(p);
+            continue;
+        }
+
         /* Function definition */
         if (match(p, TOK_FUNC)) {
             ASTFunction *fn = ARENA_NEW(p->arena, ASTFunction);
@@ -1328,8 +1345,9 @@ ASTProgram *parser_parse(Parser *p)
         parse_error(p, "unexpected token in compile mode (only func, field, enum allowed)");
     }
 
-    /* Compile mode requires main() */
-    if (prog->mode == MODE_COMPILE) {
+    /* Compile mode requires main() — skip in check mode if we had errors,
+       since functions may have been lost during error recovery.           */
+    if (prog->mode == MODE_COMPILE && !(p->check_mode && p->error_count > 0)) {
         bool has_main = false;
         for (int i = 0; i < funcs.count; i++) {
             ASTFunction *fn = (ASTFunction *)funcs.items[i];

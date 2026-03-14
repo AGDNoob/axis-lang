@@ -760,7 +760,9 @@ static void gen_vardecl(IRGen *g, ASTStmt *st)
             emit(g, IR_LEA, oper_temp(t_addr, 8), oper_stack(off, 8),
                  oper_none(), 0, st->loc);
             emit(g, IR_MEMCPY, oper_temp(t_addr, 8), oper_temp(src_addr, 8),
-                 oper_imm(total, 4), 0, st->loc);
+                 oper_imm(total, 4),
+                 st->var_decl.value->copy.compile_time ? 1 : 0,
+                 st->loc);
         }
         return;
     }

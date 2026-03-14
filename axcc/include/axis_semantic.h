@@ -16,6 +16,8 @@
 #include "axis_ast.h"
 #include "axis_arena.h"
 
+#include <setjmp.h>
+
 /* ── Symbol ─────────────────────────────────────────────────── */
 
 typedef struct Symbol Symbol;
@@ -27,6 +29,8 @@ struct Symbol {
     bool          is_param;
     bool          is_update;      /* parameter "update" modifier */
     ASTTypeNode  *array_type;     /* non-NULL for array variables  */
+    bool          used;           /* set when variable is referenced */
+    SrcLoc        def_loc;        /* location of definition */
     Symbol       *next;           /* linked list within scope      */
 };
 
@@ -69,6 +73,13 @@ typedef struct {
     ASTFunction *current_func;
     int          stack_offset;    /* grows positive, stored as negative */
     int          loop_depth;      /* for break/continue validation     */
+
+    /* Check mode: collect errors instead of aborting */
+    bool         check_mode;
+    int          error_count;
+    jmp_buf      err_jmp;         /* recovery point */
+    bool         check_unused;    /* report unused variables */
+    bool         check_dead;      /* report dead code ranges */
 } Semantic;
 
 /* ── Public API ─────────────────────────────────────────────── */

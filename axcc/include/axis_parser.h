@@ -10,6 +10,8 @@
 #include "axis_arena.h"
 #include "axis_token.h"
 
+#include <setjmp.h>
+
 typedef struct {
     Token      *tokens;
     int         token_count;
@@ -18,6 +20,11 @@ typedef struct {
     Arena      *arena;
     const char *filename;
     const char *source;         /* original source text (for error context) */
+
+    /* Check mode: collect errors and recover instead of aborting */
+    bool        check_mode;
+    int         error_count;
+    jmp_buf     err_jmp;        /* recovery point (only used when check_mode) */
 } Parser;
 
 void        parser_init(Parser *p, Token *tokens, int token_count,
