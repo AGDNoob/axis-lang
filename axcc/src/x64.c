@@ -3,9 +3,11 @@
  *
  * Strategy:
  *   • Variables live at [rbp + stack_off] (stack_off is negative).
- *   • Temps live below variables: [rbp - var_area - (temp_id+1)*8].
- *   • We use RAX, RCX, RDX, R8, R9, R10, R11 as scratch.
- *   • Each IR instruction is lowered independently (no global regalloc).
+ *   • Temps are assigned physical registers via linear-scan regalloc.
+ *     Spilled temps live below variables: [rbp - var_area - (temp_id+1)*8].
+ *   • RAX, RCX, RDX are scratch registers for instruction lowering.
+ *   • R8, R9 are reserved for function call arguments.
+ *   • Allocatable: RBX, RSI, RDI, R10, R11, R12–R15.
  *   • Calling convention: Windows x64 (rcx, rdx, r8, r9 + shadow space).
  *   • The linker/PE-writer patches RELOC_REL32 for function calls
  *     and RELOC_RIP_REL32 for string literal references.
@@ -375,23 +377,86 @@ static void emit_store_rbp_sz(CodeBuf *cb, int off, int src, int size)
     }
 }
 
+/* ═════════════════════════════════════════════════════════════
+ * Spill-Reload Cache
+ *
+ * Tracks which physical register currently caches a recently-
+ * spilled temp, allowing subsequent load_oper calls to skip
+ * the memory load if the value is still in a register.
+ * ═════════════════════════════════════════════════════════════ */
+
+static int src_reg_temp[16];  /* src_reg_temp[phys_reg] = temp_id or -1 */
+
+static void src_flush(void)
+{
+    for (int i = 0; i < 16; i++) src_reg_temp[i] = -1;
+}
+
+static void src_invalidate(int reg)
+{
+    if (reg >= 0 && reg < 16) src_reg_temp[reg] = -1;
+}
+
+/* Record that 'reg' now holds spilled 'temp_id'. */
+static void src_set(int reg, int temp_id)
+{
+    for (int i = 0; i < 16; i++)
+        if (src_reg_temp[i] == temp_id) src_reg_temp[i] = -1;
+    src_reg_temp[reg] = temp_id;
+}
+
+/* Find the physical register caching 'temp_id', or -1. */
+static int src_find(int temp_id)
+{
+    for (int i = 0; i < 16; i++)
+        if (src_reg_temp[i] == temp_id) return i;
+    return -1;
+}
+
 /*
  * Load an IR operand's value into a register.
+ * If the operand is a temp allocated to a physical register,
+ * emits a reg-to-reg move (or nothing if already in the target).
  */
 static void load_oper(X64Ctx *ctx, int reg, const IROper *op)
 {
     CodeBuf *cb = &ctx->code;
     switch (op->kind) {
-    case OPER_TEMP:
-        emit_load_rbp(cb, reg, temp_rbp_off(ctx, op->temp_id));
+    case OPER_TEMP: {
+        const RegAlloc *ra = &ctx->cur_ra;
+        int phys = (ra->temp_reg && op->temp_id < ra->temp_count)
+                   ? ra->temp_reg[op->temp_id] : REG_SPILLED;
+        if (phys != REG_SPILLED) {
+            src_invalidate(reg);
+            if (phys != reg)
+                emit_mov_reg_reg(cb, reg, phys);
+        } else {
+            /* Check spill-reload cache */
+            int cached = src_find(op->temp_id);
+            if (cached >= 0) {
+                if (cached != reg) {
+                    src_invalidate(reg);
+                    emit_mov_reg_reg(cb, reg, cached);
+                }
+                /* else: already in the right register, skip */
+            } else {
+                src_invalidate(reg);
+                emit_load_rbp(cb, reg, temp_rbp_off(ctx, op->temp_id));
+            }
+            src_set(reg, op->temp_id);
+        }
         break;
+    }
     case OPER_IMM:
+        src_invalidate(reg);
         emit_load_imm(cb, reg, op->imm);
         break;
     case OPER_STACK:
+        src_invalidate(reg);
         emit_load_rbp_sx(cb, reg, op->stack_off, op->size);
         break;
     case OPER_NONE:
+        src_invalidate(reg);
         /* load 0 */
         emit_load_imm(cb, reg, 0);
         break;
@@ -401,11 +466,53 @@ static void load_oper(X64Ctx *ctx, int reg, const IROper *op)
 }
 
 /*
- * Store a register value to an IR temp's stack slot.
+ * Store a register value to an IR temp's allocated location.
+ * If the temp is in a physical register, emit reg-to-reg move
+ * (or nothing if already there). Otherwise store to stack.
  */
 static void store_temp(X64Ctx *ctx, int temp_id, int reg)
 {
-    emit_store_rbp(&ctx->code, temp_rbp_off(ctx, temp_id), reg);
+    const RegAlloc *ra = &ctx->cur_ra;
+    int phys = (ra->temp_reg && temp_id < ra->temp_count)
+               ? ra->temp_reg[temp_id] : REG_SPILLED;
+    if (phys != REG_SPILLED) {
+        src_invalidate(phys);
+        src_invalidate(reg);
+        if (phys != reg)
+            emit_mov_reg_reg(&ctx->code, phys, reg);
+    } else {
+        emit_store_rbp(&ctx->code, temp_rbp_off(ctx, temp_id), reg);
+        src_set(reg, temp_id);
+    }
+}
+
+/* ── Register-aware codegen helpers ──────────────────────── */
+
+/* Get the physical register for a temp, or REG_SPILLED. */
+static int temp_phys(const X64Ctx *ctx, int temp_id)
+{
+    const RegAlloc *ra = &ctx->cur_ra;
+    if (ra->temp_reg && temp_id >= 0 && temp_id < ra->temp_count)
+        return ra->temp_reg[temp_id];
+    return REG_SPILLED;
+}
+
+/* Get the physical register for an operand (OPER_TEMP only), or -1. */
+static int oper_phys(const X64Ctx *ctx, const IROper *op)
+{
+    if (op->kind == OPER_TEMP)
+        return temp_phys(ctx, op->temp_id);
+    return -1;
+}
+
+/* Get the dest physical register for a temp, or fallback. */
+static int dest_reg(const X64Ctx *ctx, const IROper *dest, int fallback)
+{
+    if (dest->kind == OPER_TEMP) {
+        int r = temp_phys(ctx, dest->temp_id);
+        if (r != REG_SPILLED) return r;
+    }
+    return fallback;
 }
 
 /* ── ALU helpers (reg = reg OP reg) ──────────────────────── */
@@ -577,6 +684,29 @@ static void emit_imul_rr(CodeBuf *cb, int dst, int src)
     cb_emit8(cb, modrm(3, dst, src));
 }
 
+/* ── LEA-multiply: lea dst, [src + src*scale] ───────────── */
+/* Computes dst = src * (1 + scale) where scale ∈ {2,4,8}.
+ * Used for ×3, ×5, ×9 to replace IMUL with a single LEA. */
+
+static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
+{
+    int ss;
+    switch (scale) {
+    case 2: ss = 1; break;
+    case 4: ss = 2; break;
+    case 8: ss = 3; break;
+    default: return;
+    }
+    /* REX.W + 8D /r with SIB: [base + index*scale] */
+    cb_emit8(cb, rex(1, dst, src, src));
+    cb_emit8(cb, 0x8D);
+    /* ModRM: mod depends on base (RBP/R13 need mod=01+disp8) */
+    int mod = ((src & 7) == 5) ? 1 : 0;
+    cb_emit8(cb, modrm(mod, dst, 4));  /* rm=4 → SIB follows */
+    cb_emit8(cb, (uint8_t)((ss << 6) | ((src & 7) << 3) | (src & 7)));
+    if (mod == 1) cb_emit8(cb, 0);     /* disp8=0 for RBP/R13 base */
+}
+
 /* ── idiv rcx (signed 64-bit divide: rdx:rax / rcx) ────── */
 
 static void emit_cqo(CodeBuf *cb)
@@ -707,9 +837,49 @@ static void emit_lea_string(X64Ctx *ctx, int reg, int str_idx)
  * IR instruction → x86-64 lowering
  * ═════════════════════════════════════════════════════════════ */
 
-static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
+/* Forward declaration – defined after gen_instr */
+static void emit_epilogue(X64Ctx *ctx);
+
+/*
+ * gen_instr – Lower a single IR instruction to x86-64 machine code.
+ *
+ * Returns the number of IR instructions consumed (normally 1, but
+ * CMP+Branch fusion may consume 2).  idx is the current instruction
+ * index within fn->instrs.
+ */
+static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
 {
+    const IRInstr *ins = &fn->instrs[idx];
     CodeBuf *cb = &ctx->code;
+
+    /* Flush spill-reload cache for instructions that clobber registers
+     * outside of load_oper/store_temp (calls, divs, memory ops, etc.).
+     * Simple ALU/MOV/CMP/branch instructions are safe — their register
+     * usage is fully tracked through load_oper and store_temp.
+     *
+     * We flush both BEFORE and AFTER non-safe instructions.  The pre-flush
+     * prevents stale entries from being consumed by load_oper calls inside
+     * the instruction.  The post-flush prevents entries populated by
+     * load_oper from surviving past internal clobbers (e.g. IMUL in
+     * INDEX_LOAD trashes RCX after load_oper cached it). */
+    int need_post_flush = 0;
+    switch (ins->op) {
+    case IR_NOP: case IR_MOV: case IR_LOAD_IMM: case IR_LOAD_STR:
+    case IR_LOAD_VAR: case IR_STORE_VAR:
+    case IR_ADD: case IR_SUB: case IR_MUL: case IR_NEG:
+    case IR_BIT_AND: case IR_BIT_OR: case IR_BIT_XOR:
+    case IR_SHL: case IR_SHR:
+    case IR_CMP_EQ: case IR_CMP_NE: case IR_CMP_LT:
+    case IR_CMP_LE: case IR_CMP_GT: case IR_CMP_GE:
+    case IR_LOG_NOT: case IR_ARG:
+    case IR_JMP: case IR_JZ: case IR_JNZ:
+    case IR_SEXT: case IR_ZEXT: case IR_TRUNC:
+        break;
+    default:
+        src_flush();
+        need_post_flush = 1;
+        break;
+    }
 
     switch (ins->op) {
 
@@ -719,68 +889,116 @@ static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
         break;
 
     /* ── MOV: dest = src1 ────────────────────────────────── */
-    case IR_MOV:
-        load_oper(ctx, RAX, &ins->src1);
+    case IR_MOV: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        load_oper(ctx, dr, &ins->src1);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         else if (ins->dest.kind == OPER_STACK)
-            emit_store_rbp(cb, ins->dest.stack_off, RAX);
+            emit_store_rbp(cb, ins->dest.stack_off, dr);
         break;
+    }
 
     /* ── LOAD_IMM: dest = imm ────────────────────────────── */
-    case IR_LOAD_IMM:
-        emit_load_imm(cb, RAX, ins->src1.imm);
+    case IR_LOAD_IMM: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        emit_load_imm(cb, dr, ins->src1.imm);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
     /* ── LOAD_STR: dest = &string[idx] ───────────────────── */
-    case IR_LOAD_STR:
-        emit_lea_string(ctx, RAX, ins->src1.str_idx);
+    case IR_LOAD_STR: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        emit_lea_string(ctx, dr, ins->src1.str_idx);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
     /* ── LOAD_VAR: dest = [rbp + stack_off] ─────────────── */
-    case IR_LOAD_VAR:
+    case IR_LOAD_VAR: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
         if (ins->extra)   /* unsigned → zero-extend */
-            emit_load_rbp_zx(cb, RAX, ins->src1.stack_off, ins->src1.size);
+            emit_load_rbp_zx(cb, dr, ins->src1.stack_off, ins->src1.size);
         else              /* signed   → sign-extend */
-            emit_load_rbp_sx(cb, RAX, ins->src1.stack_off, ins->src1.size);
+            emit_load_rbp_sx(cb, dr, ins->src1.stack_off, ins->src1.size);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
     /* ── STORE_VAR: [rbp + stack_off] = src1 ────────────── */
-    case IR_STORE_VAR:
-        load_oper(ctx, RAX, &ins->src1);
-        emit_store_rbp_sz(cb, ins->dest.stack_off, RAX, ins->dest.size);
+    case IR_STORE_VAR: {
+        int s1r = oper_phys(ctx, &ins->src1);
+        int r = (s1r >= 0) ? s1r : RAX;
+        if (s1r < 0) load_oper(ctx, RAX, &ins->src1);
+        emit_store_rbp_sz(cb, ins->dest.stack_off, r, ins->dest.size);
         break;
+    }
 
     /* ── Arithmetic ──────────────────────────────────────── */
-    case IR_ADD:
-        load_oper(ctx, RAX, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_alu_rr(cb, 0x01, RAX, RCX);  /* add rax, rcx */
+    case IR_ADD: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        int s2r = oper_phys(ctx, &ins->src2);
+        const IROper *a = &ins->src1, *b = &ins->src2;
+        /* commutative: if dest==src2 reg, swap so load_oper is NOP */
+        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+        load_oper(ctx, dr, a);
+        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+        if (s2 != s2r) load_oper(ctx, s2, b);
+        emit_alu_rr(cb, 0x01, dr, s2);  /* add dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
-    case IR_SUB:
-        load_oper(ctx, RAX, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_alu_rr(cb, 0x29, RAX, RCX);  /* sub rax, rcx */
+    case IR_SUB: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        int s2r = oper_phys(ctx, &ins->src2);
+        /* non-commutative: if dest reg == src2 reg, fall back to RAX */
+        if (s2r == dr) dr = RAX;
+        load_oper(ctx, dr, &ins->src1);
+        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+        if (s2 != s2r) load_oper(ctx, s2, &ins->src2);
+        emit_alu_rr(cb, 0x29, dr, s2);  /* sub dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
-    case IR_MUL:
-        load_oper(ctx, RAX, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_imul_rr(cb, RAX, RCX);        /* imul rax, rcx */
+    case IR_MUL: {
+        /* LEA-multiply for small constants: ×3, ×5, ×9 */
+        const IROper *var_op = NULL;
+        int64_t cval = 0;
+        if (ins->src2.kind == OPER_IMM) {
+            var_op = &ins->src1; cval = ins->src2.imm;
+        } else if (ins->src1.kind == OPER_IMM) {
+            var_op = &ins->src2; cval = ins->src1.imm;
+        }
+        if (var_op && (cval == 3 || cval == 5 || cval == 9)) {
+            int dr = dest_reg(ctx, &ins->dest, RAX);
+            load_oper(ctx, dr, var_op);
+            int scale = (cval == 3) ? 2 : (cval == 5) ? 4 : 8;
+            emit_lea_scale(cb, dr, dr, scale);
+            if (ins->dest.kind == OPER_TEMP)
+                store_temp(ctx, ins->dest.temp_id, dr);
+            break;
+        }
+        /* General case: IMUL */
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        int s2r = oper_phys(ctx, &ins->src2);
+        const IROper *a = &ins->src1, *b = &ins->src2;
+        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+        load_oper(ctx, dr, a);
+        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+        if (s2 != s2r) load_oper(ctx, s2, b);
+        emit_imul_rr(cb, dr, s2);        /* imul dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
     case IR_DIV:
         load_oper(ctx, RAX, &ins->src1);
@@ -815,53 +1033,79 @@ static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
             store_temp(ctx, ins->dest.temp_id, RAX);
         break;
 
-    case IR_NEG:
-        load_oper(ctx, RAX, &ins->src1);
-        emit_neg_reg(cb, RAX);
+    case IR_NEG: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        load_oper(ctx, dr, &ins->src1);
+        emit_neg_reg(cb, dr);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
     /* ── Bitwise ─────────────────────────────────────────── */
-    case IR_BIT_AND:
-        load_oper(ctx, RAX, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_alu_rr(cb, 0x21, RAX, RCX);  /* and rax, rcx */
+    case IR_BIT_AND: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        int s2r = oper_phys(ctx, &ins->src2);
+        const IROper *a = &ins->src1, *b = &ins->src2;
+        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+        load_oper(ctx, dr, a);
+        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+        if (s2 != s2r) load_oper(ctx, s2, b);
+        emit_alu_rr(cb, 0x21, dr, s2);  /* and dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
-    case IR_BIT_OR:
-        load_oper(ctx, RAX, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_alu_rr(cb, 0x09, RAX, RCX);  /* or rax, rcx */
+    case IR_BIT_OR: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        int s2r = oper_phys(ctx, &ins->src2);
+        const IROper *a = &ins->src1, *b = &ins->src2;
+        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+        load_oper(ctx, dr, a);
+        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+        if (s2 != s2r) load_oper(ctx, s2, b);
+        emit_alu_rr(cb, 0x09, dr, s2);  /* or dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
-    case IR_BIT_XOR:
-        load_oper(ctx, RAX, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_alu_rr(cb, 0x31, RAX, RCX);  /* xor rax, rcx */
+    case IR_BIT_XOR: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        int s2r = oper_phys(ctx, &ins->src2);
+        const IROper *a = &ins->src1, *b = &ins->src2;
+        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+        load_oper(ctx, dr, a);
+        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+        if (s2 != s2r) load_oper(ctx, s2, b);
+        emit_alu_rr(cb, 0x31, dr, s2);  /* xor dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
-    case IR_SHL:
-        load_oper(ctx, RAX, &ins->src1);
+    case IR_SHL: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        if (dr == RCX) dr = RAX;  /* shift count goes in CL */
+        load_oper(ctx, dr, &ins->src1);
         load_oper(ctx, RCX, &ins->src2);   /* shift count must be in CL */
-        emit_shift_cl(cb, RAX, 4);         /* sal rax, cl (/4) */
+        emit_shift_cl(cb, dr, 4);          /* sal dr, cl (/4) */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
-    case IR_SHR:
-        load_oper(ctx, RAX, &ins->src1);
+    case IR_SHR: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        if (dr == RCX) dr = RAX;  /* shift count goes in CL */
+        load_oper(ctx, dr, &ins->src1);
         load_oper(ctx, RCX, &ins->src2);
-        emit_shift_cl(cb, RAX, ins->extra ? 5 : 7); /* shr or sar */
+        emit_shift_cl(cb, dr, ins->extra ? 5 : 7); /* shr or sar */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, dr);
         break;
+    }
 
     /* ── Comparison ──────────────────────────────────────── */
     case IR_CMP_EQ:
@@ -870,33 +1114,68 @@ static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
     case IR_CMP_LE:
     case IR_CMP_GT:
     case IR_CMP_GE: {
-        load_oper(ctx, RAX, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_cmp_rr(cb, RAX, RCX);
-        /* Map opcode to SETcc condition code */
+        /* Load operands using register-aware approach */
+        int s1r = oper_phys(ctx, &ins->src1);
+        int s2r = oper_phys(ctx, &ins->src2);
+        int r1 = (s1r >= 0) ? s1r : RAX;
+        int r2 = (s2r >= 0 && s2r != r1) ? s2r : RCX;
+        if (r1 == r2) { r1 = RAX; r2 = RCX; }
+        if (s1r < 0 || s1r != r1) load_oper(ctx, r1, &ins->src1);
+        if (s2r < 0 || s2r != r2) load_oper(ctx, r2, &ins->src2);
+        emit_cmp_rr(cb, r1, r2);
+
+        /* Map opcode to condition code */
         uint8_t cc;
         if (ins->extra) {
-            /* unsigned condition codes */
             switch (ins->op) {
-            case IR_CMP_EQ: cc = 0x04; break; /* sete   */
-            case IR_CMP_NE: cc = 0x05; break; /* setne  */
-            case IR_CMP_LT: cc = 0x02; break; /* setb   */
-            case IR_CMP_LE: cc = 0x06; break; /* setbe  */
-            case IR_CMP_GT: cc = 0x07; break; /* seta   */
-            case IR_CMP_GE: cc = 0x03; break; /* setae  */
+            case IR_CMP_EQ: cc = 0x04; break;
+            case IR_CMP_NE: cc = 0x05; break;
+            case IR_CMP_LT: cc = 0x02; break;
+            case IR_CMP_LE: cc = 0x06; break;
+            case IR_CMP_GT: cc = 0x07; break;
+            case IR_CMP_GE: cc = 0x03; break;
             default: cc = 0x04; break;
             }
         } else {
             switch (ins->op) {
-            case IR_CMP_EQ: cc = 0x04; break; /* sete  (ZF=1)  */
-            case IR_CMP_NE: cc = 0x05; break; /* setne (ZF=0)  */
-            case IR_CMP_LT: cc = 0x0C; break; /* setl  (SF≠OF) */
-            case IR_CMP_LE: cc = 0x0E; break; /* setle         */
-            case IR_CMP_GT: cc = 0x0F; break; /* setg          */
-            case IR_CMP_GE: cc = 0x0D; break; /* setge         */
+            case IR_CMP_EQ: cc = 0x04; break;
+            case IR_CMP_NE: cc = 0x05; break;
+            case IR_CMP_LT: cc = 0x0C; break;
+            case IR_CMP_LE: cc = 0x0E; break;
+            case IR_CMP_GT: cc = 0x0F; break;
+            case IR_CMP_GE: cc = 0x0D; break;
             default: cc = 0x04; break;
             }
         }
+
+        /* ── CMP+Branch fusion ───────────────────────────── */
+        /* If the next IR instruction is JZ/JNZ on the same temp,
+         * emit CMP + Jcc directly instead of SETCC+MOVZX+store
+         * then load+TEST+Jcc (saves ~5 instructions).           */
+        if (ins->dest.kind == OPER_TEMP && idx + 1 < fn->instr_count) {
+            const IRInstr *next = &fn->instrs[idx + 1];
+            if ((next->op == IR_JZ || next->op == IR_JNZ) &&
+                next->src1.kind == OPER_TEMP &&
+                next->src1.temp_id == ins->dest.temp_id) {
+                /* JNZ = jump when cmp is true  → use cc as-is
+                 * JZ  = jump when cmp is false → invert cc (XOR 1) */
+                uint8_t bcc = (next->op == IR_JNZ) ? cc : (uint8_t)(cc ^ 1);
+                int lbl = next->dest.label_id;
+                int target = get_label(ctx, lbl);
+                if (target >= 0) {
+                    cb_emit8(cb, 0x0F);
+                    cb_emit8(cb, (uint8_t)(0x80 + bcc));
+                    int from = cb_pos(cb) + 4;
+                    cb_emit32(cb, (uint32_t)(target - from));
+                } else {
+                    int patch = emit_jcc_rel32(cb, bcc);
+                    add_reloc(ctx, RELOC_REL32, patch, NULL, lbl, 0);
+                }
+                return 2;  /* consumed CMP + JZ/JNZ */
+            }
+        }
+
+        /* Non-fused fallback: materialize boolean result */
         emit_setcc(cb, cc);
         emit_movzx_rax_al(cb);
         if (ins->dest.kind == OPER_TEMP)
@@ -916,6 +1195,7 @@ static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
 
     /* ── Labels ──────────────────────────────────────────── */
     case IR_LABEL:
+        src_flush();  /* branch target — register state unknown */
         set_label(ctx, ins->dest.label_id, cb_pos(cb));
         break;
 
@@ -1010,16 +1290,11 @@ static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
     /* ── RET ─────────────────────────────────────────────── */
     case IR_RET:
         load_oper(ctx, RAX, &ins->src1);
-        /* Epilogue */
-        emit_mov_reg_reg(cb, RSP, RBP);
-        emit_pop(cb, RBP);
-        emit_ret(cb);
+        emit_epilogue(ctx);
         break;
 
     case IR_RET_VOID:
-        emit_mov_reg_reg(cb, RSP, RBP);
-        emit_pop(cb, RBP);
-        emit_ret(cb);
+        emit_epilogue(ctx);
         break;
 
     /* ── WRITE (built-in I/O) ────────────────────────────── */
@@ -1272,13 +1547,34 @@ static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
     /* ── MEMCPY ──────────────────────────────────────────── */
     case IR_MEMCPY: {
         /* dest = dst_addr (temp), src1 = src_addr (temp),
-         * src2.imm = byte count */
+         * src2.imm = byte count, extra: 0=runtime, 1=compile */
         load_oper(ctx, RCX, &ins->dest);   /* arg0: dst */
         load_oper(ctx, RDX, &ins->src1);   /* arg1: src */
         emit_load_imm(cb, R8, ins->src2.imm); /* arg2: count */
-        emit_sub_rsp_imm32(cb, 32);
-        emit_call_sym(ctx, RT_MEMCPY);
-        emit_add_rsp_imm32(cb, 32);
+        if (ins->extra) {
+            /* copy.compile — inline byte-copy loop (no call overhead) */
+            /* test r8, r8 */
+            cb_emit8(cb, 0x4D); cb_emit8(cb, 0x85); cb_emit8(cb, 0xC0);
+            /* jz +16 (skip loop) */
+            cb_emit8(cb, 0x74); cb_emit8(cb, 0x10);
+            /* loop: movzx eax, byte [rdx] */
+            cb_emit8(cb, 0x0F); cb_emit8(cb, 0xB6); cb_emit8(cb, 0x02);
+            /* mov [rcx], al */
+            cb_emit8(cb, 0x88); cb_emit8(cb, 0x01);
+            /* inc rcx */
+            cb_emit8(cb, 0x48); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC1);
+            /* inc rdx */
+            cb_emit8(cb, 0x48); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC2);
+            /* dec r8 */
+            cb_emit8(cb, 0x49); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC8);
+            /* jnz -16 (back to loop) */
+            cb_emit8(cb, 0x75); cb_emit8(cb, 0xF0);
+        } else {
+            /* copy.runtime — REP MOVSB via runtime stub */
+            emit_sub_rsp_imm32(cb, 32);
+            emit_call_sym(ctx, RT_MEMCPY);
+            emit_add_rsp_imm32(cb, 32);
+        }
         break;
     }
 
@@ -1332,11 +1628,39 @@ static void gen_instr(X64Ctx *ctx, const IRFunc *fn, const IRInstr *ins)
         x64_error("unhandled IR opcode %d", ins->op);
         break;
     }
+
+    /* Post-flush: clear cache entries that load_oper may have set during
+     * a non-safe instruction whose internal operations clobbered the
+     * scratch registers (e.g. INDEX_LOAD does IMUL after load_oper). */
+    if (need_post_flush)
+        src_flush();
+
+    return 1;
 }
 
 /* ═════════════════════════════════════════════════════════════
  * Function prologue / epilogue + instruction loop
  * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * Emit function epilogue: restore callee-saved registers, then
+ * mov rsp, rbp; pop rbp; ret.
+ * Used by IR_RET, IR_RET_VOID, and the implicit safety-net epilogue.
+ */
+static void emit_epilogue(X64Ctx *ctx)
+{
+    CodeBuf *cb = &ctx->code;
+
+    /* Restore callee-saved registers (reverse order) */
+    for (int i = ctx->callee_save_count - 1; i >= 0; i--) {
+        int off = -(ctx->callee_save_base + (i + 1) * 8);
+        emit_load_rbp(cb, ctx->callee_save_regs[i], off);
+    }
+
+    emit_mov_reg_reg(cb, RSP, RBP);
+    emit_pop(cb, RBP);
+    emit_ret(cb);
+}
 
 static void gen_function(X64Ctx *ctx, const IRFunc *fn)
 {
@@ -1352,13 +1676,26 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     xf->name = fn->name;
     xf->text_offset = cb_pos(cb);
 
+    /* ── Register allocation ───────────────────────── */
+    opt_regalloc(&ctx->cur_ra, fn, ctx->arena);
+
+    /* Build list of callee-saved registers used by the allocator */
+    ctx->callee_save_count = 0;
+    for (int r = 0; r < 16; r++) {
+        if (ctx->cur_ra.callee_used[r])
+            ctx->callee_save_regs[ctx->callee_save_count++] = r;
+    }
+
     /* Compute frame size:
      * Variables occupy [rbp-1] down to [rbp - stack_size].
      * Temps start below variables: temp i at [rbp - stack_size - (i+1)*8].
-     * Total frame = stack_size + temps_space, aligned to 16. */
+     * Callee-saved save area below temps.
+     * Total frame = stack_size + temps + save_area, aligned to 16. */
     ctx->var_area_size = fn->stack_size;
     int temps_space = fn->temp_count * 8;
-    int frame = fn->stack_size + temps_space;
+    ctx->callee_save_base = fn->stack_size + temps_space;
+    int save_area = ctx->callee_save_count * 8;
+    int frame = fn->stack_size + temps_space + save_area;
     frame = AXIS_ALIGN(frame, 16);
     /* After push rbp (8 bytes), RSP is 8-misaligned; sub by 16-aligned
      * frame re-aligns to 16.  If frame is 0, stack is still 8-misaligned,
@@ -1371,6 +1708,12 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     emit_mov_reg_reg(cb, RBP, RSP);
     if (frame > 0)
         emit_sub_rsp_imm32(cb, frame);
+
+    /* Save callee-saved registers to their stack slots */
+    for (int i = 0; i < ctx->callee_save_count; i++) {
+        int off = -(ctx->callee_save_base + (i + 1) * 8);
+        emit_store_rbp(cb, off, ctx->callee_save_regs[i]);
+    }
 
     /* Spill incoming register parameters to their stack slots.
      * Win64 ABI: first 4 integer args in RCX, RDX, R8, R9.
@@ -1438,8 +1781,9 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
         ctx->label_offsets[i] = -1;
 
     /* ── Instruction loop ────────────────────────── */
-    for (int i = 0; i < fn->instr_count; i++) {
-        gen_instr(ctx, fn, &fn->instrs[i]);
+    src_flush();  /* start with clean spill-reload cache */
+    for (int i = 0; i < fn->instr_count; ) {
+        i += gen_instr(ctx, fn, i);
     }
 
     /* ── Implicit epilogue (safety net) ──────────── */
@@ -1449,9 +1793,7 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
          fn->instrs[fn->instr_count - 1].op != IR_RET_VOID))
     {
         emit_load_imm(cb, RAX, 0);
-        emit_mov_reg_reg(cb, RSP, RBP);
-        emit_pop(cb, RBP);
-        emit_ret(cb);
+        emit_epilogue(ctx);
     }
 
     xf->text_size = cb_pos(cb) - xf->text_offset;

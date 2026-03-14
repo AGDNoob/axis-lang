@@ -13,6 +13,7 @@
 #include "axis_common.h"
 #include "axis_arena.h"
 #include "axis_ir.h"
+#include "axis_opt.h"
 
 /* ═════════════════════════════════════════════════════════════
  * Code buffer – growable byte array for emitted machine code
@@ -96,9 +97,16 @@ typedef struct {
     int    *label_offsets;   /* indexed by label_id */
     int     label_cap;
 
-    /* Temp → location mapping (register or stack spill) */
-    /* Simple: all temps live on the stack below the variable area. */
+    /* Temp → location mapping */
     int     var_area_size;   /* fn->stack_size: variables occupy [rbp-1] .. [rbp-var_area_size] */
+
+    /* Register allocation for current function */
+    RegAlloc cur_ra;         /* maps temp_id → physical register or REG_SPILLED */
+
+    /* Callee-saved register save/restore info for current function */
+    int callee_save_regs[16]; /* which phys regs to push/pop */
+    int callee_save_count;    /* how many callee-saved regs are used */
+    int callee_save_base;     /* rbp offset base: first saved reg at -(base+8) */
 
     /* Memory */
     Arena *arena;
