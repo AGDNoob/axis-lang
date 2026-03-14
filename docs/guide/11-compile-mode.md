@@ -74,3 +74,13 @@ AXCC can produce both PE (Windows) and ELF (Linux) binaries from the same machin
 - `--pe` — force Windows PE output
 - `--elf` — force Linux ELF64 output
 - No flag — use the current OS default (PE on Windows, ELF on Linux)
+
+## Checking Without Compiling
+
+You can validate a compile-mode source file without generating a binary:
+
+```bash
+axis check program.axis --all
+```
+
+See [Check Command](12-check-command.md) for the full reference.

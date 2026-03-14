@@ -74,6 +74,16 @@ Build it:
 
 The output is a standalone binary with zero runtime dependencies.
 
+## Checking Without Compiling
+
+Use `axis check` to validate a source file without producing a binary:
+
+```bash
+axis check program.axis --all
+```
+
+This reports all syntax and semantic errors at once, plus optional warnings for dead code (`--dead`) and unused variables (`--unused`). See [Check Command](12-check-command.md) for details.
+
 ## VS Code Extension
 
 The `axis-vscode/` folder contains a VS Code extension for syntax highlighting. Install it by copying the folder to your VS Code extensions directory or via the Extensions panel.

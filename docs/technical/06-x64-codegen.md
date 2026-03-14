@@ -4,13 +4,11 @@ The x64 code generator (`x64.c`) translates IR instructions into x86-64 machine 
 
 ## Register Allocation Strategy
 
-AXCC uses a simple stack-based allocation scheme rather than a graph-coloring register allocator:
+AXCC v1.2.0 uses a linear-scan register allocator across all 16 x86-64 general-purpose registers. Local variables and IR temporaries are mapped to physical registers; stack spills occur only when registers are exhausted.
 
-- All virtual temporaries are spilled to the stack below the local variable area
-- Local variables live at `[rbp - 1]` down to `[rbp - var_area_size]`
-- Temporaries live below that, extending the stack frame as needed
+A spill-reload cache tracks which spilled values are currently in registers. When a spilled temporary is accessed again, the code generator emits a register-to-register `MOV` instead of a stack load. The cache is invalidated at branch targets and register clobbers.
 
-This keeps the code generator straightforward at the cost of generating more memory operations than a register allocator would.
+See [Optimizations](08-optimizations.md) for the full optimization pipeline.
 
 ## Calling Conventions
 

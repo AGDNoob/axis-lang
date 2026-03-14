@@ -75,7 +75,10 @@ arr3: (i32; 5) = copy.runtime arr1    # explicit runtime-optimized
 arr4: (i32; 5) = copy.compile arr1    # compile-time-optimized
 ```
 
-In v1.1.0 both modes produce identical code. Differentiated code generation is planned for v1.2.0.
+- **`copy` / `copy.runtime`** — Uses `REP MOVSB` for memory-to-memory copy. Fast at runtime, especially for larger arrays.
+- **`copy.compile`** — Generates an inline byte-copy loop. Produces a smaller binary but may be slightly slower for large copies.
+
+In script mode, both behave identically.
 
 ## Next
 
