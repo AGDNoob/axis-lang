@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] - 2026-03-16
+
+### Added
+
+- 32-bit native arithmetic: all integer operations encoded as native 32-bit x86 instructions (matching `i32` width)
+- Peephole optimizer pass (redundant instruction elimination)
+- Copy propagation pass
+- Function inlining (small leaf functions)
+- Loop-Invariant Code Motion (LICM)
+- Loop unrolling for small fixed-count loops
+
+### Changed
+
+- Benchmarks: AXCC now reaches GCC `-O0` parity on Prime Count, beats GCC on GCD Stress
+- Fibonacci improved from 1.3× to 1.11× slower than GCC `-O0`
+- Binary sizes reduced (Fibonacci: 2.5 KB → 2.0 KB) via shorter 32-bit instruction encoding
+
+### Fixed
+
+- **x64.c**: Parameter offset for argument 5+ was wrong (`16 + i*8` instead of `16 + (i-4)*8`) — functions with 5+ args read garbage from stack
+- **x64.c**: Division by zero caused CPU exception #DE without error message — now caught
+- **x64.c**: MEMCPY loop used hardcoded jump offsets — fragile, replaced with label-based jumps
+- **lexer.c**: Indent stack overflow only protected by `assert()` — buffer overflow in release builds
+- **lexer.c**: `strtoull(buf, NULL, 0)` didn't recognize `0b` prefix — all binary literals evaluated to 0
+- **lexer.c**: Mixed tabs/spaces in indentation not detected — unpredictable indent behavior
+- **lexer.c**: Tab character incremented column by 1 only — wrong error positions with tabs
+- **irgen.c**: Logical NOT returned operand size instead of 1 byte — garbage in upper bytes of bool result
+- **irgen.c**: Comparisons (`==`, `!=`, `<`, ...) returned operand size instead of 1 byte — wrong result size
+- **irgen.c**: Store size derived from value instead of variable — potential size mismatch
+- **irgen.c**: For-loop variable size derived from expression instead of type — potential size mismatch
+- **parser.c**: `copy` used `parse_expression()` instead of `parse_unary()` — wrong operator precedence
+- **semantic.c**: `update` parameter accepted immutable variables — violated mutability guarantee
+- **semantic.c**: Duplicate enum variant names/values not detected — invalid code accepted
+- **semantic.c**: Built-in `read`/`readln`/`readchar` didn't check argument count — e.g. `read(1,2,3)` accepted
+- **semantic.c**: `match` on enum didn't check for exhaustiveness — missing variants not detected
+- **semantic.c**: Array element type fell back to `i32` silently — hid type errors
+- **semantic.c**: Copy-parameter mutability not enforced — feature incomplete
+- **pe.c**: `SizeOfCode` used file-aligned instead of virtual sizes — PE header technically incorrect
+- **pe.c**: `.rdata` section had WRITE flag — W^X violation (security)
+
+---
+
 ## [1.2.0] - 2026-03-13
 
 ### Added
