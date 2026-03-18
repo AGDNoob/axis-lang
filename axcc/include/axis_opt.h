@@ -73,6 +73,82 @@ void opt_strength_reduce(IRProgram *ir);
 void opt_loadstore_elim(IRProgram *ir);
 
 /* ═════════════════════════════════════════════════════════════
+ * Peephole Optimizations
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_peephole – IR-level algebraic simplifications.
+ *
+ * Eliminates identity operations (x+0, x*1, x-x, self-MOV, etc.)
+ * and replaces them with cheaper MOV or LOAD_IMM instructions.
+ */
+void opt_peephole(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Copy Propagation
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_copyprop – Eliminate redundant temp-to-temp copies.
+ *
+ * For each temp with a single definition that is a MOV from another
+ * single-definition temp, replace all uses with the source temp.
+ */
+void opt_copyprop(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Function Inlining
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_inline – Inline small leaf functions at their call sites.
+ *
+ * Criteria: callee < 32 instrs, no side-effects (CALL/WRITE/READ/
+ * SYSCALL), not self-recursive, no update/field params.
+ */
+void opt_inline(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Loop-Invariant Code Motion
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_licm – Move loop-invariant pure computations before the loop.
+ *
+ * Detects natural loops via back-edges and hoists instructions whose
+ * source operands are all defined outside the loop or by other
+ * already-hoisted instructions.
+ */
+void opt_licm(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Loop Unrolling
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_unroll – Duplicate small loop bodies (2× unrolling).
+ *
+ * For loops with unconditional back-edges and < 24 body instructions,
+ * the body is duplicated once to halve back-edge overhead.
+ */
+void opt_unroll(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Redundant Instruction Elimination
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_rie – Remove instructions whose dest temp is overwritten
+ * before it is ever read.
+ *
+ * For each IR instruction that writes to a temp, scan forward to find
+ * either a use (read) of that temp, a label/branch (basic-block boundary),
+ * or another write to the same temp.  If another write is found first,
+ * the original instruction is dead and can be eliminated.
+ */
+void opt_rie(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
  * Register Allocation – Linear Scan
  * ═════════════════════════════════════════════════════════════ */
 
