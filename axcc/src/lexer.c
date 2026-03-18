@@ -126,6 +126,8 @@ static inline void adv(Lexer *lex)
         if (lex->src[lex->pos] == '\n') {
             lex->line++;
             lex->col = 1;
+        } else if (lex->src[lex->pos] == '\t') {
+            lex->col = ((lex->col - 1) / 4 + 1) * 4 + 1;
         } else {
             lex->col++;
         }
@@ -224,24 +226,36 @@ static bool handle_indent(Lexer *lex, Token *out)
     lex->at_line_start = false;
 
     int indent = 0;
+    bool has_tab = false, has_space = false;
     while (lex->pos < lex->src_len) {
         char c = cur(lex);
-        if (c == ' ')       { indent += 1; adv(lex); }
-        else if (c == '\t') { indent += 4; adv(lex); }
+        if (c == ' ')       { indent += 1; has_space = true; adv(lex); }
+        else if (c == '\t') { indent += 4; has_tab = true; adv(lex); }
         else break;
     }
 
     /* blank / comment-only line → ignore indentation */
     char c = cur(lex);
-    if (c == '\n' || c == '\0')     return false;
+    if (c == '\n' || c == '\r' || c == '\0')     return false;
     if (c == '/' && peek(lex,1) == '/') { skip_comment(lex); return false; }
     if (c == '#')                       { skip_comment(lex); return false; }
+
+    if (has_tab && has_space) {
+        fprintf(stderr, "%s:%d: error: mixed tabs and spaces in indentation\n",
+                lex->filename, lex->line);
+        lex->error_count++;
+        if (!lex->check_mode) exit(1);
+    }
 
     int current = lex->indent_stack[lex->indent_top];
 
     if (indent > current) {
         lex->indent_top++;
-        assert(lex->indent_top < LEXER_MAX_INDENT_DEPTH);
+        if (lex->indent_top >= LEXER_MAX_INDENT_DEPTH) {
+            fprintf(stderr, "%s:%d: error: maximum indentation depth (%d) exceeded\n",
+                    lex->filename, lex->line, LEXER_MAX_INDENT_DEPTH);
+            exit(1);
+        }
         lex->indent_stack[lex->indent_top] = indent;
         *out = mktok(TOK_INDENT, lex->line, 1, lex->src + lex->pos, 0);
         return true;
@@ -303,7 +317,7 @@ static Token read_number(Lexer *lex)
         for (const char *p = start; p < start + len && bi < 126; p++)
             if (*p != '_') buf[bi++] = *p;
         buf[bi] = '\0';
-        tok.int_val = (int64_t)strtoull(buf, NULL, 0);
+        tok.int_val = (int64_t)strtoull(buf + 2, NULL, 2);
         return tok;
     }
 

@@ -408,7 +408,6 @@ static IROper gen_binop(IRGen *g, ASTExpr *e)
     IROper lv = gen_expr(g, e->binary.left);
     IROper rv = gen_expr(g, e->binary.right);
     int sz    = type_size(expr_type(e));
-    int t     = new_temp(g, sz);
 
     IROpcode irop;
     switch (op) {
@@ -432,6 +431,12 @@ static IROper gen_binop(IRGen *g, ASTExpr *e)
         ir_error(g, e->loc, "Unknown binary operator");
     }
 
+    int is_cmp = (irop == IR_CMP_EQ || irop == IR_CMP_NE ||
+                  irop == IR_CMP_LT || irop == IR_CMP_LE ||
+                  irop == IR_CMP_GT || irop == IR_CMP_GE);
+    int res_sz = is_cmp ? 1 : sz;
+    int t      = new_temp(g, res_sz);
+
     {
         int unsig = 0;
         if ((irop == IR_CMP_LT || irop == IR_CMP_LE ||
@@ -439,23 +444,25 @@ static IROper gen_binop(IRGen *g, ASTExpr *e)
              irop == IR_DIV || irop == IR_MOD || irop == IR_SHR)
             && !is_signed(expr_type(e->binary.left)))
             unsig = 1;
-        EMIT_X(irop, oper_temp(t, sz), lv, rv, unsig, e->loc);
+        EMIT_X(irop, oper_temp(t, res_sz), lv, rv, unsig, e->loc);
     }
-    return oper_temp(t, sz);
+    return oper_temp(t, res_sz);
 }
 
 static IROper gen_unary(IRGen *g, ASTExpr *e)
 {
     IROper ov = gen_expr(g, e->unary.operand);
     int    sz = type_size(expr_type(e));
-    int    t  = new_temp(g, sz);
 
     if (e->unary.op == TOK_MINUS) {
+        int t = new_temp(g, sz);
         EMIT(IR_NEG, oper_temp(t, sz), ov, oper_none());
+        return oper_temp(t, sz);
     } else {    /* TOK_NOT / TOK_BANG */
+        int t = new_temp(g, 1);
         EMIT(IR_LOG_NOT, oper_temp(t, 1), ov, oper_none());
+        return oper_temp(t, 1);
     }
-    return oper_temp(t, sz);
 }
 
 static IROper gen_call(IRGen *g, ASTExpr *e)
@@ -816,7 +823,9 @@ static void gen_assign(IRGen *g, ASTStmt *st)
 {
     int off = irgen_name_lookup(g, st->assign.name, st->loc);
     IROper v = gen_expr(g, st->assign.value);
-    int sz = v.size > 0 ? v.size : 4;
+    /* Use the variable's declared size, not the value's size */
+    IRLocal *local = irgen_scope_lookup(g, st->assign.name);
+    int sz = local ? local->size : (v.size > 0 ? v.size : 4);
     emit(g, IR_STORE_VAR, oper_stack(off, sz), v, oper_none(), 0, st->loc);
 }
 
@@ -934,17 +943,26 @@ static void emit_update_writeback(IRGen *g, SrcLoc loc)
         int val_sz  = fn->param_info[i].size;
         int addr_off = fn->param_info[i].wb_offset;
 
-        /* Load current parameter value */
-        int tv = new_temp(g, val_sz);
-        emit(g, IR_LOAD_VAR, oper_temp(tv, val_sz),
-             oper_stack(val_off, val_sz), oper_none(), 0, loc);
         /* Load caller address from hidden slot */
         int ta = new_temp(g, 8);
         emit(g, IR_LOAD_VAR, oper_temp(ta, 8),
              oper_stack(addr_off, 8), oper_none(), 0, loc);
-        /* Store value through pointer */
-        emit(g, IR_STORE_IND, oper_temp(ta, 8),
-             oper_temp(tv, val_sz), oper_none(), val_sz, loc);
+
+        if (fn->param_info[i].is_field && fn->param_info[i].field_size > 0) {
+            /* Field/struct or array: memcpy all bytes back to caller */
+            int src = new_temp(g, 8);
+            emit(g, IR_LEA, oper_temp(src, 8), oper_stack(val_off, 8),
+                 oper_none(), 0, loc);
+            emit(g, IR_MEMCPY, oper_temp(ta, 8), oper_temp(src, 8),
+                 oper_imm(fn->param_info[i].field_size, 4), 1, loc);
+        } else {
+            /* Scalar: load value and store through pointer */
+            int tv = new_temp(g, val_sz);
+            emit(g, IR_LOAD_VAR, oper_temp(tv, val_sz),
+                 oper_stack(val_off, val_sz), oper_none(), 0, loc);
+            emit(g, IR_STORE_IND, oper_temp(ta, 8),
+                 oper_temp(tv, val_sz), oper_none(), val_sz, loc);
+        }
     }
 }
 

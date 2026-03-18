@@ -219,6 +219,8 @@ static ASTTypeNode *parse_type_node(Parser *p)
  * Expression parsing (precedence climbing)
  * ═════════════════════════════════════════════════════════════ */
 
+static ASTExpr *parse_unary(Parser *p);
+
 /* ---- primary ---- */
 static ASTExpr *parse_primary(Parser *p)
 {
@@ -276,7 +278,7 @@ static ASTExpr *parse_primary(Parser *p)
                 parse_error(p, "expected 'runtime' or 'compile' after 'copy.'");
             }
         }
-        ASTExpr *operand = parse_expression(p);  /* parse_unary in Python ref; using expression is safer */
+        ASTExpr *operand = parse_unary(p);  /* copy applies to a single operand */
         ASTExpr *e = NEW_EXPR(p);
         e->kind = EXPR_COPY;
         e->loc  = l;
@@ -994,7 +996,7 @@ static ASTParam parse_single_param(Parser *p)
         param.is_update = true;
         advance(p);
     } else if (match(p, TOK_COPY)) {
-        /* copy modifier – for now treat similarly */
+        param.is_copy = true;
         advance(p);
     }
 
@@ -1230,6 +1232,17 @@ static ASTEnumDef parse_enum_def(Parser *p)
             v->value = next_val++;
             v->has_value = false;
         }
+
+        /* Check for duplicate variant names and values */
+        for (int j = 0; j < variants.count; j++) {
+            ASTEnumVariant *prev = (ASTEnumVariant *)variants.items[j];
+            if (strcmp(prev->name, v->name) == 0)
+                parse_error(p, "duplicate enum variant name '%s'", v->name);
+            if (prev->value == v->value)
+                parse_error(p, "duplicate enum variant value %d (in '%s' and '%s')",
+                            v->value, prev->name, v->name);
+        }
+
         skip_newlines(p);
         ptrvec_push(&variants, v, p->arena);
     }

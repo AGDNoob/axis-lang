@@ -483,11 +483,24 @@ static const char *analyze_call(Semantic *s, ASTExpr *e)
     const char *name = e->call.name;
 
     /* Built-in read functions */
-    if (strcmp(name, "read") == 0 || strcmp(name, "readln") == 0) {
+    if (strcmp(name, "read") == 0) {
+        if (e->call.arg_count != 0)
+            sem_error(s, e->loc, "'read' takes no arguments, got %d",
+                      e->call.arg_count);
+        e->inferred_type = "i32";
+        return "i32";
+    }
+    if (strcmp(name, "readln") == 0) {
+        if (e->call.arg_count != 0)
+            sem_error(s, e->loc, "'readln' takes no arguments, got %d",
+                      e->call.arg_count);
         e->inferred_type = "str";
         return "str";
     }
     if (strcmp(name, "readchar") == 0) {
+        if (e->call.arg_count != 0)
+            sem_error(s, e->loc, "'readchar' takes no arguments, got %d",
+                      e->call.arg_count);
         e->inferred_type = "i32";
         return "i32";
     }
@@ -515,6 +528,15 @@ static const char *analyze_call(Semantic *s, ASTExpr *e)
                 sem_error(s, e->call.args[i]->loc,
                           "Argument %d to '%s' requires a variable "
                           "(parameter is 'update')", i + 1, name);
+            else {
+                Symbol *sym = lookup_var(s, e->call.args[i]->ident.name,
+                                         e->call.args[i]->loc);
+                if (!sym->mutable)
+                    sem_error(s, e->call.args[i]->loc,
+                              "Argument %d to '%s': variable '%s' must be "
+                              "mutable for 'update' parameter",
+                              i + 1, name, sym->name);
+            }
         }
     }
 
@@ -656,7 +678,7 @@ static const char *analyze_array_literal(Semantic *s, ASTExpr *e,
     const char *first = analyze_expr(s, e->array_lit.elements[0]);
 
     /* Coerce first element if expected type known */
-    if (expected && strcmp(first, "i32") == 0 && is_integer_type(expected)) {
+    if (expected && is_integer_type(first) && is_integer_type(expected)) {
         if (e->array_lit.elements[0]->kind == EXPR_INT_LIT) {
             e->array_lit.elements[0]->inferred_type = expected;
             first = expected;
@@ -1054,8 +1076,10 @@ static void analyze_match(Semantic *s, ASTStmt *m)
 {
     const char *vt = analyze_expr(s, m->match.expr);
 
+    bool has_wildcard = false;
     for (int a = 0; a < m->match.arm_count; a++) {
         ASTMatchArm *arm = &m->match.arms[a];
+        if (arm->is_wildcard) { has_wildcard = true; }
         if (!arm->is_wildcard && arm->pattern) {
             const char *pt = analyze_expr(s, arm->pattern);
             if (strcmp(pt, vt) != 0 &&
@@ -1070,6 +1094,33 @@ static void analyze_match(Semantic *s, ASTStmt *m)
         for (int i = 0; i < arm->body_count; i++)
             analyze_stmt(s, arm->body[i]);
         exit_scope(s);
+    }
+
+    /* Warn if matching on an enum without exhaustive coverage */
+    if (!has_wildcard) {
+        ASTEnumDef *ed = find_enum_def(s, vt);
+        if (ed) {
+            for (int v = 0; v < ed->variant_count; v++) {
+                bool covered = false;
+                for (int a = 0; a < m->match.arm_count; a++) {
+                    ASTMatchArm *arm = &m->match.arms[a];
+                    if (arm->pattern && arm->pattern->kind == EXPR_FIELD_ACCESS) {
+                        if (strcmp(arm->pattern->field_access.member,
+                                   ed->variants[v].name) == 0) {
+                            covered = true;
+                            break;
+                        }
+                    }
+                }
+                if (!covered) {
+                    fprintf(stderr, "%s:%d:%d: warning: match on enum '%s' "
+                            "missing variant '%s'\n",
+                            s->filename, m->loc.line, m->loc.col,
+                            vt, ed->variants[v].name);
+                    break;  /* one warning is enough */
+                }
+            }
+        }
     }
 }
 
@@ -1154,7 +1205,7 @@ static void analyze_function(Semantic *s, ASTFunction *func)
 
     for (int i = 0; i < func->param_count; i++) {
         ASTParam *p = &func->params[i];
-        bool is_mut = p->is_update;  /* TODO: also true for copy params */
+        bool is_mut = p->is_update || p->is_copy;
         const char *ptype = type_name_of_node(p->type_node);
 
         /* Determine size */
