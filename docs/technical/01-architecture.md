@@ -9,42 +9,48 @@ Source Code (.axis)
     │
     ▼
 ┌──────────┐
-│  Lexer   │  lexer.c (~570 lines)
+│  Lexer   │  lexer.c (~540 lines)
 │          │  Source text → Token stream
 └────┬─────┘
      │
      ▼
 ┌──────────┐
-│  Parser  │  parser.c (~1800 lines)
+│  Parser  │  parser.c (~1240 lines)
 │          │  Token stream → Abstract Syntax Tree (AST)
 └────┬─────┘
      │
      ▼
 ┌──────────────────┐
-│ Semantic Analyzer │  semantic.c (~1200 lines)
+│ Semantic Analyzer │  semantic.c (~1170 lines)
 │                  │  Type checking, scope analysis, stack layout
 └────┬─────────────┘
      │
      ▼
 ┌──────────────┐
-│ IR Generator │  irgen.c (~1700 lines)
+│ IR Generator │  irgen.c (~1400 lines)
 │              │  AST → Three-address intermediate representation
 └────┬─────────┘
      │
      ▼
+┌──────────────┐
+│  Optimizer   │  opt.c (~1510 lines)
+│              │  14-pass optimization pipeline
+└────┬─────────┘
+     │
+     ▼
 ┌──────────────────┐
-│ x64 Code Generator│  x64.c (~2000 lines)
+│ x64 Code Generator│  x64.c (~1880 lines)
 │                   │  IR → x86-64 machine code + relocations
 └────┬──────────────┘
      │
      ▼
 ┌─────────────┐
-│ PE/ELF Writer│  pe.c (~900 lines) / elf.c (~600 lines)
+│ PE/ELF Writer│  pe.c (~1020 lines) / elf.c (~810 lines)
 │             │  Machine code → Executable binary
 └─────────────┘
 ```
 
-Total: approximately 9,000 lines of C.
+Total: approximately 11,600 lines of C (10 source files, 12 headers).
 
 ## File Structure
 
@@ -56,12 +62,20 @@ Total: approximately 9,000 lines of C.
 | `parser.c` | Recursive descent parser |
 | `semantic.c` | Multi-pass type checker and scope analyzer |
 | `irgen.c` | IR instruction generator |
+| `opt.c` | 14-pass optimization pipeline |
 | `x64.c` | x86-64 native code generator |
 | `pe.c` | Windows PE32+ executable writer |
 | `elf.c` | Linux ELF64 executable writer |
 | `axis_token.h` | Token type definitions, keyword table |
 | `axis_ast.h` | AST node definitions |
 | `axis_ir.h` | IR opcode and operand definitions |
+| `axis_opt.h` | Optimizer pass declarations |
+| `axis_x64.h` | x64 code generator declarations |
+| `axis_pe.h` | PE format definitions |
+| `axis_elf.h` | ELF format definitions |
+| `axis_lexer.h` | Lexer declarations |
+| `axis_parser.h` | Parser declarations |
+| `axis_semantic.h` | Semantic analyzer declarations |
 | `axis_common.h` | Shared type system, constants |
 | `axis_arena.h` | Arena allocator header |
 

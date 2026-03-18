@@ -1,20 +1,40 @@
 # Optimizations
 
-AXCC v1.2.0 includes a multi-pass optimization pipeline. Passes run after IR generation and before (or during) x64 code emission.
+AXCC v1.2.1 includes a 14-pass optimization pipeline. Passes run after IR generation and before (or during) x64 code emission.
 
 ## Pipeline Overview
 
 ```
-IR Generation → Constant Folding → Dead Code Elimination → Load-Store Elimination → x64 Codegen
-                                                                                      ↓
-                                                                         Register Allocation
-                                                                         Strength Reduction
-                                                                         CMP+Branch Fusion
-                                                                         Spill-Reload Cache
-                                                                         Register-Aware Selection
+IR Generation → DCE → Constant Folding → Copy Propagation → Function Inlining
+                                                                    ↓
+              LICM → Loop Unrolling → Register Allocation → x64 Codegen
+                                                                ↓
+                                                   Strength Reduction
+                                                   Register-Aware Selection
+                                                   CMP+Branch Fusion
+                                                   IR Load-Store Elimination
+                                                   Spill-Reload Cache
+                                                   Peephole Optimization
+                                                   Redundant Instruction Elimination
 ```
 
-Some passes operate on the IR (constant folding, DCE, load-store elimination). Others are integrated into the x64 code generator (register allocation, strength reduction, CMP+Branch fusion, spill-reload cache).
+Some passes operate on the IR (DCE, constant folding, copy propagation, function inlining, LICM, loop unrolling, load-store elimination). Others are integrated into the x64 code generator (register allocation, strength reduction, register-aware selection, CMP+Branch fusion, spill-reload cache, peephole optimization, RIE).
+
+## 32-Bit Native Arithmetic
+
+Since AXIS integers are `i32`, AXCC generates native 32-bit x86 instructions for all integer operations. The 32-bit form is shorter, faster to decode, and implicitly zero-extends the upper 32 bits.
+
+- **`mov`** — 5-byte encoding (`mov r32, imm32`) instead of 10-byte (`movabs r64, imm64`)
+- **`add`, `sub`, `imul`, `idiv`, `cmp`** — 32-bit operand size, no REX.W prefix
+- **`cdq`** replaces `cqo` — sign-extends EAX → EDX:EAX (32-bit) instead of RAX → RDX:RAX (128-bit)
+- **Pointer and stack operations** remain 64-bit (addresses are always 64-bit on x86-64)
+
+**Impact on binary size:**
+
+| Benchmark           | v1.2.0 | v1.2.1 | Savings |
+|---------------------|--------|--------|---------|
+| Recursive Fibonacci | 2.5 KB | 2.0 KB | -20%    |
+| Prime Count         | 3.5 KB | 3.0 KB | -14%    |
 
 ## IR-Level Passes
 
@@ -39,6 +59,22 @@ Applies to `+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `<<`, `>>` and comparison ope
 ### Dead Code Elimination
 
 Unreachable code after `return`, `stop`, or `break` is removed from the IR. Constant conditions (`if true:`, `if false:`) are resolved — the dead branch is eliminated entirely.
+
+### Copy Propagation
+
+When a value is copied between temporaries or registers (`mov rbx, rax`), subsequent uses of `rbx` are replaced with `rax` where possible. This exposes more opportunities for dead code elimination.
+
+### Function Inlining
+
+Small leaf functions (no calls, small body) are inlined at the call site, eliminating call/return overhead and enabling cross-function optimization.
+
+### Loop-Invariant Code Motion (LICM)
+
+Expressions whose operands don't change inside a loop are hoisted before the loop header. Avoids redundant recomputation on every iteration.
+
+### Loop Unrolling
+
+Small fixed-count loops are unrolled to reduce branch overhead and enable further peephole optimization across iterations.
 
 ### Load-Store Elimination
 
@@ -87,7 +123,7 @@ mov  eax, [rbp-X]
 test eax, eax
 jz   .else
 
-; After (v1.2.0):
+; After (v1.2.1):
 cmp  eax, ebx
 jge  .else
 ```
@@ -106,13 +142,21 @@ The x64 backend uses physical register assignments directly:
 - Redundant `MOV` instructions are suppressed
 - For commutative operations (ADD, MUL, AND, OR, XOR), operands are swapped to match the destination register, avoiding an extra move
 
+### Peephole Optimization
+
+Scans the emitted instruction stream and eliminates redundant patterns: `mov rax, rax` (self-moves), `add rax, 0` (identity arithmetic), back-to-back complementary operations.
+
+### Redundant Instruction Elimination
+
+Post-emission pass that removes instructions whose results are immediately overwritten or never used.
+
 ## Impact
 
 See [Benchmarks](../Benchmarks.md) for measurements. In summary:
 
-| Benchmark | v1.1.0 → v1.2.0 | vs GCC `-O0` |
+| Benchmark | v1.1.0 → v1.2.1 | vs GCC `-O0` |
 |-----------|-----------------|---------------|
-| Fibonacci | 1.3× faster | 1.3× slower |
-| Primes | 1.7× faster | 1.1× slower |
-| Nested Loops | 1.4× faster | 1.1× slower |
-| GCD Stress | 1.1× faster | 1.1× slower |
+| Fibonacci | 1.88× faster | 1.11× slower |
+| Primes | 2.09× faster | ~parity |
+| Nested Loops | 1.85× faster | 1.09× slower |
+| GCD Stress | 1.52× faster | **0.96× faster** |

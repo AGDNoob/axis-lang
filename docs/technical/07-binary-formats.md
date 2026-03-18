@@ -104,3 +104,7 @@ Typical AXIS executables are very small because there is no runtime, no standard
 
 - Windows PE: ~3 KB
 - Linux ELF: ~2–3 KB
+
+## Next
+
+[Optimizations](08-optimizations.md)
