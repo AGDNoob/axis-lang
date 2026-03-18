@@ -15,8 +15,8 @@
 /* ── Compiler version ─────────────────────────────────────── */
 #define AXIS_VERSION_MAJOR 1
 #define AXIS_VERSION_MINOR 2
-#define AXIS_VERSION_PATCH 0
-#define AXIS_VERSION_STR   "1.2.0"
+#define AXIS_VERSION_PATCH 1
+#define AXIS_VERSION_STR   "1.2.1"
 
 /* ── Utility macros ───────────────────────────────────────── */
 #define AXIS_ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))

@@ -495,10 +495,17 @@ static int compile_to_exe(const char *input_path, const char *output_path,
     if (ast->mode == MODE_COMPILE) {
         if (opts->verbose) fprintf(stderr, "[axis] running optimization passes...\n");
         opt_dce(&ir);
+        opt_inline(&ir);
         opt_constfold(&ir);
+        opt_copyprop(&ir);
         opt_strength_reduce(&ir);
+        opt_peephole(&ir);
         opt_loadstore_elim(&ir);
-        opt_dce(&ir);   /* second DCE pass to clean up after folding */
+        opt_licm(&ir);
+        opt_unroll(&ir);
+        opt_loadstore_elim(&ir); /* re-run after unrolling */
+        opt_rie(&ir);
+        opt_dce(&ir);            /* final cleanup */
     } else if (opts->verbose) {
         fprintf(stderr, "[axis] skipping optimizations (script mode)\n");
     }
