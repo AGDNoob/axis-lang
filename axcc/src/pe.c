@@ -430,6 +430,7 @@ typedef struct {
     int fmt_lld_in; /* "%lld"  (for scanf) */
     int fmt_buf;    /* 256-byte input buffer */
     int read_failed_flag; /* 1-byte flag for read_failed() */
+    int fmt_div_zero;       /* "runtime error: division by zero\n" */
 } RtFormats;
 
 /* Add runtime format strings to the rdata provided by x64 codegen.
@@ -474,6 +475,8 @@ static RtFormats add_rt_formats(uint8_t **rdata, int *rdata_len, int *rdata_cap)
     rf.read_failed_flag = *rdata_len;
     (*rdata)[*rdata_len] = 0;
     *rdata_len += 1;
+
+    RT_ADD_STR(fmt_div_zero, "runtime error: division by zero\n");
 
 #undef RT_ADD_STR
     return rf;
@@ -583,6 +586,7 @@ typedef struct {
     int read_char_off;
     int memcpy_off;
     int read_failed_off;
+    int div_zero_off;
 } StubOffsets;
 
 static StubOffsets gen_stubs(StubBuf *sb,
@@ -753,6 +757,20 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0x5F);  /* pop rdi */
     sb_emit_ret(sb);
 
+    /* ── __axis_div_zero: print error message and exit(1) ──── */
+    so.div_zero_off = base + sb->len;
+    sb_emit_lea_rip(sb, RCX, rdata_rva, rf->fmt_div_zero,
+                    text_rva, base);   /* error msg → rcx (arg1) */
+    sb_emit_sub_rsp_40(sb);
+    sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_PRINTF],
+                     text_rva, base);
+    sb_emit_add_rsp_40(sb);
+    sb_emit8(sb, 0xB9); sb_emit8(sb, 0x01); sb_emit8(sb, 0x00);
+    sb_emit8(sb, 0x00); sb_emit8(sb, 0x00); /* mov ecx, 1 */
+    sb_emit_sub_rsp_40(sb);
+    sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_EXIT],
+                     text_rva, base);
+
     /* ── entry point stub: call __axis_top_level, then exit(0) ── */
     /* This is NOT in StubOffsets; we handle it separately. */
 
@@ -786,6 +804,7 @@ static void patch_runtime_relocs(X64Ctx *x64_mut, const StubOffsets *so)
         else if (strcmp(r->target_sym, "__axis_read_char") == 0)  target = so->read_char_off;
         else if (strcmp(r->target_sym, "__axis_read_failed") == 0) target = so->read_failed_off;
         else if (strcmp(r->target_sym, "__axis_memcpy") == 0)     target = so->memcpy_off;
+        else if (strcmp(r->target_sym, "__axis_div_zero") == 0)    target = so->div_zero_off;
         else continue; /* user function – should already be resolved */
 
         int from = r->offset + 4;
@@ -1028,8 +1047,8 @@ int pe_write(PECtx *ctx, const X64Ctx *x64)
     memset(&opt, 0, sizeof(opt));
     opt.Magic                       = 0x020B;  /* PE32+ */
     opt.MajorLinkerVersion          = 1;
-    opt.SizeOfCode                  = text_raw_size;
-    opt.SizeOfInitializedData       = rdata_raw_size + idata_raw_size;
+    opt.SizeOfCode                  = ctx->text_size;
+    opt.SizeOfInitializedData       = ctx->rdata_size + ctx->idata_size;
     opt.AddressOfEntryPoint         = ctx->entry_rva;
     opt.BaseOfCode                  = ctx->text_rva;
     opt.ImageBase                   = PE_IMAGE_BASE;
@@ -1076,7 +1095,7 @@ int pe_write(PECtx *ctx, const X64Ctx *x64)
     sh.VirtualAddress  = ctx->rdata_rva;
     sh.SizeOfRawData   = rdata_raw_size;
     sh.PointerToRawData = ctx->rdata_raw;
-    sh.Characteristics = 0xC0000040; /* INITIALIZED_DATA | READ | WRITE */
+    sh.Characteristics = 0x40000040; /* INITIALIZED_DATA | READ */
     buf_write(ctx, &sh, sizeof(sh));
 
     /* .idata */

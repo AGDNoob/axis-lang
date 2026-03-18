@@ -268,6 +268,7 @@ typedef struct {
     const char  *name;
     ASTTypeNode *type_node;
     bool         is_update;     /* "update" modifier on parameter */
+    bool         is_copy;       /* "copy" modifier on parameter   */
     int          stack_offset;  /* filled by semantic pass */
     SrcLoc       loc;
 } ASTParam;

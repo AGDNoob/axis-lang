@@ -126,8 +126,8 @@ typedef struct {
     int true_off;       /* offset within .data of "true\0"   */
     int false_off;      /* offset within .data of "false\0"  */
     int buf_off;        /* offset within .data of 256B input buffer */
-    int flag_off;       /* offset within .data of read_failed flag  */
-    int total;          /* total .data size including additions     */
+    int flag_off;       /* offset within .data of read_failed flag  */    int div_zero_off;    /* offset within .data of div-by-zero msg  */
+    int div_zero_len;    /* length of div-by-zero message (no NUL)  */    int total;          /* total .data size including additions     */
 } RtData;
 
 static void init_rt_data(RtData *rt, int rdata_len)
@@ -137,6 +137,9 @@ static void init_rt_data(RtData *rt, int rdata_len)
     rt->false_off = off; off += 6;    /* "false\0" */
     rt->buf_off   = off; off += 256;  /* input buffer */
     rt->flag_off  = off; off += 1;    /* read_failed flag */
+    rt->div_zero_off = off;
+    rt->div_zero_len = 32;
+    off += 33;                            /* "runtime error: division by zero\n\0" */
     rt->total     = off;
 }
 
@@ -155,6 +158,7 @@ typedef struct {
     int read_char_off;
     int read_failed_off;
     int memcpy_off;
+    int div_zero_off;
 } StubOffsets;
 
 /* ═════════════════════════════════════════════════════════════
@@ -583,6 +587,28 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0x5F);                                          /* pop rdi        */
     sb_emit_ret(sb);
 
+    /* ────────────────────────────────────────────────────────
+     * __axis_div_zero  –  print error message and exit(1)
+     * ──────────────────────────────────────────────────────── */
+    so.div_zero_off = base + sb->len;
+
+    /* lea rsi, [rip + div_zero_msg]   (message pointer) */
+    sb_emit_lea_rip(sb, 6 /*RSI*/, data_va, rt->div_zero_off,
+                    text_va, base);
+    /* mov edx, msg_len */
+    sb_emit8(sb, 0xBA);
+    sb_emit32(sb, (uint32_t)rt->div_zero_len);
+    /* mov edi, 2   (stderr) */
+    sb_emit8(sb, 0xBF); sb_emit32(sb, 2);
+    /* mov eax, 1   (SYS_WRITE) */
+    sb_emit8(sb, 0xB8); sb_emit32(sb, SYS_WRITE);
+    sb_emit_syscall(sb);
+    /* mov edi, 1   (exit code) */
+    sb_emit8(sb, 0xBF); sb_emit32(sb, 1);
+    /* mov eax, 60  (SYS_EXIT) */
+    sb_emit8(sb, 0xB8); sb_emit32(sb, SYS_EXIT);
+    sb_emit_syscall(sb);
+
     return so;
 }
 
@@ -685,6 +711,7 @@ static void patch_runtime_relocs(X64Ctx *x64_mut, const StubOffsets *so)
         else if (strcmp(r->target_sym, "__axis_read_char") == 0)   target = so->read_char_off;
         else if (strcmp(r->target_sym, "__axis_read_failed") == 0) target = so->read_failed_off;
         else if (strcmp(r->target_sym, "__axis_memcpy") == 0)      target = so->memcpy_off;
+        else if (strcmp(r->target_sym, "__axis_div_zero") == 0)    target = so->div_zero_off;
         else continue;  /* user function – already resolved */
 
         int from = r->offset + 4;
@@ -777,6 +804,7 @@ int elf_write(ELFCtx *ctx, const X64Ctx *x64)
         memcpy(data_buf, x64->rdata, (size_t)x64->rdata_len);
     memcpy(data_buf + rt.true_off,  "true",  5);
     memcpy(data_buf + rt.false_off, "false", 6);
+    memcpy(data_buf + rt.div_zero_off, "runtime error: division by zero\n", 33);
     /* buffer and flag are already zero from calloc */
 
     /* ── Entry point VA ──────────────────────────────────────── */

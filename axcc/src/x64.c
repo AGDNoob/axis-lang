@@ -157,6 +157,13 @@ static uint8_t rex(int w, int r, int x, int b)
                      (x > 7 ? 2 : 0) | (b > 7 ? 1 : 0));
 }
 
+/* Emit REX for 32-bit operation: only needed when any reg > 7 */
+static void emit_rex32(CodeBuf *cb, int r, int x, int b)
+{
+    if (r > 7 || x > 7 || b > 7)
+        cb_emit8(cb, rex(0, r, x, b));
+}
+
 /* ModRM byte builder */
 static uint8_t modrm(int mod, int reg, int rm)
 {
@@ -167,13 +174,15 @@ static uint8_t modrm(int mod, int reg, int rm)
  * Stack slot helpers
  *
  * Variables occupy [rbp + stack_off] where stack_off is negative.
- * Temps live below the variable area:
- *   temp 0 → [rbp - var_area - 8], temp 1 → [rbp - var_area - 16], etc.
+ * Temps live below the variable area (spilled temps only):
+ *   spill slot 0 → [rbp - var_area - 8], slot 1 → [rbp - var_area - 16], etc.
+ *   Register-allocated temps have no stack slot.
  * ═════════════════════════════════════════════════════════════ */
 
 static int temp_rbp_off(const X64Ctx *ctx, int temp_id)
 {
-    return -(ctx->var_area_size + (temp_id + 1) * 8);
+    int slot = ctx->spill_map[temp_id];
+    return -(ctx->var_area_size + (slot + 1) * 8);
 }
 
 /* ═════════════════════════════════════════════════════════════
@@ -181,10 +190,18 @@ static int temp_rbp_off(const X64Ctx *ctx, int temp_id)
  * ═════════════════════════════════════════════════════════════ */
 
 /*
- * emit_mov_reg_reg(cb, dst, src)  –  mov dst, src  (64-bit)
- * Encoding: REX.W + 89 /r  (mov r/m64, r64)
+ * emit_mov_reg_reg(cb, dst, src)  –  mov dst, src  (32-bit)
+ * Encoding: [REX] 89 /r  (mov r/m32, r32)
  */
 static void emit_mov_reg_reg(CodeBuf *cb, int dst, int src)
+{
+    emit_rex32(cb, src, 0, dst);
+    cb_emit8(cb, 0x89);
+    cb_emit8(cb, modrm(3, src, dst));
+}
+
+/* 64-bit variant for prologue/epilogue pointer operations */
+static void emit_mov_reg_reg64(CodeBuf *cb, int dst, int src)
 {
     cb_emit8(cb, rex(1, src, 0, dst));
     cb_emit8(cb, 0x89);
@@ -225,8 +242,8 @@ static void emit_load_imm(CodeBuf *cb, int reg, int64_t val)
             cb_emit8(cb, rex(0, reg, 0, reg));
         cb_emit8(cb, 0x31);
         cb_emit8(cb, modrm(3, reg, reg));
-    } else if (val > 0 && val <= 0x7FFFFFFF) {
-        emit_mov_reg_imm32(cb, reg, (int32_t)val);
+    } else if (val >= -0x80000000LL && val <= 0x7FFFFFFFLL) {
+        emit_mov_reg_imm32(cb, reg, (int32_t)(uint32_t)val);
     } else {
         emit_mov_reg_imm64(cb, reg, val);
     }
@@ -241,9 +258,18 @@ static void emit_load_imm(CodeBuf *cb, int reg, int64_t val)
  */
 static void emit_load_rbp(CodeBuf *cb, int dst, int off)
 {
+    emit_rex32(cb, dst, 0, RBP);
+    cb_emit8(cb, 0x8B);                    /* mov r32, r/m32 */
+    cb_emit8(cb, modrm(2, dst, RBP));      /* mod=10 (disp32), rm=rbp */
+    cb_emit32(cb, (uint32_t)off);
+}
+
+/* 64-bit variant for callee-save / pointer loads */
+static void emit_load_rbp64(CodeBuf *cb, int dst, int off)
+{
     cb_emit8(cb, rex(1, dst, 0, RBP));
     cb_emit8(cb, 0x8B);                    /* mov r64, r/m64 */
-    cb_emit8(cb, modrm(2, dst, RBP));      /* mod=10 (disp32), rm=rbp */
+    cb_emit8(cb, modrm(2, dst, RBP));
     cb_emit32(cb, (uint32_t)off);
 }
 
@@ -252,6 +278,15 @@ static void emit_load_rbp(CodeBuf *cb, int dst, int off)
  *   mov [rbp + offset], src_reg   (64-bit store)
  */
 static void emit_store_rbp(CodeBuf *cb, int off, int src)
+{
+    emit_rex32(cb, src, 0, RBP);
+    cb_emit8(cb, 0x89);                    /* mov r/m32, r32 */
+    cb_emit8(cb, modrm(2, src, RBP));
+    cb_emit32(cb, (uint32_t)off);
+}
+
+/* 64-bit variant for callee-save / pointer stores */
+static void emit_store_rbp64(CodeBuf *cb, int off, int src)
 {
     cb_emit8(cb, rex(1, src, 0, RBP));
     cb_emit8(cb, 0x89);                    /* mov r/m64, r64 */
@@ -284,13 +319,14 @@ static void emit_load_rbp_sx(CodeBuf *cb, int dst, int off, int size)
         cb_emit32(cb, (uint32_t)off);
         break;
     case 4:
-        cb_emit8(cb, rex(1, dst, 0, RBP));  /* REX.W */
-        cb_emit8(cb, 0x63);                  /* movsxd r64, r/m32 */
+        /* mov r32, dword [rbp+off] — 32-bit load, implicit zero-extend */
+        emit_rex32(cb, dst, 0, RBP);
+        cb_emit8(cb, 0x8B);
         cb_emit8(cb, modrm(2, dst, RBP));
         cb_emit32(cb, (uint32_t)off);
         break;
     default: /* 8 or unknown */
-        emit_load_rbp(cb, dst, off);
+        emit_load_rbp64(cb, dst, off);
         break;
     }
 }
@@ -326,7 +362,7 @@ static void emit_load_rbp_zx(CodeBuf *cb, int dst, int off, int size)
         cb_emit32(cb, (uint32_t)off);
         break;
     default:
-        emit_load_rbp(cb, dst, off);
+        emit_load_rbp64(cb, dst, off);
         break;
     }
 }
@@ -372,7 +408,7 @@ static void emit_store_rbp_sz(CodeBuf *cb, int off, int src, int size)
         cb_emit32(cb, (uint32_t)off);
         break;
     default: /* 8 or unknown */
-        emit_store_rbp(cb, off, src);
+        emit_store_rbp64(cb, off, src);
         break;
     }
 }
@@ -517,27 +553,27 @@ static int dest_reg(const X64Ctx *ctx, const IROper *dest, int fallback)
 
 /* ── ALU helpers (reg = reg OP reg) ──────────────────────── */
 
-/* Two-operand ALU: op rax, rcx (64-bit) */
+/* Two-operand ALU: op eax, ecx (32-bit) */
 static void emit_alu_rr(CodeBuf *cb, uint8_t opcode, int dst, int src)
 {
-    cb_emit8(cb, rex(1, src, 0, dst));
+    emit_rex32(cb, src, 0, dst);
     cb_emit8(cb, opcode);
     cb_emit8(cb, modrm(3, src, dst));
 }
 
-/* neg rax (64-bit) */
+/* neg eax (32-bit) */
 static void emit_neg_reg(CodeBuf *cb, int reg)
 {
-    cb_emit8(cb, rex(1, 0, 0, reg));
+    emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0xF7);
     cb_emit8(cb, modrm(3, 3, reg));     /* /3 = neg */
 }
 
-/* not rax (64-bit) */
+/* not eax (32-bit) */
 __attribute__((unused))
 static void emit_not_reg(CodeBuf *cb, int reg)
 {
-    cb_emit8(cb, rex(1, 0, 0, reg));
+    emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0xF7);
     cb_emit8(cb, modrm(3, 2, reg));     /* /2 = not */
 }
@@ -548,10 +584,10 @@ static void emit_cmp_rr(CodeBuf *cb, int a, int b)
     emit_alu_rr(cb, 0x39, a, b);   /* cmp r/m64, r64 */
 }
 
-/* test reg, reg (64-bit) */
+/* test reg, reg (32-bit) */
 static void emit_test_rr(CodeBuf *cb, int a, int b)
 {
-    cb_emit8(cb, rex(1, b, 0, a));
+    emit_rex32(cb, b, 0, a);
     cb_emit8(cb, 0x85);
     cb_emit8(cb, modrm(3, b, a));
 }
@@ -564,10 +600,9 @@ static void emit_setcc(CodeBuf *cb, uint8_t cc)
     cb_emit8(cb, modrm(3, 0, RAX));     /* ModRM for al */
 }
 
-/* movzx rax, al */
+/* movzx eax, al — no REX needed (RAX = reg 0) */
 static void emit_movzx_rax_al(CodeBuf *cb)
 {
-    cb_emit8(cb, rex(1, RAX, 0, RAX));
     cb_emit8(cb, 0x0F);
     cb_emit8(cb, 0xB6);
     cb_emit8(cb, modrm(3, RAX, RAX));
@@ -654,6 +689,36 @@ static void emit_add_rsp_imm32(CodeBuf *cb, int32_t val)
     cb_emit32(cb, (uint32_t)val);
 }
 
+/* ── sub reg, imm32  (32-bit) ───────────────────────────── */
+
+static void emit_sub_reg_imm32(CodeBuf *cb, int reg, int32_t val)
+{
+    emit_rex32(cb, 0, 0, reg);
+    cb_emit8(cb, 0x81);
+    cb_emit8(cb, modrm(3, 5, reg));    /* /5 = sub */
+    cb_emit32(cb, (uint32_t)val);
+}
+
+/* ── cmp reg, imm32  (32-bit) ───────────────────────────── */
+
+static void emit_cmp_reg_imm32(CodeBuf *cb, int reg, int32_t val)
+{
+    emit_rex32(cb, 0, 0, reg);
+    cb_emit8(cb, 0x81);
+    cb_emit8(cb, modrm(3, 7, reg));    /* /7 = cmp */
+    cb_emit32(cb, (uint32_t)val);
+}
+
+/* ── add reg, imm32  (32-bit) ───────────────────────────── */
+
+static void emit_add_reg_imm32(CodeBuf *cb, int reg, int32_t val)
+{
+    emit_rex32(cb, 0, 0, reg);
+    cb_emit8(cb, 0x81);
+    cb_emit8(cb, modrm(3, 0, reg));    /* /0 = add */
+    cb_emit32(cb, (uint32_t)val);
+}
+
 /* ── LEA reg, [rbp + disp32] ────────────────────────────── */
 
 static void emit_lea_rbp(CodeBuf *cb, int dst, int off)
@@ -668,8 +733,8 @@ static void emit_lea_rbp(CodeBuf *cb, int dst, int off)
 
 static void emit_shift_cl(CodeBuf *cb, int reg, uint8_t ext)
 {
-    /* REX.W + D3 /ext  → shift r64 by CL */
-    cb_emit8(cb, rex(1, 0, 0, reg));
+    /* D3 /ext  → shift r32 by CL */
+    emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0xD3);
     cb_emit8(cb, modrm(3, ext, reg));
 }
@@ -678,7 +743,7 @@ static void emit_shift_cl(CodeBuf *cb, int reg, uint8_t ext)
 
 static void emit_imul_rr(CodeBuf *cb, int dst, int src)
 {
-    cb_emit8(cb, rex(1, dst, 0, src));
+    emit_rex32(cb, dst, 0, src);
     cb_emit8(cb, 0x0F);
     cb_emit8(cb, 0xAF);
     cb_emit8(cb, modrm(3, dst, src));
@@ -697,8 +762,8 @@ static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
     case 8: ss = 3; break;
     default: return;
     }
-    /* REX.W + 8D /r with SIB: [base + index*scale] */
-    cb_emit8(cb, rex(1, dst, src, src));
+    /* 8D /r with SIB: [base + index*scale] (32-bit) */
+    emit_rex32(cb, dst, src, src);
     cb_emit8(cb, 0x8D);
     /* ModRM: mod depends on base (RBP/R13 need mod=01+disp8) */
     int mod = ((src & 7) == 5) ? 1 : 0;
@@ -709,15 +774,14 @@ static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
 
 /* ── idiv rcx (signed 64-bit divide: rdx:rax / rcx) ────── */
 
-static void emit_cqo(CodeBuf *cb)
+static void emit_cdq(CodeBuf *cb)
 {
-    cb_emit8(cb, rex(1, 0, 0, 0));  /* REX.W */
-    cb_emit8(cb, 0x99);             /* CQO: sign-extend rax → rdx:rax */
+    cb_emit8(cb, 0x99);             /* CDQ: sign-extend eax → edx:eax */
 }
 
 static void emit_idiv_reg(CodeBuf *cb, int reg)
 {
-    cb_emit8(cb, rex(1, 0, 0, reg));
+    emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0xF7);
     cb_emit8(cb, modrm(3, 7, reg)); /* /7 = idiv */
 }
@@ -808,6 +872,7 @@ static const char *RT_READ_LINE   = "__axis_read_line";
 static const char *RT_READ_CHAR   = "__axis_read_char";
 static const char *RT_READ_FAILED = "__axis_read_failed";
 static const char *RT_MEMCPY      = "__axis_memcpy";
+static const char *RT_DIV_ZERO    = "__axis_div_zero";
 
 /* ── Emit a call to a named function (relocation-based) ── */
 
@@ -941,14 +1006,22 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     /* ── Arithmetic ──────────────────────────────────────── */
     case IR_ADD: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        int s2r = oper_phys(ctx, &ins->src2);
-        const IROper *a = &ins->src1, *b = &ins->src2;
-        /* commutative: if dest==src2 reg, swap so load_oper is NOP */
-        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
-        load_oper(ctx, dr, a);
-        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
-        if (s2 != s2r) load_oper(ctx, s2, b);
-        emit_alu_rr(cb, 0x01, dr, s2);  /* add dr, s2 */
+        /* Check if either operand is an immediate (commutative) */
+        const IROper *imm_op = NULL, *reg_op = NULL;
+        if (ins->src2.kind == OPER_IMM) { imm_op = &ins->src2; reg_op = &ins->src1; }
+        else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
+        if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
+            load_oper(ctx, dr, reg_op);
+            emit_add_reg_imm32(cb, dr, (int32_t)imm_op->imm);
+        } else {
+            int s2r = oper_phys(ctx, &ins->src2);
+            const IROper *a = &ins->src1, *b = &ins->src2;
+            if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+            load_oper(ctx, dr, a);
+            int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+            if (s2 != s2r) load_oper(ctx, s2, b);
+            emit_alu_rr(cb, 0x01, dr, s2);
+        }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr);
         break;
@@ -956,13 +1029,23 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
 
     case IR_SUB: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        int s2r = oper_phys(ctx, &ins->src2);
-        /* non-commutative: if dest reg == src2 reg, fall back to RAX */
-        if (s2r == dr) dr = RAX;
-        load_oper(ctx, dr, &ins->src1);
-        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
-        if (s2 != s2r) load_oper(ctx, s2, &ins->src2);
-        emit_alu_rr(cb, 0x29, dr, s2);  /* sub dr, s2 */
+        if (ins->src2.kind == OPER_IMM) {
+            int64_t v = ins->src2.imm;
+            load_oper(ctx, dr, &ins->src1);
+            if (v >= INT32_MIN && v <= INT32_MAX) {
+                emit_sub_reg_imm32(cb, dr, (int32_t)v);
+            } else {
+                load_oper(ctx, RCX, &ins->src2);
+                emit_alu_rr(cb, 0x29, dr, RCX);
+            }
+        } else {
+            int s2r = oper_phys(ctx, &ins->src2);
+            if (s2r == dr) dr = RAX;
+            load_oper(ctx, dr, &ins->src1);
+            int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+            if (s2 != s2r) load_oper(ctx, s2, &ins->src2);
+            emit_alu_rr(cb, 0x29, dr, s2);
+        }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr);
         break;
@@ -1003,13 +1086,16 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     case IR_DIV:
         load_oper(ctx, RAX, &ins->src1);
         load_oper(ctx, RCX, &ins->src2);
+        emit_test_rr(cb, RCX, RCX);          /* test ecx, ecx */
+        cb_emit8(cb, 0x75); cb_emit8(cb, 5); /* jnz +5 (skip call) */
+        emit_call_sym(ctx, RT_DIV_ZERO);
         if (ins->extra) {
-            emit_alu_rr(cb, 0x31, RDX, RDX); /* xor rdx, rdx */
-            cb_emit8(cb, rex(1, 0, 0, RCX));
+            emit_alu_rr(cb, 0x31, RDX, RDX); /* xor edx, edx */
+            emit_rex32(cb, 0, 0, RCX);
             cb_emit8(cb, 0xF7);
-            cb_emit8(cb, modrm(3, 6, RCX));   /* div rcx */
+            cb_emit8(cb, modrm(3, 6, RCX));   /* div ecx */
         } else {
-            emit_cqo(cb);
+            emit_cdq(cb);
             emit_idiv_reg(cb, RCX);
         }
         if (ins->dest.kind == OPER_TEMP)
@@ -1019,13 +1105,16 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     case IR_MOD:
         load_oper(ctx, RAX, &ins->src1);
         load_oper(ctx, RCX, &ins->src2);
+        emit_test_rr(cb, RCX, RCX);          /* test ecx, ecx */
+        cb_emit8(cb, 0x75); cb_emit8(cb, 5); /* jnz +5 (skip call) */
+        emit_call_sym(ctx, RT_DIV_ZERO);
         if (ins->extra) {
-            emit_alu_rr(cb, 0x31, RDX, RDX); /* xor rdx, rdx */
-            cb_emit8(cb, rex(1, 0, 0, RCX));
+            emit_alu_rr(cb, 0x31, RDX, RDX); /* xor edx, edx */
+            emit_rex32(cb, 0, 0, RCX);
             cb_emit8(cb, 0xF7);
-            cb_emit8(cb, modrm(3, 6, RCX));   /* div rcx */
+            cb_emit8(cb, modrm(3, 6, RCX));   /* div ecx */
         } else {
-            emit_cqo(cb);
+            emit_cdq(cb);
             emit_idiv_reg(cb, RCX);
         }
         emit_mov_reg_reg(cb, RAX, RDX);
@@ -1116,13 +1205,18 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     case IR_CMP_GE: {
         /* Load operands using register-aware approach */
         int s1r = oper_phys(ctx, &ins->src1);
-        int s2r = oper_phys(ctx, &ins->src2);
         int r1 = (s1r >= 0) ? s1r : RAX;
-        int r2 = (s2r >= 0 && s2r != r1) ? s2r : RCX;
-        if (r1 == r2) { r1 = RAX; r2 = RCX; }
         if (s1r < 0 || s1r != r1) load_oper(ctx, r1, &ins->src1);
-        if (s2r < 0 || s2r != r2) load_oper(ctx, r2, &ins->src2);
-        emit_cmp_rr(cb, r1, r2);
+        if (ins->src2.kind == OPER_IMM &&
+            ins->src2.imm >= INT32_MIN && ins->src2.imm <= INT32_MAX) {
+            emit_cmp_reg_imm32(cb, r1, (int32_t)ins->src2.imm);
+        } else {
+            int s2r = oper_phys(ctx, &ins->src2);
+            int r2 = (s2r >= 0 && s2r != r1) ? s2r : RCX;
+            if (r1 == r2) { r1 = RAX; r2 = RCX; load_oper(ctx, r1, &ins->src1); }
+            if (s2r < 0 || s2r != r2) load_oper(ctx, r2, &ins->src2);
+            emit_cmp_rr(cb, r1, r2);
+        }
 
         /* Map opcode to condition code */
         uint8_t cc;
@@ -1245,28 +1339,20 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
 
     /* ── CALL ────────────────────────────────────────────── */
     case IR_CALL: {
-        int nargs = (int)ins->src2.imm;
-        int shadow = 32;
-        int extra_args = (nargs > 4) ? (nargs - 4) * 8 : 0;
-        int alloc = AXIS_ALIGN(shadow + extra_args, 16);
-
-        /* Allocate shadow + stack-arg space FIRST so that stores
-         * to [rsp+32..] land in the correct caller-frame area. */
-        emit_sub_rsp_imm32(cb, alloc);
+        /* Shadow + stack-arg space is pre-allocated in the frame.
+         * Just load arguments and emit the call. */
 
         /* Walk backwards through the preceding IR_ARG instructions
          * and emit register loads / stack stores now. */
         {
-            /* Find index of this IR_CALL in the function's instruction array */
             int call_idx = (int)(ins - fn->instrs);
             for (int a = call_idx - 1; a >= 0 && fn->instrs[a].op == IR_ARG; a--) {
                 const IRInstr *ai = &fn->instrs[a];
                 int arg_idx = (int)ai->dest.imm;
-                load_oper(ctx, RAX, &ai->src1);
                 if (arg_idx < 4) {
-                    emit_mov_reg_reg(cb, win64_arg_regs[arg_idx], RAX);
+                    load_oper(ctx, win64_arg_regs[arg_idx], &ai->src1);
                 } else {
-                    /* Store at [rsp + arg_idx*8] inside the allocated area */
+                    load_oper(ctx, RAX, &ai->src1);
                     emit_store_mem(cb, RSP, (int32_t)(arg_idx * 8), RAX);
                 }
             }
@@ -1279,8 +1365,6 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             x64_error("IR_CALL with non-function operand");
         }
 
-        emit_add_rsp_imm32(cb, alloc);
-
         /* Result in RAX → store to dest */
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, RAX);
@@ -1290,12 +1374,20 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     /* ── RET ─────────────────────────────────────────────── */
     case IR_RET:
         load_oper(ctx, RAX, &ins->src1);
-        emit_epilogue(ctx);
+        __attribute__((fallthrough));
+    case IR_RET_VOID: {
+        int lbl = ctx->epilogue_label;
+        int target = get_label(ctx, lbl);
+        if (target >= 0) {
+            cb_emit8(cb, 0xE9);
+            int from = cb_pos(cb) + 4;
+            cb_emit32(cb, (uint32_t)(target - from));
+        } else {
+            int patch = emit_jmp_rel32(cb);
+            add_reloc(ctx, RELOC_REL32, patch, NULL, lbl, 0);
+        }
         break;
-
-    case IR_RET_VOID:
-        emit_epilogue(ctx);
-        break;
+    }
 
     /* ── WRITE (built-in I/O) ────────────────────────────── */
     case IR_WRITE: {
@@ -1306,9 +1398,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         /* Prepare argument: value in RCX (first arg, Win64) */
         emit_mov_reg_reg(cb, RCX, RAX);
 
-        /* Shadow space */
-        emit_sub_rsp_imm32(cb, 32);
-
+        /* Shadow space is pre-allocated in the frame */
         switch (ins->extra) {
         case 1:  emit_call_sym(ctx, RT_WRITE_STR);  break;
         case 2:  emit_call_sym(ctx, RT_WRITE_BOOL); break;
@@ -1320,24 +1410,19 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         if (ins->dest.imm) {
             emit_call_sym(ctx, RT_WRITE_NL);
         }
-
-        emit_add_rsp_imm32(cb, 32);
         break;
     }
 
     /* ── READ (built-in I/O) ─────────────────────────────── */
     case IR_READ: {
         /* dest = result temp, src1.imm = read kind */
-        emit_sub_rsp_imm32(cb, 32);
-
+        /* Shadow space is pre-allocated in the frame */
         switch ((int)ins->src1.imm) {
         case 1:  emit_call_sym(ctx, RT_READ_LINE);   break; /* readln */
         case 2:  emit_call_sym(ctx, RT_READ_CHAR);   break; /* readchar */
         case 3:  emit_call_sym(ctx, RT_READ_FAILED); break; /* read_failed */
         default: emit_call_sym(ctx, RT_READ_I64);    break; /* read */
         }
-
-        emit_add_rsp_imm32(cb, 32);
 
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, RAX);
@@ -1555,9 +1640,12 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             /* copy.compile — inline byte-copy loop (no call overhead) */
             /* test r8, r8 */
             cb_emit8(cb, 0x4D); cb_emit8(cb, 0x85); cb_emit8(cb, 0xC0);
-            /* jz +16 (skip loop) */
-            cb_emit8(cb, 0x74); cb_emit8(cb, 0x10);
+            /* jz skip (patch offset below) */
+            cb_emit8(cb, 0x74);
+            int jz_patch = cb->len;
+            cb_emit8(cb, 0x00); /* placeholder */
             /* loop: movzx eax, byte [rdx] */
+            int loop_top = cb->len;
             cb_emit8(cb, 0x0F); cb_emit8(cb, 0xB6); cb_emit8(cb, 0x02);
             /* mov [rcx], al */
             cb_emit8(cb, 0x88); cb_emit8(cb, 0x01);
@@ -1567,13 +1655,15 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             cb_emit8(cb, 0x48); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC2);
             /* dec r8 */
             cb_emit8(cb, 0x49); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC8);
-            /* jnz -16 (back to loop) */
-            cb_emit8(cb, 0x75); cb_emit8(cb, 0xF0);
+            /* jnz loop_top */
+            cb_emit8(cb, 0x75);
+            cb_emit8(cb, (uint8_t)(loop_top - (cb->len + 1)));
+            /* patch jz to skip past loop */
+            cb->data[jz_patch] = (uint8_t)(cb->len - (jz_patch + 1));
         } else {
             /* copy.runtime — REP MOVSB via runtime stub */
-            emit_sub_rsp_imm32(cb, 32);
+            /* Shadow space is pre-allocated in the frame */
             emit_call_sym(ctx, RT_MEMCPY);
-            emit_add_rsp_imm32(cb, 32);
         }
         break;
     }
@@ -1654,10 +1744,10 @@ static void emit_epilogue(X64Ctx *ctx)
     /* Restore callee-saved registers (reverse order) */
     for (int i = ctx->callee_save_count - 1; i >= 0; i--) {
         int off = -(ctx->callee_save_base + (i + 1) * 8);
-        emit_load_rbp(cb, ctx->callee_save_regs[i], off);
+        emit_load_rbp64(cb, ctx->callee_save_regs[i], off);
     }
 
-    emit_mov_reg_reg(cb, RSP, RBP);
+    emit_mov_reg_reg64(cb, RSP, RBP);
     emit_pop(cb, RBP);
     emit_ret(cb);
 }
@@ -1679,6 +1769,20 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     /* ── Register allocation ───────────────────────── */
     opt_regalloc(&ctx->cur_ra, fn, ctx->arena);
 
+    /* Build spill_map: maps temp_id → compact spill slot index.
+     * Only spilled temps get a slot; register-allocated temps get -1. */
+    {
+        int tc = ctx->cur_ra.temp_count;
+        ctx->spill_map = (int *)arena_alloc(ctx->arena, tc * sizeof(int));
+        int slot = 0;
+        for (int t = 0; t < tc; t++) {
+            if (ctx->cur_ra.temp_reg[t] == REG_SPILLED)
+                ctx->spill_map[t] = slot++;
+            else
+                ctx->spill_map[t] = -1;
+        }
+    }
+
     /* Build list of callee-saved registers used by the allocator */
     ctx->callee_save_count = 0;
     for (int r = 0; r < 16; r++) {
@@ -1690,12 +1794,49 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
      * Variables occupy [rbp-1] down to [rbp - stack_size].
      * Temps start below variables: temp i at [rbp - stack_size - (i+1)*8].
      * Callee-saved save area below temps.
-     * Total frame = stack_size + temps + save_area, aligned to 16. */
+     * Call space (shadow + extra args) at bottom of frame.
+     * Total frame = stack_size + temps + save_area + call_space, aligned to 16.
+     *
+     * Only SPILLED temps need stack slots; register-allocated temps skip. */
     ctx->var_area_size = fn->stack_size;
-    int temps_space = fn->temp_count * 8;
+    int spill_count = ctx->cur_ra.spill_count;
+    int temps_space = spill_count * 8;
     ctx->callee_save_base = fn->stack_size + temps_space;
     int save_area = ctx->callee_save_count * 8;
-    int frame = fn->stack_size + temps_space + save_area;
+
+    /* Scan instructions to find maximum call-site allocation needed.
+     * This includes shadow space (32) + extra stack args for >4-arg calls.
+     * Also accounts for IR_WRITE, IR_READ, and IR_MEMCPY runtime calls. */
+    int max_call_alloc = 0;
+    for (int i = 0; i < fn->instr_count; i++) {
+        int needed = 0;
+        switch (fn->instrs[i].op) {
+        case IR_CALL: {
+            int nargs = (int)fn->instrs[i].src2.imm;
+            int extra = (nargs > 4) ? (nargs - 4) * 8 : 0;
+            needed = AXIS_ALIGN(32 + extra, 16);
+            break;
+        }
+        case IR_WRITE:
+        case IR_READ:
+            needed = 32;
+            break;
+        case IR_MEMCPY:
+            if (!fn->instrs[i].extra) needed = 32; /* runtime memcpy */
+            break;
+        default: break;
+        }
+        if (needed > max_call_alloc) max_call_alloc = needed;
+    }
+    /* Prologue memcpy for field params also needs call space */
+    for (int i = 0; i < fn->param_count; i++) {
+        if (fn->param_info[i].is_field) {
+            if (32 > max_call_alloc) max_call_alloc = 32;
+            break;
+        }
+    }
+
+    int frame = fn->stack_size + temps_space + save_area + max_call_alloc;
     frame = AXIS_ALIGN(frame, 16);
     /* After push rbp (8 bytes), RSP is 8-misaligned; sub by 16-aligned
      * frame re-aligns to 16.  If frame is 0, stack is still 8-misaligned,
@@ -1705,14 +1846,14 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
 
     /* ── Prologue ──────────────────────────────────── */
     emit_push(cb, RBP);
-    emit_mov_reg_reg(cb, RBP, RSP);
+    emit_mov_reg_reg64(cb, RBP, RSP);
     if (frame > 0)
         emit_sub_rsp_imm32(cb, frame);
 
     /* Save callee-saved registers to their stack slots */
     for (int i = 0; i < ctx->callee_save_count; i++) {
         int off = -(ctx->callee_save_base + (i + 1) * 8);
-        emit_store_rbp(cb, off, ctx->callee_save_regs[i]);
+        emit_store_rbp64(cb, off, ctx->callee_save_regs[i]);
     }
 
     /* Spill incoming register parameters to their stack slots.
@@ -1733,7 +1874,7 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
             if (fn->param_info[i].is_field) {
                 /* Save the pointer (8 bytes) to the local slot.
                  * The slot is field_size bytes wide, so 8 bytes is fine. */
-                emit_store_rbp(cb, off, win64_arg_regs[i]);
+                emit_store_rbp64(cb, off, win64_arg_regs[i]);
             } else {
                 emit_store_rbp_sz(cb, off, win64_arg_regs[i], size);
             }
@@ -1747,29 +1888,27 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
             int off = fn->param_info[i].offset;
             int fsz = fn->param_info[i].field_size;
             /* Load the saved pointer into RDX (src) */
-            emit_load_rbp(cb, RDX, off);
+            emit_load_rbp64(cb, RDX, off);
             emit_lea_rbp(cb, RCX, off);             /* dst */
             emit_load_imm(cb, R8, fsz);             /* count */
-            emit_sub_rsp_imm32(cb, 32);
+            /* Shadow space is pre-allocated in the frame */
             emit_call_sym(ctx, RT_MEMCPY);
-            emit_add_rsp_imm32(cb, 32);
         }
 
-        /* Args 5..N: caller placed them at [old_rsp + 8 + i*8].
-         * After push rbp, that's [rbp + 16 + i*8].               */
+        /* Args 5..N: caller placed them at [old_rsp + 8 + (i-4)*8].
+         * After push rbp, that's [rbp + 16 + (i-4)*8].             */
         for (int i = 4; i < fn->param_count; i++) {
-            int caller_off = 16 + i * 8;
-            emit_load_rbp(cb, RAX, caller_off);
+            int caller_off = 16 + (i - 4) * 8;
+            emit_load_rbp64(cb, RAX, caller_off);
             int off  = fn->param_info[i].offset;
             int size = fn->param_info[i].size;
             if (fn->param_info[i].is_field) {
                 int fsz = fn->param_info[i].field_size;
-                emit_mov_reg_reg(cb, RDX, RAX);     /* src ptr */
+                emit_mov_reg_reg64(cb, RDX, RAX);     /* src ptr */
                 emit_lea_rbp(cb, RCX, off);           /* dst */
                 emit_load_imm(cb, R8, fsz);           /* count */
-                emit_sub_rsp_imm32(cb, 32);
+                /* Shadow space is pre-allocated in the frame */
                 emit_call_sym(ctx, RT_MEMCPY);
-                emit_add_rsp_imm32(cb, 32);
             } else {
                 emit_store_rbp_sz(cb, off, RAX, size);
             }
@@ -1780,21 +1919,24 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     for (int i = 0; i < ctx->label_cap; i++)
         ctx->label_offsets[i] = -1;
 
+    /* Reserve a label ID for the shared epilogue (max label + 1) */
+    {
+        int max_lbl = -1;
+        for (int i = 0; i < fn->instr_count; i++)
+            if (fn->instrs[i].op == IR_LABEL && fn->instrs[i].dest.label_id > max_lbl)
+                max_lbl = fn->instrs[i].dest.label_id;
+        ctx->epilogue_label = max_lbl + 1;
+    }
+
     /* ── Instruction loop ────────────────────────── */
     src_flush();  /* start with clean spill-reload cache */
     for (int i = 0; i < fn->instr_count; ) {
         i += gen_instr(ctx, fn, i);
     }
 
-    /* ── Implicit epilogue (safety net) ──────────── */
-    /* If the function didn't end with RET, add one */
-    if (fn->instr_count == 0 ||
-        (fn->instrs[fn->instr_count - 1].op != IR_RET &&
-         fn->instrs[fn->instr_count - 1].op != IR_RET_VOID))
-    {
-        emit_load_imm(cb, RAX, 0);
-        emit_epilogue(ctx);
-    }
+    /* ── Shared epilogue ─────────────────────────── */
+    set_label(ctx, ctx->epilogue_label, cb_pos(cb));
+    emit_epilogue(ctx);
 
     xf->text_size = cb_pos(cb) - xf->text_offset;
 
