@@ -1,5 +1,25 @@
 # Operators
 
+## Number Literals
+
+AXIS supports three integer literal formats:
+
+| Format | Prefix | Example |
+|--------|--------|---------|
+| Decimal | *(none)* | `42` |
+| Hexadecimal | `0x` / `0X` | `0xFF` |
+| Binary | `0b` / `0B` | `0b1010` |
+
+Underscores can be used as visual separators in any format:
+
+```axis
+million: i32 = 1_000_000
+flags: i32 = 0b1111_0000
+color: i32 = 0xFF_00_FF
+```
+
+Negative literals use the `-` prefix: `-100`, `-0xFF`.
+
 ## Arithmetic
 
 | Operator | Description |

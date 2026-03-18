@@ -1,6 +1,6 @@
 # Control Flow
 
-## Conditionals: `when`
+## Conditionals: `when` / `else when` / `else`
 
 AXIS uses `when` instead of `if`:
 
@@ -16,6 +16,21 @@ when x == 0:
 when x < 0:
     writeln("negative")
 ```
+
+Use `else when` for chained conditions and `else` for the fallback:
+
+```axis
+age: i32 = 20
+
+when age >= 18:
+    writeln("Adult")
+else when age >= 13:
+    writeln("Teenager")
+else:
+    writeln("Child")
+```
+
+`else when` works like `else if` in other languages — only the first matching branch runs.
 
 ## Infinite Loops: `repeat`
 

@@ -24,6 +24,8 @@ writeln(arr[1])    # 99
 
 Indexing is zero-based.
 
+> **Note:** AXIS does not perform runtime bounds checking. Accessing an index outside the array size is undefined behavior.
+
 ## Supported Element Types
 
 Arrays can hold any integer type or `str`:

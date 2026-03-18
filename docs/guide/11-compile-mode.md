@@ -84,3 +84,7 @@ axis check program.axis --all
 ```
 
 See [Check Command](12-check-command.md) for the full reference.
+
+## Next
+
+[Check Command](12-check-command.md)
