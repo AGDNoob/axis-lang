@@ -3,7 +3,9 @@
 
 mode script
 
-func gcd(a: i32, b: i32) -> i32:
+func gcd(x: i32, y: i32) -> i32:
+    a: i32 = x
+    b: i32 = y
     while b != 0:
         temp: i32 = b
         b = a % b

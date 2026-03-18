@@ -55,7 +55,7 @@ axis check program.axis --all       # + dead code + unused variable warnings
 | [Examples](code/examples/) | 20 example programs |
 | [Technical](docs/technical/) | How AXCC works internally |
 | [Benchmarks](docs/Benchmarks.md) | Performance measurements |
-| [Release Notes](RELEASE_NOTES_v1.2.0.md) | v1.2.0 changes and design philosophy |
+| [Release Notes](RELEASE_NOTES_v1.2.1.md) | v1.2.1 changes and design philosophy |
 | [Changelog](docs/CHANGELOG.md) | Version history |
 
 ## License

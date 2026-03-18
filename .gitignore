@@ -43,14 +43,19 @@ axis-vscode/out/
 
 # Internal / not for GitHub
 Release_Roadmap.md
+BRAINSTORM.md
 docs/BRAINSTORM.md
 v1.2.0-ideas.md
 1.2.0_Feature-List.md
+RELEASE_NOTES_v1.3.0.md
+COMMIT_HISTORY.md
 GITHUB_RELEASE_*.md
+tests/
 
 # Benchmark compiled outputs (source .axis/.c tracked)
 axcc/benchmarks/**/*.exe
 axcc/benchmarks/**/*.o
 axcc/benchmarks/**/*.bin
 axcc/benchmarks/**/*.elf
+*.s
 *.log
