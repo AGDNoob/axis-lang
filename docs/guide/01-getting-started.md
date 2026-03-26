@@ -1,3 +1,10 @@
+```text
+   /\     _  _    ___    ___
+  /  \    \ \/ /  |_ _|  / __|
+ / /\ \    >  <    | |   \__ \
+/_/  \_\  /_/\_\  |___|  |___/
+```
+
 # Getting Started
 
 AXIS is a programming language with Python-like syntax. It has two modes:
@@ -56,7 +63,7 @@ mode compile
 
 func main() -> i32:
     writeln("Hello from a native binary!")
-    give 0
+    return 0
 ```
 
 Build it:
