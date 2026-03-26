@@ -7,7 +7,7 @@ The parser (`parser.c`) is a recursive descent parser that transforms the token 
 From lowest to highest:
 
 | Level | Operators | Associativity |
-|-------|-----------|---------------|
+| --- | --- | --- |
 | 1 | `or` | Left |
 | 2 | `and` | Left |
 | 3 | `\|` (bitwise OR) | Left |
@@ -26,7 +26,7 @@ From lowest to highest:
 ### Expressions (14 kinds)
 
 | Kind | Description |
-|------|-------------|
+| --- | --- |
 | `INT_LIT` | Integer constant |
 | `STRING_LIT` | String constant |
 | `BOOL_LIT` | `true` or `false` |
@@ -45,7 +45,7 @@ From lowest to highest:
 ### Statements (17 kinds)
 
 | Kind | Description |
-|------|-------------|
+| --- | --- |
 | `VAR_DECL` | Variable declaration (with optional type inference) |
 | `ASSIGN` | Variable assignment |
 | `INDEX_ASSIGN` | Array element assignment |
@@ -74,7 +74,7 @@ From lowest to highest:
 
 Blocks are delimited by `INDENT`/`DEDENT` tokens from the lexer. The parser expects:
 
-```
+```text
 statement:
     NEWLINE
     INDENT

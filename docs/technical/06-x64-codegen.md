@@ -15,10 +15,12 @@ See [Optimizations](08-optimizations.md) for the full optimization pipeline.
 AXCC supports two calling conventions, selected based on the target platform:
 
 ### Windows x64
+
 Arguments passed in: `rcx`, `rdx`, `r8`, `r9`, then stack.
 32 bytes of shadow space reserved on the stack for the callee.
 
 ### System V (Linux)
+
 Arguments passed in: `rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`, then stack.
 No shadow space.
 
@@ -49,7 +51,7 @@ The frame size is calculated from the semantic analyzer's stack layout plus the 
 The code generator matches instruction operand sizes to the AXIS type being operated on:
 
 | AXIS type | Size | x64 registers used |
-|-----------|------|-------------------|
+| --- | --- | --- |
 | `i8`, `u8`, `bool` | 1 byte | `al`, `cl`, etc. |
 | `i16`, `u16` | 2 bytes | `ax`, `cx`, etc. |
 | `i32`, `u32` | 4 bytes | `eax`, `ecx`, etc. |
@@ -62,7 +64,7 @@ MOV, ADD, CMP, and other instructions all select the appropriate encoding based 
 Not all addresses are known at code generation time. The x64 backend emits placeholder values and records relocations that are resolved later by the PE/ELF writer:
 
 | Relocation type | Description |
-|----------------|-------------|
+| --- | --- |
 | `RELOC_REL32` | 32-bit PC-relative offset (for CALL and JMP) |
 | `RELOC_ABS64` | 64-bit absolute address (for data pointers) |
 | `RELOC_RIP_REL32` | 32-bit RIP-relative offset (for `.rdata` references) |

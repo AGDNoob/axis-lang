@@ -8,7 +8,7 @@ Written by `pe.c`. The output is a valid Windows executable (`.exe`).
 
 ### Layout
 
-```
+```text
 DOS Header (stub)
 PE Signature ("PE\0\0")
 COFF Header
@@ -24,7 +24,7 @@ Section Headers
 ### Key Parameters
 
 | Parameter | Value |
-|-----------|-------|
+| --- | --- |
 | Image base | `0x00400000` |
 | File alignment | 512 bytes |
 | Section alignment | 4096 bytes |
@@ -39,6 +39,7 @@ The PE writer builds the import directory, import lookup table, and import addre
 ### Entry Point
 
 The PE entry point is a small stub that:
+
 1. Calls the generated top-level code (or `main()` in compile mode)
 2. Calls `ExitProcess` with the return value
 
@@ -46,9 +47,9 @@ The PE entry point is a small stub that:
 
 Written by `elf.c`. The output is a statically linked Linux executable.
 
-### Layout
+### ELF Layout
 
-```
+```text
 ELF64 Header
 Program Headers (2 × PT_LOAD)
 ─────────────────
@@ -56,10 +57,10 @@ Segment 1: .text + stubs  (read + execute)
 Segment 2: .data           (read + write)
 ```
 
-### Key Parameters
+### ELF Key Parameters
 
 | Parameter | Value |
-|-----------|-------|
+| --- | --- |
 | Load address | `0x400000` |
 | Entry point | `_start` |
 
@@ -68,13 +69,13 @@ Segment 2: .data           (read + write)
 Linux executables use direct syscalls instead of shared libraries:
 
 | Syscall | Number | Purpose |
-|---------|--------|---------|
+| --- | --- | --- |
 | `write` | 1 | Output to stdout/stderr |
 | `read` | 0 | Input from stdin |
 | `exit` | 60 | Terminate process |
 | `brk` | 12 | Heap memory allocation |
 
-### Entry Point
+### ELF Entry Point
 
 The ELF entry point (`_start`) is a minimal stub:
 

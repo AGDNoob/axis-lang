@@ -27,7 +27,7 @@ Multiple `DEDENT` tokens can be emitted for a single line. These are queued in a
 The lexer recognizes three integer formats:
 
 | Format | Prefix | Example |
-|--------|--------|---------|
+| --- | --- | --- |
 | Decimal | none | `42`, `1_000_000` |
 | Hexadecimal | `0x` | `0xFF`, `0xDEAD` |
 | Binary | `0b` | `0b1010`, `0b11111111` |
@@ -39,7 +39,7 @@ Underscores are allowed in decimal literals for readability.
 Strings are double-quoted with these escape sequences:
 
 | Escape | Meaning |
-|--------|---------|
+| --- | --- |
 | `\n` | Newline |
 | `\t` | Tab |
 | `\\` | Backslash |

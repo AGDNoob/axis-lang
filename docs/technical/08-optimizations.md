@@ -4,7 +4,7 @@ AXCC v1.2.1 includes a 14-pass optimization pipeline. Passes run after IR genera
 
 ## Pipeline Overview
 
-```
+```text
 IR Generation → DCE → Constant Folding → Copy Propagation → Function Inlining
                                                                     ↓
               LICM → Loop Unrolling → Register Allocation → x64 Codegen
@@ -31,10 +31,10 @@ Since AXIS integers are `i32`, AXCC generates native 32-bit x86 instructions for
 
 **Impact on binary size:**
 
-| Benchmark           | v1.2.0 | v1.2.1 | Savings |
-|---------------------|--------|--------|---------|
-| Recursive Fibonacci | 2.5 KB | 2.0 KB | -20%    |
-| Prime Count         | 3.5 KB | 3.0 KB | -14%    |
+| Benchmark | v1.2.0 | v1.2.1 | Savings |
+| --- | --- | --- | --- |
+| Recursive Fibonacci | 2.5 KB | 2.0 KB | -20% |
+| Prime Count | 3.5 KB | 3.0 KB | -14% |
 
 ## IR-Level Passes
 
@@ -42,7 +42,7 @@ Since AXIS integers are `i32`, AXCC generates native 32-bit x86 instructions for
 
 Arithmetic expressions with known values are evaluated at compile time:
 
-```
+```text
 # Before:
 t1 = 3
 t2 = 5
@@ -80,10 +80,16 @@ Small fixed-count loops are unrolled to reduce branch overhead and enable furthe
 
 Tracks which values are stored in stack variables. If a value is stored and re-loaded without an intervening modification, the load is replaced by a reference to the already-known temporary:
 
-```
+```text
+# Before:
 store_var [rbp-8], t5
 ...                       # no store to [rbp-8]
-load_var  t10, [rbp-8]   → replaced by: mov t10, t5
+load_var  t10, [rbp-8]
+
+# After:
+store_var [rbp-8], t5
+...
+mov       t10, t5
 ```
 
 The cache is flushed at labels, function calls, and indirect stores to ensure correctness.
@@ -99,7 +105,7 @@ Linear-scan allocation over all 16 general-purpose x86-64 registers. Virtual IR 
 Expensive operations are replaced by cheaper equivalents when one operand is a known constant:
 
 | Pattern | Replacement | Condition |
-|---------|-------------|-----------|
+| --- | --- | --- |
 | `x * 2^n` | `x << n` | Power-of-two multiplier |
 | `x / 2^n` (unsigned) | `x >> n` | Power-of-two divisor |
 | `x % 2^n` (unsigned) | `x & (2^n - 1)` | Power-of-two modulus |
@@ -155,8 +161,12 @@ Post-emission pass that removes instructions whose results are immediately overw
 See [Benchmarks](../Benchmarks.md) for measurements. In summary:
 
 | Benchmark | v1.1.0 → v1.2.1 | vs GCC `-O0` |
-|-----------|-----------------|---------------|
+| --- | --- | --- |
 | Fibonacci | 1.88× faster | 1.11× slower |
 | Primes | 2.09× faster | ~parity |
 | Nested Loops | 1.85× faster | 1.09× slower |
 | GCD Stress | 1.52× faster | **0.96× faster** |
+
+## Next
+
+[SSA-IR Architecture](09-ssa-ir-architecture.md)

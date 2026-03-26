@@ -1,10 +1,19 @@
+```text
+   ___   __  __ ____  ____
+  / _ \ |  \/  |  __|/ ___|
+ | |_| || |\/| | |__ | |
+  \___/ |_|  |_|____|\___|
+```
+
 # AXCC Architecture
 
-AXCC is the AXIS compiler. It is a single-pass-per-stage compiler written in C with zero external dependencies. It reads `.axis` source files and produces standalone native executables (Windows PE or Linux ELF64).
+AXCC is the AXIS compiler. It is a single-pass-per-stage compiler written in C
+with zero external dependencies. It reads `.axis` source files and produces
+standalone native executables (Windows PE or Linux ELF64).
 
 ## Pipeline Overview
 
-```
+```text
 Source Code (.axis)
     │
     ▼
@@ -55,7 +64,7 @@ Total: approximately 11,600 lines of C (10 source files, 12 headers).
 ## File Structure
 
 | File | Purpose |
-|------|---------|
+| --- | --- |
 | `main.c` | Driver, CLI parsing, script mode caching, build pipeline |
 | `arena.c` | Arena (bump-pointer) memory allocator |
 | `lexer.c` | Tokenizer with indentation tracking |
@@ -84,6 +93,7 @@ Total: approximately 11,600 lines of C (10 source files, 12 headers).
 AXCC uses an arena allocator (bump-pointer allocator) with 1 MiB blocks. All AST nodes, IR instructions, and temporary strings are allocated from the arena. At the end of compilation, a single `arena_free()` releases everything.
 
 This avoids individual `malloc`/`free` calls and eliminates memory leak concerns. The allocator provides three operations:
+
 - `arena_alloc(size)` — allocate a block of memory
 - `arena_strdup(str)` — duplicate a string into the arena
 - `arena_strndup(str, len)` — duplicate a string with length limit

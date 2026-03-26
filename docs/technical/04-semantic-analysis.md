@@ -4,7 +4,7 @@ The semantic analyzer (`semantic.c`) performs type checking, scope analysis, and
 
 ## Passes
 
-The analyzer runs four passes over the AST:
+The analyzer runs five passes over the AST:
 
 1. **Pass 0a — Collect field definitions**: Registers all `field` (struct) types in the symbol table so they can be referenced before their definition.
 2. **Pass 0b — Collect enum definitions**: Registers all `enum` types, assigns auto-incremented values to variants.
@@ -17,22 +17,23 @@ The analyzer runs four passes over the AST:
 Defined in `axis_common.h`:
 
 | Category | Types |
-|----------|-------|
-| Void | `VOID` |
-| Boolean | `BOOL` |
-| Signed integers | `I8`, `I16`, `I32`, `I64` |
-| Unsigned integers | `U8`, `U16`, `U32`, `U64` |
-| Strings | `STR` |
-| Composite | `ARRAY`, `FIELD`, `ENUM` |
+| --- | --- |
+| Void | `void` |
+| Boolean | `bool` |
+| Signed integers | `i8`, `i16`, `i32`, `i64` |
+| Unsigned integers | `u8`, `u16`, `u32`, `u64` |
+| Strings | `str` |
+| Composite | `array`, `field`, `enum` |
 
-Type sizes: `BOOL`/`I8`/`U8` = 1 byte, `I16`/`U16` = 2, `I32`/`U32` = 4, `I64`/`U64`/`STR` = 8.
+Type sizes: `bool`/`i8`/`u8` = 1 byte, `i16`/`u16` = 2, `i32`/`u32` = 4, `i64`/`u64`/`str` = 8.
 
 ## Type Inference
 
 When a variable is declared with `var x = expr`, the analyzer infers the type from the expression:
-- Integer literals default to `I64`
-- Boolean literals → `BOOL`
-- String literals → `STR`
+
+- Integer literals default to `i64`
+- Boolean literals → `bool`
+- String literals → `str`
 - Expressions inherit their type from operand types
 
 The inferred type is stored on each `ASTExpr` node in the `inferred_type` field.
@@ -42,6 +43,7 @@ The inferred type is stored on each `ASTExpr` node in the `inferred_type` field.
 The analyzer maintains a scoped symbol table as a linked list of scope frames. Each scope has a pointer to its parent scope. Variable lookups walk up the chain.
 
 Per symbol, the table tracks:
+
 - Name and type
 - Mutability
 - Stack offset (negative from RBP)
@@ -53,7 +55,7 @@ Loop depth is tracked to validate that `stop` and `skip` only appear inside loop
 
 During analysis, each local variable is assigned a stack offset. Offsets grow downward from RBP:
 
-```
+```text
 [rbp - 8]   ← first local
 [rbp - 16]  ← second local
 ...
