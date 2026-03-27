@@ -1,15 +1,15 @@
 // Example 09: Functions
-// Define, call, and return values with "give".
+// Define, call, and return values.
 
 mode script
 
 func square(n: i32) -> i32:
-    give n * n
+    return n * n
 
 func max(a: i32, b: i32) -> i32:
     when a >= b:
-        give a
-    give b
+        return a
+    return b
 
 func greet(name: str):
     write("Hello, ")

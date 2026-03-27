@@ -11,17 +11,17 @@ func factorial(n: i32) -> i32:
     while i <= n:
         result = result * i
         i += 1
-    give result
+    return result
 
 func is_prime(n: i32) -> i32:
     when n < 2:
-        give 0
+        return 0
     d: i32 = 2
     while d * d <= n:
         when n % d == 0:
-            give 0
+            return 0
         d += 1
-    give 1
+    return 1
 
 func main() -> i32:
     writeln("=== AXIS Compile Mode ===")
@@ -45,4 +45,4 @@ func main() -> i32:
             write(" ")
     writeln("")
 
-    give 0
+    return 0

@@ -1,0 +1,81 @@
+mode script
+
+Vec2: field:
+    x: i32 = 0
+    y: i32 = 0
+
+Color: enum:
+    Red
+    Green
+    Blue
+
+func double(update n: i32):
+    n = n * 2
+
+func print_val(copy n: i32):
+    writeln(n)
+
+func add(a: i32, b: i32) -> i32:
+    return a + b
+
+// --- 1.1 const with scalar types ---
+const age: i32 = 25
+const name: str = "AXIS"
+const flag: bool = True
+
+writeln("--- 1.1 const scalars ---")
+writeln(age)
+writeln(name)
+writeln(flag)
+
+// --- 1.2 const can be used in expressions ---
+writeln("--- 1.2 const in expressions ---")
+result: i32 = age + 10
+writeln(result)
+writeln(add(age, 100))
+
+// --- 1.3 const field (implicit default values) ---
+writeln("--- 1.3 const field ---")
+const origin: Vec2
+writeln(origin.x)
+writeln(origin.y)
+
+// --- 1.4 const enum (implicit default = first variant) ---
+writeln("--- 1.4 const enum ---")
+const primary: Color
+writeln(primary)
+
+// --- 1.5 const passed to NON-update function ---
+writeln("--- 1.5 const to copy param ---")
+print_val(age)
+
+// --- 1.6 const with explicit enum value ---
+const sky: Color = Color::Blue
+writeln(sky)
+
+// --- 1.7 const array with initializer ---
+const nums: (i32; 3) = [10, 20, 30]
+writeln("--- 1.7 const array ---")
+writeln(nums[0])
+writeln(nums[1])
+writeln(nums[2])
+
+// --- 1.8 mutable (non-const) variables ---
+writeln("--- 1.8 mutable (non-const) ---")
+counter: i32 = 0
+counter = counter + 1
+writeln(counter)
+
+pos: Vec2
+pos.x = 42
+pos.y = 99
+writeln(pos.x)
+writeln(pos.y)
+
+mutable_arr: (i32; 2) = [1, 2]
+mutable_arr[0] = 100
+writeln(mutable_arr[0])
+
+mut_val: i32 = 5
+double(mut_val)
+writeln(mut_val)

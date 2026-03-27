@@ -9,7 +9,7 @@ mode compile
 
 func main() -> i32:
     writeln("Hello from a native binary")
-    give 0
+    return 0
 ```
 
 ## Building
@@ -36,7 +36,7 @@ mode compile
 
 func main() -> i32:
     // your program here
-    give 0    // exit code
+    return 0    // exit code
 ```
 
 The return value becomes the process exit code.
@@ -54,11 +54,11 @@ func factorial(n: i32) -> i32:
     while i <= n:
         result = result * i
         i = i + 1
-    give result
+    return result
 
 func main() -> i32:
     writeln(factorial(10))
-    give 0
+    return 0
 ```
 
 ## Binary Size
@@ -83,8 +83,8 @@ You can validate a compile-mode source file without generating a binary:
 axis check program.axis --all
 ```
 
-See [Check Command](12-check-command.md) for the full reference.
+See [Command-Line Interface](12-cli.md) for the full reference.
 
 ## Next
 
-[Check Command](12-check-command.md)
+[Command-Line Interface](12-cli.md)

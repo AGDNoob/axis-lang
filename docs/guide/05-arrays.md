@@ -26,6 +26,33 @@ Indexing is zero-based.
 
 > **Note:** AXIS does not perform runtime bounds checking. Accessing an index outside the array size is undefined behavior.
 
+### Reading Elements Requires `copy`
+
+Reading an array element into a variable requires the `copy` keyword. This makes it explicit that you are extracting a value, not creating an alias:
+
+```axis
+arr: (i32; 3) = [10, 20, 30]
+x: i32 = copy arr[0]       # OK — explicit copy
+y: i32 = arr[1]            # ERROR — requires 'copy'
+```
+
+This also applies to assignments:
+
+```axis
+x: i32 = 0
+x = copy arr[2]            # OK
+x = arr[2]                 # ERROR
+```
+
+You can still use array elements directly in expressions without `copy`:
+
+```axis
+writeln(arr[0])            # OK — no variable binding
+if arr[1] > 10:            # OK — used in expression
+```
+
+> **Why?** In AXIS, a plain assignment like `x = y` creates an alias (shared storage). Array elements cannot be aliased — they can only be copied. The `copy` keyword makes this distinction explicit.
+
 ## Supported Element Types
 
 Arrays can hold any integer type or `str`:

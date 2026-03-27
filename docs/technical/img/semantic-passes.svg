@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 220" width="740" height="220" font-family="Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,1L9,5L0,9z" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <!-- Category label: Registration -->
+  <rect x="44" y="10" width="286" height="22" rx="4" fill="#EFF6FF" stroke="#2563EB" stroke-width="1"/>
+  <text x="187" y="26" text-anchor="middle" font-size="11" font-weight="bold" fill="#2563EB">Registration</text>
+
+  <!-- Category label: Analysis -->
+  <rect x="402" y="10" width="286" height="22" rx="4" fill="#FFFBEB" stroke="#D97706" stroke-width="1"/>
+  <text x="545" y="26" text-anchor="middle" font-size="11" font-weight="bold" fill="#D97706">Analysis</text>
+
+  <!-- Pass 0a -->
+  <rect x="16" y="46" width="128" height="72" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="80" y="68" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">Pass 0a</text>
+  <text x="80" y="86" text-anchor="middle" font-size="11" fill="#374151">Collect</text>
+  <text x="80" y="102" text-anchor="middle" font-size="11" fill="#374151">Fields</text>
+
+  <!-- Arrow -->
+  <line x1="144" y1="82" x2="158" y2="82" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Pass 0b -->
+  <rect x="162" y="46" width="128" height="72" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="226" y="68" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">Pass 0b</text>
+  <text x="226" y="86" text-anchor="middle" font-size="11" fill="#374151">Collect</text>
+  <text x="226" y="102" text-anchor="middle" font-size="11" fill="#374151">Enums</text>
+
+  <!-- Arrow -->
+  <line x1="290" y1="82" x2="306" y2="82" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Pass 1 -->
+  <rect x="310" y="46" width="128" height="72" rx="6" fill="#ECFDF5" stroke="#059669" stroke-width="1.5"/>
+  <text x="374" y="68" text-anchor="middle" font-size="12" font-weight="bold" fill="#065F46">Pass 1</text>
+  <text x="374" y="86" text-anchor="middle" font-size="11" fill="#374151">Collect</text>
+  <text x="374" y="102" text-anchor="middle" font-size="11" fill="#374151">Functions</text>
+
+  <!-- Arrow -->
+  <line x1="438" y1="82" x2="454" y2="82" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Pass 2 -->
+  <rect x="458" y="46" width="128" height="72" rx="6" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+  <text x="522" y="68" text-anchor="middle" font-size="12" font-weight="bold" fill="#92400E">Pass 2</text>
+  <text x="522" y="86" text-anchor="middle" font-size="11" fill="#374151">Analyze</text>
+  <text x="522" y="102" text-anchor="middle" font-size="11" fill="#374151">Bodies</text>
+
+  <!-- Arrow -->
+  <line x1="586" y1="82" x2="602" y2="82" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Pass 3 -->
+  <rect x="606" y="46" width="118" height="72" rx="6" fill="#FEF2F2" stroke="#DC2626" stroke-width="1.5"/>
+  <text x="665" y="68" text-anchor="middle" font-size="12" font-weight="bold" fill="#991B1B">Pass 3</text>
+  <text x="665" y="86" text-anchor="middle" font-size="11" fill="#374151">Top-level</text>
+  <text x="665" y="102" text-anchor="middle" font-size="11" fill="#374151">Script only</text>
+
+  <!-- Subtitle -->
+  <text x="370" y="150" text-anchor="middle" font-size="12" fill="#374151" font-style="italic">Forward references work because types and functions are</text>
+  <text x="370" y="168" text-anchor="middle" font-size="12" fill="#374151" font-style="italic">registered before bodies are analyzed.</text>
+
+  <!-- Legend -->
+  <rect x="170" y="186" width="12" height="12" rx="2" fill="#EFF6FF" stroke="#2563EB" stroke-width="1"/>
+  <text x="188" y="197" font-size="11" fill="#374151">Type registration</text>
+  <rect x="310" y="186" width="12" height="12" rx="2" fill="#ECFDF5" stroke="#059669" stroke-width="1"/>
+  <text x="328" y="197" font-size="11" fill="#374151">Signature collection</text>
+  <rect x="470" y="186" width="12" height="12" rx="2" fill="#FFFBEB" stroke="#D97706" stroke-width="1"/>
+  <text x="488" y="197" font-size="11" fill="#374151">Full analysis</text>
+</svg>

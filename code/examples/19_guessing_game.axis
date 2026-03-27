@@ -11,7 +11,7 @@ writeln("I'm thinking of a number between 1 and 100.")
 
 repeat:
     write("Your guess: ")
-    guess: i32 = read()
+    guess: i32 = input()
     attempts += 1
 
     when guess == secret:

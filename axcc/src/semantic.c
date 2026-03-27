@@ -11,6 +11,7 @@
  */
 
 #include "axis_semantic.h"
+#include "axis_error.h"
 #include <stdarg.h>
 #include <setjmp.h>
 
@@ -31,13 +32,11 @@ static int         calc_field_size(Semantic *s, ASTFieldDef *fd);
 static void sem_error(Semantic *s, SrcLoc loc,
                       const char *fmt, ...)
 {
-    fprintf(stderr, "%s:%d:%d: semantic error: ",
-            s->filename ? s->filename : "<unknown>", loc.line, loc.col);
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    diag_reportv(DIAG_ERROR, s->filename, s->source, loc.line, loc.col,
+                 fmt, ap);
     va_end(ap);
-    fputc('\n', stderr);
     s->error_count++;
     if (s->check_mode) {
         longjmp(s->err_jmp, 1);
@@ -125,9 +124,9 @@ static void exit_scope(Semantic *s)
     if (s->check_unused) {
         for (Symbol *sym = s->current_scope->symbols; sym; sym = sym->next) {
             if (!sym->used && !sym->is_param) {
-                fprintf(stderr, "%s:%d:%d: warning: unused variable '%s'\n",
-                        s->filename ? s->filename : "<unknown>",
-                        sym->def_loc.line, sym->def_loc.col, sym->name);
+                diag_report(DIAG_WARNING, s->filename, s->source,
+                            sym->def_loc.line, sym->def_loc.col,
+                            "unused variable '%s'", sym->name);
             }
         }
     }
@@ -292,9 +291,11 @@ static Symbol *define_symbol(Semantic *s, const char *name,
     sym->is_param    = is_param;
     sym->is_update   = is_update;
     sym->array_type  = array_type;
-    sym->next        = NULL;
-    sym->used        = false;
-    sym->def_loc     = loc;
+    sym->next             = NULL;
+    sym->used             = false;
+    sym->is_input         = false;
+    sym->input_flag_offset = 0;
+    sym->def_loc          = loc;
 
     scope_define(s, sym, loc);
     return sym;
@@ -315,9 +316,11 @@ static Symbol *define_array_symbol(Semantic *s, const char *name,
     sym->is_param    = false;
     sym->is_update   = false;
     sym->array_type  = arr_type;
-    sym->next        = NULL;
-    sym->used        = false;
-    sym->def_loc     = loc;
+    sym->next             = NULL;
+    sym->used             = false;
+    sym->is_input         = false;
+    sym->input_flag_offset = 0;
+    sym->def_loc          = loc;
 
     scope_define(s, sym, loc);
     return sym;
@@ -346,6 +349,20 @@ static const char *coerce_literal(ASTExpr *expr, const char *from,
             return "bool";
         }
     }
+
+    /* negated i32 integer literal (-N) → target integer type */
+    if (strcmp(from, "i32") == 0 &&
+        expr->kind == EXPR_UNARY &&
+        expr->unary.op == TOK_MINUS &&
+        expr->unary.operand->kind == EXPR_INT_LIT)
+    {
+        if (is_integer_type(to)) {
+            expr->inferred_type = to;
+            expr->unary.operand->inferred_type = to;
+            return to;
+        }
+    }
+
     return from;
 }
 
@@ -416,8 +433,22 @@ static const char *analyze_binop(Semantic *s, ASTExpr *e)
             rt = lt;
         } else {
             sem_error(s, e->loc,
-                      "Type mismatch in binary op: %s vs %s", lt, rt);
+                      "Type mismatch in binary operation: '%s' vs '%s'", lt, rt);
         }
+    }
+
+    /* ── String operations ───────────────────────────────── */
+    if (strcmp(lt, "str") == 0 && strcmp(rt, "str") == 0) {
+        if (op == TOK_PLUS) {
+            e->inferred_type = "str";
+            return "str";
+        }
+        if (op == TOK_EQ || op == TOK_NE) {
+            e->inferred_type = "bool";
+            return "bool";
+        }
+        sem_error(s, e->loc,
+                  "Unsupported operator for string operands");
     }
 
     if (is_comparison_op(op)) {
@@ -426,30 +457,30 @@ static const char *analyze_binop(Semantic *s, ASTExpr *e)
     }
     if (is_arithmetic_op(op)) {
         if (!is_integer_type(lt))
-            sem_error(s, e->loc, "Arithmetic requires integer, got %s", lt);
+            sem_error(s, e->loc, "Arithmetic operator requires integer operand, got '%s'", lt);
         e->inferred_type = lt;
         return lt;
     }
     if (is_bitwise_op(op)) {
         if (!is_integer_type(lt))
-            sem_error(s, e->loc, "Bitwise op requires integer, got %s", lt);
+            sem_error(s, e->loc, "Bitwise operator requires integer operand, got '%s'", lt);
         e->inferred_type = lt;
         return lt;
     }
     if (is_shift_op(op)) {
         if (!is_integer_type(lt))
-            sem_error(s, e->loc, "Shift requires integer, got %s", lt);
+            sem_error(s, e->loc, "Shift operator requires integer operand, got '%s'", lt);
         e->inferred_type = lt;
         return lt;
     }
     if (is_logical_op(op)) {
         if (strcmp(lt, "bool") != 0)
-            sem_error(s, e->loc, "Logical op requires bool, got %s", lt);
+            sem_error(s, e->loc, "Logical operator requires 'bool' operand, got '%s'", lt);
         e->inferred_type = "bool";
         return "bool";
     }
 
-    sem_error(s, e->loc, "Unknown binary operator");
+    sem_error(s, e->loc, "Unsupported binary operator");
     return NULL; /* unreachable */
 }
 
@@ -461,18 +492,18 @@ static const char *analyze_unary(Semantic *s, ASTExpr *e)
 
     if (e->unary.op == TOK_MINUS) {
         if (!is_signed_type(ot))
-            sem_error(s, e->loc, "Unary minus requires signed int, got %s", ot);
+            sem_error(s, e->loc, "Unary minus requires signed integer, got '%s'", ot);
         e->inferred_type = ot;
         return ot;
     }
     if (e->unary.op == TOK_BANG || e->unary.op == TOK_NOT) {
         if (strcmp(ot, "bool") != 0)
-            sem_error(s, e->loc, "Logical NOT requires bool, got %s", ot);
+            sem_error(s, e->loc, "Logical NOT requires 'bool', got '%s'", ot);
         e->inferred_type = "bool";
         return "bool";
     }
 
-    sem_error(s, e->loc, "Unknown unary operator");
+    sem_error(s, e->loc, "Unsupported unary operator");
     return NULL; /* unreachable */
 }
 
@@ -481,29 +512,6 @@ static const char *analyze_unary(Semantic *s, ASTExpr *e)
 static const char *analyze_call(Semantic *s, ASTExpr *e)
 {
     const char *name = e->call.name;
-
-    /* Built-in read functions */
-    if (strcmp(name, "read") == 0) {
-        if (e->call.arg_count != 0)
-            sem_error(s, e->loc, "'read' takes no arguments, got %d",
-                      e->call.arg_count);
-        e->inferred_type = "i32";
-        return "i32";
-    }
-    if (strcmp(name, "readln") == 0) {
-        if (e->call.arg_count != 0)
-            sem_error(s, e->loc, "'readln' takes no arguments, got %d",
-                      e->call.arg_count);
-        e->inferred_type = "str";
-        return "str";
-    }
-    if (strcmp(name, "readchar") == 0) {
-        if (e->call.arg_count != 0)
-            sem_error(s, e->loc, "'readchar' takes no arguments, got %d",
-                      e->call.arg_count);
-        e->inferred_type = "i32";
-        return "i32";
-    }
 
     FuncSig *fs = lookup_func(s, name, e->loc);
 
@@ -695,7 +703,7 @@ static const char *analyze_array_literal(Semantic *s, ASTExpr *e,
                 e->array_lit.elements[i]->inferred_type = first;
             } else {
                 sem_error(s, e->loc,
-                          "Array element %d type %s != %s", i, et, first);
+                          "Array element %d: type mismatch, expected '%s', got '%s'", i, first, et);
             }
         }
     }
@@ -711,6 +719,47 @@ static const char *analyze_copy(Semantic *s, ASTExpr *e)
     const char *t = analyze_expr(s, e->copy.expr);
     e->inferred_type = t;
     return t;
+}
+
+/* ── Copy Cast (copy expr as TYPE) ──────────────────────── */
+
+static const char *analyze_copy_cast(Semantic *s, ASTExpr *e)
+{
+    if (!s->in_vardecl_init)
+        sem_error(s, e->loc,
+                  "'copy...as' can only be used in variable declarations");
+
+    const char *src_type = analyze_expr(s, e->copy_cast.expr);
+    const char *tgt = type_name_of_node(e->copy_cast.target_type);
+
+    if (!is_integer_type(src_type))
+        sem_error(s, e->loc,
+                  "copy...as source must be integer type, got '%s'", src_type);
+    if (!is_integer_type(tgt))
+        sem_error(s, e->loc,
+                  "copy...as target must be integer type, got '%s'", tgt);
+
+    int old_sz = get_type_size(src_type);
+    int new_sz = get_type_size(tgt);
+
+    if (strcmp(src_type, tgt) == 0)
+        diag_report(DIAG_WARNING, s->filename, s->source,
+                    e->loc.line, e->loc.col,
+                    "cast from '%s' to '%s' has no effect",
+                    src_type, tgt);
+
+    if (new_sz < old_sz)
+        diag_report(DIAG_WARNING, s->filename, s->source,
+                    e->loc.line, e->loc.col,
+                    "narrowing cast from '%s' to '%s'",
+                    src_type, tgt);
+
+    e->copy_cast.old_size      = old_sz;
+    e->copy_cast.new_size      = new_sz;
+    e->copy_cast.is_signed_src = is_signed_type(src_type);
+
+    e->inferred_type = tgt;
+    return tgt;
 }
 
 /* ── Expression dispatch ────────────────────────────────── */
@@ -757,16 +806,32 @@ static const char *analyze_expr(Semantic *s, ASTExpr *e)
     case EXPR_COPY:
         return analyze_copy(s, e);
 
+    case EXPR_COPY_CAST:
+        return analyze_copy_cast(s, e);
+
     case EXPR_RANGE:
         /* Range doesn't resolve to a single type */
         return "range";
 
-    case EXPR_READ_FAILED:
+    case EXPR_INPUT:
+        /* Type determined during analyze_vardecl from the target type */
+        return e->inferred_type ? e->inferred_type : "i32";
+
+    case EXPR_INPUT_FAILED: {
+        const char *var_name = e->input_failed.var_name;
+        Symbol *sym = lookup_var(s, var_name, e->loc);
+        if (!sym->is_input)
+            sem_error(s, e->loc,
+                      "%s_input_failed() used but '%s' was not declared with input()",
+                      var_name, var_name);
+        sym->used = true;
+        e->input_failed.input_flag_offset = sym->input_flag_offset;
         e->inferred_type = "bool";
         return "bool";
     }
+    }
 
-    sem_error(s, e->loc, "Unknown expression kind");
+    sem_error(s, e->loc, "Unsupported expression kind");
     return NULL; /* unreachable */
 }
 
@@ -821,7 +886,8 @@ static void analyze_array_vardecl(Semantic *s, ASTStmt *vd)
     }
     int total = elem_sz * (arr->array.size > 0 ? arr->array.size : 1);
 
-    Symbol *sym = define_array_symbol(s, vd->var_decl.name, arr, true,
+    Symbol *sym = define_array_symbol(s, vd->var_decl.name, arr,
+                                      !vd->var_decl.is_const,
                                       total, vd->loc);
     vd->var_decl.stack_offset = sym->stack_offset;
     vd->var_decl.total_size   = total;
@@ -830,6 +896,14 @@ static void analyze_array_vardecl(Semantic *s, ASTStmt *vd)
 static void analyze_vardecl(Semantic *s, ASTStmt *vd)
 {
     const char *decl_type = type_name_of_node(vd->var_decl.type_node);
+    bool mutable = !vd->var_decl.is_const;
+
+    /* const requires initializer (fields/enums have implicit defaults) */
+    if (vd->var_decl.is_const && !vd->var_decl.value
+        && !find_field_def(s, decl_type) && !find_enum_def(s, decl_type))
+        sem_error(s, vd->loc,
+                  "const variable '%s' must have an initialiser",
+                  vd->var_decl.name);
 
     /* Array variable */
     if (vd->var_decl.type_node &&
@@ -842,7 +916,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
     /* Field type */
     if (find_field_def(s, decl_type)) {
         Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
-                                    true, false, false, NULL, vd->loc);
+                                    mutable, false, false, NULL, vd->loc);
         vd->var_decl.stack_offset = sym->stack_offset;
         return;
     }
@@ -857,14 +931,82 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
                           vd->var_decl.name, decl_type, vt);
         }
         Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
-                                    true, false, false, NULL, vd->loc);
+                                    mutable, false, false, NULL, vd->loc);
         vd->var_decl.stack_offset = sym->stack_offset;
         return;
     }
 
     /* Scalar */
     if (vd->var_decl.value) {
+        /* input() expression: type comes from declared type */
+        if (vd->var_decl.value->kind == EXPR_INPUT) {
+            if (vd->var_decl.is_const)
+                sem_error(s, vd->loc,
+                          "const variable '%s' cannot use input()",
+                          vd->var_decl.name);
+            vd->var_decl.value->inferred_type = decl_type;
+            if (vd->var_decl.value->input.prompt)
+                analyze_expr(s, vd->var_decl.value->input.prompt);
+
+            Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
+                                        mutable, false, false, NULL, vd->loc);
+            sym->is_input = true;
+
+            /* Allocate 8 bytes for per-variable input flag */
+            s->stack_offset = align_up(s->stack_offset, 8);
+            s->stack_offset += 8;
+            sym->input_flag_offset = -s->stack_offset;
+            vd->var_decl.input_flag_offset = sym->input_flag_offset;
+            vd->var_decl.stack_offset = sym->stack_offset;
+            return;
+        }
+
+        s->in_vardecl_init = true;
         const char *vt = analyze_expr(s, vd->var_decl.value);
+        s->in_vardecl_init = false;
+
+        /* Array index access requires explicit copy */
+        if (vd->var_decl.value->kind == EXPR_INDEX) {
+            sem_error(s, vd->loc,
+                      "Array index access requires 'copy': %s = copy ...",
+                      vd->var_decl.name);
+        }
+
+        /* Automatic alias: plain variable reference shares stack slot.
+         * Only valid when the new variable is const; a mutable alias
+         * would share the slot and corrupt the source on reassignment. */
+        if (vd->var_decl.value->kind == EXPR_IDENT && !mutable) {
+            const char *src_name = vd->var_decl.value->ident.name;
+            Symbol *src = lookup_var(s, src_name, vd->loc);
+
+            if (strcmp(vt, decl_type) != 0)
+                sem_error(s, vd->loc,
+                          "Type mismatch in alias '%s': expected %s, got %s",
+                          vd->var_decl.name, decl_type, vt);
+
+            if (vd->var_decl.is_const && src->mutable)
+                sem_error(s, vd->loc,
+                          "Cannot declare const alias of mutable variable '%s'",
+                          src_name);
+
+            Symbol *sym = ARENA_NEW(s->arena, Symbol);
+            sym->name         = vd->var_decl.name;
+            sym->type_name    = decl_type;
+            sym->mutable      = false; /* alias is always const here */
+            sym->stack_offset = src->stack_offset;
+            sym->is_param     = false;
+            sym->is_update    = false;
+            sym->array_type   = src->array_type;
+            sym->next         = NULL;
+            sym->used         = false;
+            sym->is_input     = false;
+            sym->input_flag_offset = 0;
+            sym->def_loc      = vd->loc;
+            scope_define(s, sym, vd->loc);
+            vd->var_decl.stack_offset = sym->stack_offset;
+            return;
+        }
+
         vt = coerce_literal(vd->var_decl.value, vt, decl_type);
         if (strcmp(vt, decl_type) != 0)
             sem_error(s, vd->loc,
@@ -873,7 +1015,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
     }
 
     Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
-                                true, false, false, NULL, vd->loc);
+                                mutable, false, false, NULL, vd->loc);
     vd->var_decl.stack_offset = sym->stack_offset;
 }
 
@@ -895,6 +1037,13 @@ static void analyze_assignment(Semantic *s, ASTStmt *a)
                   a->assign.name);
     }
 
+    /* Array index access requires explicit copy */
+    if (a->assign.value->kind == EXPR_INDEX) {
+        sem_error(s, a->loc,
+                  "Array index access requires 'copy': %s = copy ...",
+                  a->assign.name);
+    }
+
     const char *vt = analyze_expr(s, a->assign.value);
     vt = coerce_literal(a->assign.value, vt, target);
     if (strcmp(vt, target) != 0)
@@ -905,6 +1054,13 @@ static void analyze_assignment(Semantic *s, ASTStmt *a)
 
 static void analyze_index_assignment(Semantic *s, ASTStmt *a)
 {
+    if (a->index_assign.array->kind == EXPR_IDENT) {
+        Symbol *sym = lookup_var(s, a->index_assign.array->ident.name, a->loc);
+        if (!sym->mutable)
+            sem_error(s, a->loc,
+                      "Cannot modify elements of immutable array: %s",
+                      sym->name);
+    }
     const char *elem = analyze_index_access_node(
         s, a->index_assign.array, a->index_assign.index, a->loc);
     const char *vt = analyze_expr(s, a->index_assign.value);
@@ -917,6 +1073,13 @@ static void analyze_index_assignment(Semantic *s, ASTStmt *a)
 
 static void analyze_field_assignment(Semantic *s, ASTStmt *a)
 {
+    if (a->field_assign.object->kind == EXPR_IDENT) {
+        Symbol *sym = lookup_var(s, a->field_assign.object->ident.name, a->loc);
+        if (!sym->mutable)
+            sem_error(s, a->loc,
+                      "Cannot modify fields of immutable variable: %s",
+                      sym->name);
+    }
     const char *mt = analyze_field_access_on(
         s, a->field_assign.object, a->field_assign.member, a->loc);
     const char *vt = analyze_expr(s, a->field_assign.value);
@@ -952,7 +1115,7 @@ static void analyze_compound_assignment(Semantic *s, ASTStmt *ca)
 static void analyze_return(Semantic *s, ASTStmt *r)
 {
     if (!s->current_func)
-        sem_error(s, r->loc, "return outside of function");
+        sem_error(s, r->loc, "'return' outside of function");
 
     FuncSig *fs = find_func_sig(s, s->current_func->name);
     assert(fs);
@@ -979,7 +1142,7 @@ static void analyze_if(Semantic *s, ASTStmt *st)
     const char *ct = analyze_expr(s, st->if_stmt.condition);
     if (strcmp(ct, "bool") != 0 && !is_integer_type(ct))
         sem_error(s, st->loc,
-                  "'when' condition must be bool or integer, got %s", ct);
+                  "'when' condition must be 'bool' or integer, got '%s'", ct);
 
     enter_scope(s);
     check_block_dead_code(s, st->if_stmt.body, st->if_stmt.body_count);
@@ -996,13 +1159,31 @@ static void analyze_if(Semantic *s, ASTStmt *st)
     }
 }
 
+static void push_flag(Semantic *s, const char *flag, SrcLoc l)
+{
+    if (!flag) return;
+    for (int i = 0; i < s->flag_count; i++)
+        if (strcmp(s->flag_stack[i], flag) == 0)
+            sem_error(s, l, "duplicate loop flag '@%s'", flag);
+    if (s->flag_count >= MAX_FLAG_DEPTH)
+        sem_error(s, l, "too many nested loop flags (max %d)", MAX_FLAG_DEPTH);
+    s->flag_stack[s->flag_count++] = flag;
+}
+
+static void pop_flag(Semantic *s, const char *flag)
+{
+    if (!flag) return;
+    s->flag_count--;
+}
+
 static void analyze_while(Semantic *s, ASTStmt *w)
 {
     const char *ct = analyze_expr(s, w->while_loop.condition);
     if (strcmp(ct, "bool") != 0 && !is_integer_type(ct))
         sem_error(s, w->loc,
-                  "'while' condition must be bool or integer, got %s", ct);
+                  "'while' condition must be 'bool' or integer, got '%s'", ct);
 
+    push_flag(s, w->while_loop.flag, w->loc);
     s->loop_depth++;
     enter_scope(s);
     check_block_dead_code(s, w->while_loop.body, w->while_loop.body_count);
@@ -1010,10 +1191,12 @@ static void analyze_while(Semantic *s, ASTStmt *w)
         analyze_stmt(s, w->while_loop.body[i]);
     exit_scope(s);
     s->loop_depth--;
+    pop_flag(s, w->while_loop.flag);
 }
 
 static void analyze_repeat(Semantic *s, ASTStmt *r)
 {
+    push_flag(s, r->repeat_loop.flag, r->loc);
     s->loop_depth++;
     enter_scope(s);
     check_block_dead_code(s, r->repeat_loop.body, r->repeat_loop.body_count);
@@ -1021,6 +1204,7 @@ static void analyze_repeat(Semantic *s, ASTStmt *r)
         analyze_stmt(s, r->repeat_loop.body[i]);
     exit_scope(s);
     s->loop_depth--;
+    pop_flag(s, r->repeat_loop.flag);
 }
 
 static void analyze_for(Semantic *s, ASTStmt *f)
@@ -1034,9 +1218,9 @@ static void analyze_for(Semantic *s, ASTStmt *f)
         const char *st = analyze_expr(s, rng->range.start);
         const char *et = analyze_expr(s, rng->range.end);
         if (!is_integer_type(st))
-            sem_error(s, f->loc, "Range start must be integer, got %s", st);
+            sem_error(s, f->loc, "Range start must be integer, got '%s'", st);
         if (!is_integer_type(et))
-            sem_error(s, f->loc, "Range end must be integer, got %s", et);
+            sem_error(s, f->loc, "Range end must be integer, got '%s'", et);
         var_type = is_integer_type(st) ? st : "i32";
         if (rng->range.step)
             analyze_expr(s, rng->range.step);
@@ -1063,11 +1247,13 @@ static void analyze_for(Semantic *s, ASTStmt *f)
     define_symbol(s, f->for_loop.var_name, var_type,
                   false, false, false, NULL, f->loc);
 
+    push_flag(s, f->for_loop.flag, f->loc);
     s->loop_depth++;
     check_block_dead_code(s, f->for_loop.body, f->for_loop.body_count);
     for (int i = 0; i < f->for_loop.body_count; i++)
         analyze_stmt(s, f->for_loop.body[i]);
     s->loop_depth--;
+    pop_flag(s, f->for_loop.flag);
 
     exit_scope(s);
 }
@@ -1104,19 +1290,23 @@ static void analyze_match(Semantic *s, ASTStmt *m)
                 bool covered = false;
                 for (int a = 0; a < m->match.arm_count; a++) {
                     ASTMatchArm *arm = &m->match.arms[a];
-                    if (arm->pattern && arm->pattern->kind == EXPR_FIELD_ACCESS) {
-                        if (strcmp(arm->pattern->field_access.member,
-                                   ed->variants[v].name) == 0) {
+                    if (arm->pattern) {
+                        const char *vname = NULL;
+                        if (arm->pattern->kind == EXPR_FIELD_ACCESS)
+                            vname = arm->pattern->field_access.member;
+                        else if (arm->pattern->kind == EXPR_ENUM_ACCESS)
+                            vname = arm->pattern->enum_access.variant;
+                        if (vname && strcmp(vname, ed->variants[v].name) == 0) {
                             covered = true;
                             break;
                         }
                     }
                 }
                 if (!covered) {
-                    fprintf(stderr, "%s:%d:%d: warning: match on enum '%s' "
-                            "missing variant '%s'\n",
-                            s->filename, m->loc.line, m->loc.col,
-                            vt, ed->variants[v].name);
+                    diag_report(DIAG_WARNING, s->filename, s->source,
+                                m->loc.line, m->loc.col,
+                                "match on enum '%s' missing variant '%s'",
+                                vt, ed->variants[v].name);
                     break;  /* one warning is enough */
                 }
             }
@@ -1130,12 +1320,7 @@ static void analyze_write(Semantic *s, ASTStmt *w)
     /* any printable type is fine */
 }
 
-static void analyze_read_stmt(Semantic *s, ASTStmt *r)
-{
-    /* Target type checked at codegen */
-    AXIS_UNUSED(s);
-    AXIS_UNUSED(r);
-}
+
 
 /* ── Dead-code check for a statement block ──────────────── */
 
@@ -1147,15 +1332,78 @@ static void check_block_dead_code(Semantic *s, ASTStmt **stmts, int count)
         if ((k == STMT_RETURN || k == STMT_BREAK || k == STMT_CONTINUE)
             && i + 1 < count)
         {
-            fprintf(stderr, "%s:%d:%d: warning: unreachable code after %s\n",
-                    s->filename,
-                    stmts[i + 1]->loc.line,
-                    stmts[i + 1]->loc.col,
-                    k == STMT_RETURN ? "return" :
-                    k == STMT_BREAK  ? "break"  : "continue");
+            diag_report(DIAG_WARNING, s->filename, s->source,
+                        stmts[i + 1]->loc.line, stmts[i + 1]->loc.col,
+                        "unreachable code after %s",
+                        k == STMT_RETURN ? "return" :
+                        k == STMT_BREAK  ? "break"  : "continue");
             break;  /* one warning per block is enough */
         }
     }
+}
+
+/* ── Update cast analysis ───────────────────────────────── */
+
+static void analyze_update_cast(Semantic *s, ASTStmt *st)
+{
+    const char *name = st->update_cast.var_name;
+    Symbol *sym = scope_lookup(s->current_scope, name);
+    if (!sym)
+        sem_error(s, st->loc, "undefined variable '%s'", name);
+
+    if (!sym->mutable)
+        sem_error(s, st->loc,
+                  "cannot cast const variable '%s'", name);
+
+    const char *old_type = sym->type_name;
+    const char *new_type = type_name_of_node(st->update_cast.target_type);
+
+    if (!is_integer_type(old_type))
+        sem_error(s, st->loc,
+                  "cannot cast variable '%s' of non-integer type '%s'",
+                  name, old_type);
+
+    if (!is_integer_type(new_type))
+        sem_error(s, st->loc,
+                  "cannot cast to non-integer type '%s'", new_type);
+
+    if (strcmp(old_type, new_type) == 0)
+        diag_report(DIAG_WARNING, s->filename, s->source,
+                    st->loc.line, st->loc.col,
+                    "cast from '%s' to '%s' has no effect",
+                    old_type, new_type);
+
+    int old_sz = get_type_size(old_type);
+    int new_sz = get_type_size(new_type);
+
+    /* Narrowing warning */
+    if (new_sz < old_sz)
+        diag_report(DIAG_WARNING, s->filename, s->source,
+                    st->loc.line, st->loc.col,
+                    "narrowing cast from '%s' to '%s'",
+                    old_type, new_type);
+
+    /* Fill AST fields for code generation */
+    st->update_cast.old_offset     = sym->stack_offset;
+    st->update_cast.old_size       = old_sz;
+    st->update_cast.new_size       = new_sz;
+    st->update_cast.is_signed_src  = is_signed_type(old_type);
+
+    if (new_sz > old_sz) {
+        /* Widening: allocate a new, larger stack slot */
+        int alignment = new_sz < 8 ? new_sz : 8;
+        s->stack_offset = align_up(s->stack_offset, alignment);
+        s->stack_offset += new_sz;
+        int new_off = -s->stack_offset;
+        st->update_cast.new_offset = new_off;
+        sym->stack_offset = new_off;
+    } else {
+        /* Narrowing / same-size: reuse existing slot */
+        st->update_cast.new_offset = sym->stack_offset;
+    }
+
+    /* Update the symbol's type in scope */
+    sym->type_name = new_type;
 }
 
 /* ── Statement dispatch ─────────────────────────────────── */
@@ -1175,7 +1423,7 @@ static void analyze_stmt(Semantic *s, ASTStmt *st)
     case STMT_FOR:              analyze_for(s, st);                  break;
     case STMT_MATCH:            analyze_match(s, st);                break;
     case STMT_WRITE:            analyze_write(s, st);                break;
-    case STMT_READ:             analyze_read_stmt(s, st);            break;
+
     case STMT_EXPR:             analyze_expr(s, st->expr_stmt.expr); break;
     case STMT_SYSCALL:
         for (int i = 0; i < st->syscall.arg_count; i++)
@@ -1184,11 +1432,32 @@ static void analyze_stmt(Semantic *s, ASTStmt *st)
 
     case STMT_BREAK:
         if (s->loop_depth == 0)
-            sem_error(s, st->loc, "break outside of loop");
+            sem_error(s, st->loc, "'break' outside of loop");
+        if (st->break_stmt.flag) {
+            bool found = false;
+            for (int i = 0; i < s->flag_count; i++)
+                if (strcmp(s->flag_stack[i], st->break_stmt.flag) == 0)
+                    { found = true; break; }
+            if (!found)
+                sem_error(s, st->loc, "Unknown loop flag '@%s'",
+                          st->break_stmt.flag);
+        }
         break;
     case STMT_CONTINUE:
         if (s->loop_depth == 0)
-            sem_error(s, st->loc, "continue outside of loop");
+            sem_error(s, st->loc, "'continue' outside of loop");
+        if (st->continue_stmt.flag) {
+            bool found = false;
+            for (int i = 0; i < s->flag_count; i++)
+                if (strcmp(s->flag_stack[i], st->continue_stmt.flag) == 0)
+                    { found = true; break; }
+            if (!found)
+                sem_error(s, st->loc, "Unknown loop flag '@%s'",
+                          st->continue_stmt.flag);
+        }
+        break;
+    case STMT_UPDATE_CAST:
+        analyze_update_cast(s, st);
         break;
     }
 }
@@ -1263,11 +1532,13 @@ static void analyze_function(Semantic *s, ASTFunction *func)
  * Public API
  * ═════════════════════════════════════════════════════════════ */
 
-void semantic_init(Semantic *s, Arena *arena, const char *filename)
+void semantic_init(Semantic *s, Arena *arena, const char *filename,
+                   const char *source)
 {
     memset(s, 0, sizeof(*s));
     s->arena    = arena;
     s->filename = filename;
+    s->source   = source;
 }
 
 int semantic_analyze(Semantic *s, ASTProgram *prog)

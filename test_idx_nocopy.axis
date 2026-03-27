@@ -1,0 +1,5 @@
+mode script
+
+arr: (i32; 3) = [1, 2, 3]
+x: i32 = copy arr[0]
+writeln(x)

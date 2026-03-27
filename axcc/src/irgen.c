@@ -8,6 +8,7 @@
 
 #include "axis_ir.h"
 #include "axis_semantic.h"   /* for field/enum lookup helpers re-used */
+#include "axis_error.h"
 #include <stdarg.h>
 #include <inttypes.h>
 
@@ -20,6 +21,7 @@ typedef struct {
     IRFunc       *cur;          /* function currently being lowered */
     Arena        *arena;
     const char   *filename;
+    const char   *source;
 
     /* For resolving types → sizes we keep the semantic data around. */
     ASTFieldDef  *field_defs;
@@ -30,6 +32,11 @@ typedef struct {
     /* Break/continue targets (label ids) for innermost loop */
     int           break_label;
     int           continue_label;
+
+    /* Flagged loop label stack */
+    #define MAX_IR_FLAGS 16
+    struct { const char *name; int brk; int cont; } flag_labels[MAX_IR_FLAGS];
+    int           flag_label_count;
 } IRGen;
 
 /* ── Forward declarations ─────────────────────────────────── */
@@ -43,13 +50,11 @@ static void   gen_stmt(IRGen *g, ASTStmt *st);
 static _Noreturn void ir_error(IRGen *g, SrcLoc loc,
                                const char *fmt, ...)
 {
-    fprintf(stderr, "%s:%d:%d: IR error: ",
-            g->filename ? g->filename : "<unknown>", loc.line, loc.col);
     va_list ap;
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    diag_reportv(DIAG_ERROR, g->filename, g->source, loc.line, loc.col,
+                 fmt, ap);
     va_end(ap);
-    fputc('\n', stderr);
     exit(1);
 }
 
@@ -218,7 +223,7 @@ static int irgen_name_lookup(IRGen *g, const char *name, SrcLoc loc)
         for (IRLocal *l = sc->locals; l; l = l->next)
             if (strcmp(l->name, name) == 0)
                 return l->stack_off;
-    ir_error(g, loc, "IRGen: variable '%s' not found in scope", name);
+    ir_error(g, loc, "Undefined variable '%s'", name);
 }
 
 /* Return the IRLocal entry for a variable (or NULL if not found). */
@@ -428,7 +433,7 @@ static IROper gen_binop(IRGen *g, ASTExpr *e)
     case TOK_GT:      irop = IR_CMP_GT;  break;
     case TOK_GE:      irop = IR_CMP_GE;  break;
     default:
-        ir_error(g, e->loc, "Unknown binary operator");
+        ir_error(g, e->loc, "Unsupported binary operator");
     }
 
     int is_cmp = (irop == IR_CMP_EQ || irop == IR_CMP_NE ||
@@ -469,17 +474,6 @@ static IROper gen_call(IRGen *g, ASTExpr *e)
 {
     const char *name = e->call.name;
     int sz = type_size(expr_type(e));
-
-    /* Built-in I/O */
-    if (strcmp(name, "read") == 0 || strcmp(name, "readln") == 0 ||
-        strcmp(name, "readchar") == 0)
-    {
-        int kind = strcmp(name, "readchar") == 0 ? 2
-                 : strcmp(name, "readln") == 0   ? 1 : 0;
-        int t = new_temp(g, sz);
-        EMIT(IR_READ, oper_temp(t, sz), oper_imm(kind, 4), oper_none());
-        return oper_temp(t, sz);
-    }
 
     /* Evaluate all arguments into temps first, so that nested calls
      * don't clobber the outer call's argument registers. */
@@ -684,9 +678,41 @@ static IROper gen_copy(IRGen *g, ASTExpr *e)
     return gen_expr(g, e->copy.expr);
 }
 
-static IROper gen_read_failed(IRGen *g, ASTExpr *e)
+static IROper gen_copy_cast(IRGen *g, ASTExpr *e)
 {
-    (void)e;
+    IROper src = gen_expr(g, e->copy_cast.expr);
+    int old_sz = e->copy_cast.old_size;
+    int new_sz = e->copy_cast.new_size;
+
+    if (old_sz == new_sz) return src;
+
+    int t = new_temp(g, new_sz);
+    if (new_sz > old_sz) {
+        IROpcode op = e->copy_cast.is_signed_src ? IR_SEXT : IR_ZEXT;
+        EMIT(op, oper_temp(t, new_sz), src, oper_none());
+    } else {
+        EMIT(IR_TRUNC, oper_temp(t, new_sz), src, oper_none());
+    }
+    return oper_temp(t, new_sz);
+}
+
+static IROper gen_input(IRGen *g, ASTExpr *e)
+{
+    /* Optional prompt */
+    if (e->input.prompt) {
+        IROper v = gen_expr(g, e->input.prompt);
+        emit(g, IR_WRITE, v, oper_none(), oper_none(), 1 /*wtype=str*/, e->loc);
+    }
+    int kind = (e->inferred_type && strcmp(e->inferred_type, "str") == 0) ? 1 : 0;
+    int sz   = 8;
+    int t    = new_temp(g, sz);
+    EMIT(IR_READ, oper_temp(t, sz), oper_imm(kind, 4), oper_none());
+    return oper_temp(t, sz);
+}
+
+static IROper gen_input_failed(IRGen *g, ASTExpr *e)
+{
+    (void)g;
     int t = new_temp(g, 1);
     EMIT(IR_READ, oper_temp(t, 1), oper_imm(3, 4), oper_none());
     return oper_temp(t, 1);
@@ -709,10 +735,12 @@ static IROper gen_expr(IRGen *g, ASTExpr *e)
     case EXPR_ENUM_ACCESS:  return gen_enum_access(g, e);
     case EXPR_ARRAY_LIT:    return gen_array_lit(g, e);
     case EXPR_COPY:         return gen_copy(g, e);
-    case EXPR_RANGE:        ir_error(g, e->loc, "Range not in for-loop");
-    case EXPR_READ_FAILED:  return gen_read_failed(g, e);
+    case EXPR_COPY_CAST:    return gen_copy_cast(g, e);
+    case EXPR_RANGE:        ir_error(g, e->loc, "Range expression is only valid in a for-loop");
+    case EXPR_INPUT:        return gen_input(g, e);
+    case EXPR_INPUT_FAILED: return gen_input_failed(g, e);
     }
-    ir_error(g, e->loc, "Unknown expression kind in IR gen");
+    ir_error(g, e->loc, "Unsupported expression kind");
 }
 
 /* ═════════════════════════════════════════════════════════════
@@ -813,6 +841,9 @@ static void gen_vardecl(IRGen *g, ASTStmt *st)
     irgen_scope_add(g, st->var_decl.name, off, sz);
 
     if (st->var_decl.value) {
+        /* Const alias: shares stack slot, no store needed */
+        if (st->var_decl.value->kind == EXPR_IDENT && st->var_decl.is_const)
+            return;
         IROper v = gen_expr(g, st->var_decl.value);
         emit(g, IR_STORE_VAR, oper_stack(off, sz), v, oper_none(),
              0, st->loc);
@@ -869,7 +900,7 @@ static void gen_compound_assign(IRGen *g, ASTStmt *st)
     case TOK_CARET_ASSIGN:   irop = IR_BIT_XOR; break;
     case TOK_LSHIFT_ASSIGN:  irop = IR_SHL;     break;
     case TOK_RSHIFT_ASSIGN:  irop = IR_SHR;     break;
-    default: ir_error(g, st->loc, "Unknown compound-assign op");
+    default: ir_error(g, st->loc, "Unsupported compound assignment operator");
     }
 
     emit(g, irop, oper_temp(t, sz), tv, vv, 0, st->loc);
@@ -915,19 +946,6 @@ static void gen_write(IRGen *g, ASTStmt *st)
     int wtype = infer_write_type(st->write.value);
     emit(g, IR_WRITE, oper_imm(st->write.newline ? 1 : 0, 4),
          v, oper_none(), wtype, st->loc);
-}
-
-static void gen_read_stmt(IRGen *g, ASTStmt *st)
-{
-    int kind = st->read.read_kind == READ_READCHAR ? 2
-             : st->read.read_kind == READ_READLN   ? 1 : 0;
-    int off = irgen_name_lookup(g, st->read.target, st->loc);
-    int sz  = 8;  /* str or i32 */
-    int t   = new_temp(g, sz);
-    emit(g, IR_READ, oper_temp(t, sz), oper_imm(kind, 4), oper_none(),
-         0, st->loc);
-    emit(g, IR_STORE_VAR, oper_stack(off, sz), oper_temp(t, sz),
-         oper_none(), 0, st->loc);
 }
 
 /* Emit copy-back stores for every 'update' parameter before a return.
@@ -1020,6 +1038,14 @@ static void gen_while(IRGen *g, ASTStmt *st)
     g->break_label    = end_lbl;
     g->continue_label = top_lbl;
 
+    int saved_fc = g->flag_label_count;
+    if (st->while_loop.flag) {
+        g->flag_labels[g->flag_label_count].name = st->while_loop.flag;
+        g->flag_labels[g->flag_label_count].brk  = end_lbl;
+        g->flag_labels[g->flag_label_count].cont = top_lbl;
+        g->flag_label_count++;
+    }
+
     emit(g, IR_LABEL, oper_label(top_lbl), oper_none(), oper_none(),
          0, st->loc);
     IROper cond = gen_expr(g, st->while_loop.condition);
@@ -1037,6 +1063,7 @@ static void gen_while(IRGen *g, ASTStmt *st)
 
     g->break_label    = prev_break;
     g->continue_label = prev_continue;
+    g->flag_label_count = saved_fc;
 }
 
 static void gen_repeat(IRGen *g, ASTStmt *st)
@@ -1048,6 +1075,14 @@ static void gen_repeat(IRGen *g, ASTStmt *st)
     int prev_continue = g->continue_label;
     g->break_label    = end_lbl;
     g->continue_label = top_lbl;
+
+    int saved_fc = g->flag_label_count;
+    if (st->repeat_loop.flag) {
+        g->flag_labels[g->flag_label_count].name = st->repeat_loop.flag;
+        g->flag_labels[g->flag_label_count].brk  = end_lbl;
+        g->flag_labels[g->flag_label_count].cont = top_lbl;
+        g->flag_label_count++;
+    }
 
     emit(g, IR_LABEL, oper_label(top_lbl), oper_none(), oper_none(),
          0, st->loc);
@@ -1064,6 +1099,7 @@ static void gen_repeat(IRGen *g, ASTStmt *st)
 
     g->break_label    = prev_break;
     g->continue_label = prev_continue;
+    g->flag_label_count = saved_fc;
 }
 
 static void gen_for(IRGen *g, ASTStmt *st)
@@ -1076,6 +1112,14 @@ static void gen_for(IRGen *g, ASTStmt *st)
     int prev_continue = g->continue_label;
     g->break_label    = end_lbl;
     g->continue_label = step_lbl;
+
+    int saved_fc = g->flag_label_count;
+    if (st->for_loop.flag) {
+        g->flag_labels[g->flag_label_count].name = st->for_loop.flag;
+        g->flag_labels[g->flag_label_count].brk  = end_lbl;
+        g->flag_labels[g->flag_label_count].cont = step_lbl;
+        g->flag_label_count++;
+    }
 
     irgen_scope_push(g);
 
@@ -1143,13 +1187,13 @@ static void gen_for(IRGen *g, ASTStmt *st)
         int count = st->for_loop.array_count;
         if (esz <= 0) esz = 4;
         if (count <= 0)
-            ir_error(g, st->loc, "for-each: unknown array size");
+            ir_error(g, st->loc, "Cannot determine array size in for-each loop");
 
         /* Look up array base offset */
         IRLocal *arr_loc = irgen_scope_lookup(g,
                               st->for_loop.iterable->ident.name);
         if (!arr_loc)
-            ir_error(g, st->loc, "for-each: array '%s' not found",
+            ir_error(g, st->loc, "Undefined array '%s' in for-each loop",
                      st->for_loop.iterable->ident.name);
 
         int arr_off = arr_loc->stack_off;
@@ -1214,6 +1258,7 @@ static void gen_for(IRGen *g, ASTStmt *st)
 
     g->break_label    = prev_break;
     g->continue_label = prev_continue;
+    g->flag_label_count = saved_fc;
 }
 
 static void gen_match(IRGen *g, ASTStmt *st)
@@ -1258,6 +1303,45 @@ static void gen_syscall(IRGen *g, ASTStmt *st)
          oper_none(), 0, st->loc);
 }
 
+/* ── Update cast: update X as TYPE ───────────────────────── */
+
+static void gen_update_cast(IRGen *g, ASTStmt *st)
+{
+    int old_off = st->update_cast.old_offset;
+    int new_off = st->update_cast.new_offset;
+    int old_sz  = st->update_cast.old_size;
+    int new_sz  = st->update_cast.new_size;
+
+    if (old_sz == new_sz) return;               /* no-op cast */
+
+    /* Load current value from old stack slot */
+    int t1 = new_temp(g, old_sz);
+    emit(g, IR_LOAD_VAR, oper_temp(t1, old_sz),
+         oper_stack(old_off, old_sz), oper_none(), 0, st->loc);
+
+    /* Convert */
+    int t2 = new_temp(g, new_sz);
+    if (new_sz > old_sz) {
+        IROpcode op = st->update_cast.is_signed_src ? IR_SEXT : IR_ZEXT;
+        emit(g, op, oper_temp(t2, new_sz),
+             oper_temp(t1, old_sz), oper_none(), 0, st->loc);
+    } else {
+        emit(g, IR_TRUNC, oper_temp(t2, new_sz),
+             oper_temp(t1, old_sz), oper_none(), 0, st->loc);
+    }
+
+    /* Store to new stack slot */
+    emit(g, IR_STORE_VAR, oper_stack(new_off, new_sz),
+         oper_temp(t2, new_sz), oper_none(), 0, st->loc);
+
+    /* Update scope entry */
+    IRLocal *local = irgen_scope_lookup(g, st->update_cast.var_name);
+    if (local) {
+        local->size      = new_sz;
+        local->stack_off = new_off;
+    }
+}
+
 /* ── Statement dispatch ─────────────────────────────────── */
 
 static void gen_stmt(IRGen *g, ASTStmt *st)
@@ -1269,7 +1353,6 @@ static void gen_stmt(IRGen *g, ASTStmt *st)
     case STMT_FIELD_ASSIGN:    gen_field_assign(g, st);      break;
     case STMT_COMPOUND_ASSIGN: gen_compound_assign(g, st);   break;
     case STMT_WRITE:           gen_write(g, st);             break;
-    case STMT_READ:            gen_read_stmt(g, st);         break;
     case STMT_IF:              gen_if(g, st);                break;
     case STMT_WHILE:           gen_while(g, st);             break;
     case STMT_REPEAT:          gen_repeat(g, st);            break;
@@ -1277,17 +1360,32 @@ static void gen_stmt(IRGen *g, ASTStmt *st)
     case STMT_MATCH:           gen_match(g, st);             break;
     case STMT_RETURN:          gen_return(g, st);            break;
     case STMT_SYSCALL:         gen_syscall(g, st);           break;
+    case STMT_UPDATE_CAST:     gen_update_cast(g, st);       break;
     case STMT_EXPR:
         gen_expr(g, st->expr_stmt.expr);
         break;
-    case STMT_BREAK:
-        emit(g, IR_JMP, oper_label(g->break_label), oper_none(),
+    case STMT_BREAK: {
+        int lbl = g->break_label;
+        if (st->break_stmt.flag) {
+            for (int i = g->flag_label_count - 1; i >= 0; i--)
+                if (strcmp(g->flag_labels[i].name, st->break_stmt.flag) == 0)
+                    { lbl = g->flag_labels[i].brk; break; }
+        }
+        emit(g, IR_JMP, oper_label(lbl), oper_none(),
              oper_none(), 0, st->loc);
         break;
-    case STMT_CONTINUE:
-        emit(g, IR_JMP, oper_label(g->continue_label), oper_none(),
+    }
+    case STMT_CONTINUE: {
+        int lbl = g->continue_label;
+        if (st->continue_stmt.flag) {
+            for (int i = g->flag_label_count - 1; i >= 0; i--)
+                if (strcmp(g->flag_labels[i].name, st->continue_stmt.flag) == 0)
+                    { lbl = g->flag_labels[i].cont; break; }
+        }
+        emit(g, IR_JMP, oper_label(lbl), oper_none(),
              oper_none(), 0, st->loc);
         break;
+    }
     }
 }
 
@@ -1433,13 +1531,15 @@ void ir_program_init(IRProgram *p, Arena *arena)
     p->arena = arena;
 }
 
-void ir_generate(IRProgram *p, ASTProgram *ast, const char *filename)
+void ir_generate(IRProgram *p, ASTProgram *ast, const char *filename,
+                 const char *source)
 {
     IRGen g;
     memset(&g, 0, sizeof(g));
     g.prog       = p;
     g.arena      = p->arena;
     g.filename   = filename;
+    g.source     = source;
     g.field_defs = ast->field_defs;
     g.field_count = ast->field_count;
     g.enum_defs  = ast->enum_defs;

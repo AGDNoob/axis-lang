@@ -204,11 +204,15 @@ enum {
     IMP_PUTCHAR,
     IMP_GETCHAR,
     IMP_EXIT,
+    IMP_MALLOC,
+    IMP_STRLEN,
+    IMP_STRCMP,
     IMP_COUNT
 };
 
 static const char *import_names[IMP_COUNT] = {
-    "printf", "scanf", "putchar", "getchar", "exit"
+    "printf", "scanf", "putchar", "getchar", "exit",
+    "malloc", "strlen", "strcmp"
 };
 
 /* We'll store the IAT entry offsets (RVA) for each import.
@@ -561,12 +565,6 @@ static void sb_emit_ret(StubBuf *sb)
     sb_emit8(sb, 0xC3);
 }
 
-/* xor eax, eax */
-static void sb_emit_xor_eax_eax(StubBuf *sb)
-{
-    sb_emit8(sb, 0x31); sb_emit8(sb, 0xC0);
-}
-
 /*
  * Generate all runtime stubs.  Returns stub info (name + text offset)
  * for each stub so we can patch call relocations in the user code.
@@ -583,10 +581,11 @@ typedef struct {
     int write_nl_off;
     int read_i64_off;
     int read_line_off;
-    int read_char_off;
     int memcpy_off;
     int read_failed_off;
     int div_zero_off;
+    int str_concat_off;
+    int str_eq_off;
 } StubOffsets;
 
 static StubOffsets gen_stubs(StubBuf *sb,
@@ -716,23 +715,6 @@ static StubOffsets gen_stubs(StubBuf *sb,
                     text_rva, base);
     sb_emit_ret(sb);
 
-    /* ── __axis_read_char: getchar() ────────────────────── */
-    so.read_char_off = base + sb->len;
-    sb_emit_sub_rsp_40(sb);
-    sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_GETCHAR],
-                     text_rva, base);
-    sb_emit_add_rsp_40(sb);
-    /* eax = getchar return (-1 = EOF). Set read_failed flag. */
-    sb_emit8(sb, 0x83); sb_emit8(sb, 0xF8); sb_emit8(sb, 0xFF); /* cmp eax, -1 */
-    sb_emit8(sb, 0x0F); sb_emit8(sb, 0x94); sb_emit8(sb, 0xC1); /* sete cl */
-    sb_emit_lea_rip(sb, R11, rdata_rva, rf->read_failed_flag,
-                    text_rva, base);
-    sb_emit8(sb, 0x41); sb_emit8(sb, 0x88); sb_emit8(sb, 0x0B); /* mov byte [r11], cl */
-    /* Result already in eax, zero-extend to rax */
-    sb_emit8(sb, 0x48); sb_emit8(sb, 0x0F); sb_emit8(sb, 0xB7);
-    sb_emit8(sb, 0xC0); /* movzx rax, ax */
-    sb_emit_ret(sb);
-
     /* ── __axis_read_failed: return the flag byte ──────── */
     so.read_failed_off = base + sb->len;
     sb_emit_lea_rip(sb, RAX, rdata_rva, rf->read_failed_flag,
@@ -771,8 +753,76 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_EXIT],
                      text_rva, base);
 
+    /* ── __axis_str_concat: concat two C strings ─────────── */
+    /* Win64 ABI: RCX = str1, RDX = str2, return new ptr in RAX.
+     * Callee-saved regs used: RBX=len1, R12=str1, R13=str2, R14=len2, R15=buf.
+     * Flow: save args → strlen(s1) → strlen(s2) → malloc(len1+len2+1) →
+     *       rep movsb s1, rep movsb s2+null → return buf. */
+    so.str_concat_off = base + sb->len;
+    /* push callee-saved */
+    sb_emit8(sb, 0x53);                     /* push rbx  */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x54); /* push r12  */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x55); /* push r13  */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x56); /* push r14  */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x57); /* push r15  */
+    sb_emit_sub_rsp_40(sb);
+    /* mov r12, rcx (str1) */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xCC);
+    /* mov r13, rdx (str2) */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xD5);
+    /* strlen(str1): rcx already = str1 */
+    sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_STRLEN],
+                     text_rva, base);
+    /* mov rbx, rax (len1) */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xC3);
+    /* mov rcx, r13 (str2 for strlen) */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xE9);
+    sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_STRLEN],
+                     text_rva, base);
+    /* mov r14, rax (len2) */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xC6);
+    /* lea rcx, [rbx + r14 + 1] — malloc size */
+    sb_emit8(sb, 0x4A); sb_emit8(sb, 0x8D); sb_emit8(sb, 0x4C);
+    sb_emit8(sb, 0x33); sb_emit8(sb, 0x01);
+    sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_MALLOC],
+                     text_rva, base);
+    /* mov r15, rax (buf) */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xC7);
+    /* push rsi; push rdi — save for rep movsb */
+    sb_emit8(sb, 0x56); sb_emit8(sb, 0x57);
+    /* copy str1 → buf: rdi=r15(buf), rsi=r12(str1), rcx=rbx(len1) */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xFF); /* mov rdi, r15 */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xE6); /* mov rsi, r12 */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xD9); /* mov rcx, rbx */
+    sb_emit8(sb, 0xF3); sb_emit8(sb, 0xA4);                     /* rep movsb     */
+    /* copy str2+null → buf+len1: rdi already advanced, rsi=r13, rcx=r14+1 */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xEE); /* mov rsi, r13  */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x8D); sb_emit8(sb, 0x4E);
+    sb_emit8(sb, 0x01);                                          /* lea rcx,[r14+1] */
+    sb_emit8(sb, 0xF3); sb_emit8(sb, 0xA4);                     /* rep movsb     */
+    /* pop rdi; pop rsi */
+    sb_emit8(sb, 0x5F); sb_emit8(sb, 0x5E);
+    /* mov rax, r15 (return buf) */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xF8);
+    /* restore callee-saved and return */
+    sb_emit_add_rsp_40(sb);
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5F); /* pop r15  */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5E); /* pop r14  */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5D); /* pop r13  */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5C); /* pop r12  */
+    sb_emit8(sb, 0x5B);                     /* pop rbx  */
+    sb_emit_ret(sb);
+
+    /* ── __axis_str_eq: compare two C strings ────────────── */
+    /* strcmp(RCX, RDX) → RAX; x64.c does sete/setne afterwards */
+    so.str_eq_off = base + sb->len;
+    sb_emit_sub_rsp_40(sb);
+    sb_emit_call_iat(sb, idata->iat_entry_rva[IMP_STRCMP],
+                     text_rva, base);
+    sb_emit_add_rsp_40(sb);
+    sb_emit_ret(sb);
+
     /* ── entry point stub: call __axis_top_level, then exit(0) ── */
-    /* This is NOT in StubOffsets; we handle it separately. */
 
     return so;
 }
@@ -801,10 +851,11 @@ static void patch_runtime_relocs(X64Ctx *x64_mut, const StubOffsets *so)
         else if (strcmp(r->target_sym, "__axis_write_nl") == 0)   target = so->write_nl_off;
         else if (strcmp(r->target_sym, "__axis_read_i64") == 0)   target = so->read_i64_off;
         else if (strcmp(r->target_sym, "__axis_read_line") == 0)  target = so->read_line_off;
-        else if (strcmp(r->target_sym, "__axis_read_char") == 0)  target = so->read_char_off;
         else if (strcmp(r->target_sym, "__axis_read_failed") == 0) target = so->read_failed_off;
         else if (strcmp(r->target_sym, "__axis_memcpy") == 0)     target = so->memcpy_off;
         else if (strcmp(r->target_sym, "__axis_div_zero") == 0)    target = so->div_zero_off;
+        else if (strcmp(r->target_sym, "__axis_str_concat") == 0) target = so->str_concat_off;
+        else if (strcmp(r->target_sym, "__axis_str_eq") == 0)     target = so->str_eq_off;
         else continue; /* user function – should already be resolved */
 
         int from = r->offset + 4;
@@ -1095,7 +1146,7 @@ int pe_write(PECtx *ctx, const X64Ctx *x64)
     sh.VirtualAddress  = ctx->rdata_rva;
     sh.SizeOfRawData   = rdata_raw_size;
     sh.PointerToRawData = ctx->rdata_raw;
-    sh.Characteristics = 0x40000040; /* INITIALIZED_DATA | READ */
+    sh.Characteristics = 0xC0000040; /* INITIALIZED_DATA | READ | WRITE */
     buf_write(ctx, &sh, sizeof(sh));
 
     /* .idata */

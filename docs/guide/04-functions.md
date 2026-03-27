@@ -7,13 +7,12 @@ func greet():
     writeln("Hello!")
 
 func add(a: i32, b: i32) -> i32:
-    give a + b
+    return a + b
 ```
 
 - `func` starts a function definition
 - Parameters have explicit types
-- `-> type` declares the return type
-- `give` returns a value (same as `return` in other languages)
+- `-> type` declares the return type; `return` returns a value
 
 ## Calling Functions
 
@@ -26,6 +25,8 @@ writeln(result)    # 30
 ## The `update` Modifier
 
 By default, parameters are passed by value — the function gets a copy. To modify the caller's variable, use `update`:
+
+![Normal parameter vs update parameter](img/update-modifier.svg)
 
 ```axis
 func double(update x: i32):
@@ -73,7 +74,7 @@ mode compile
 
 func main() -> i32:
     writeln("Running")
-    give 0
+    return 0
 ```
 
 Other functions work the same in both modes.

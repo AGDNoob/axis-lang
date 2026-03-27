@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 130" width="680" height="130" font-family="Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,1L9,5L0,9z" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <!-- Source -->
+  <rect x="10" y="30" width="90" height="44" rx="6" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.5"/>
+  <text x="55" y="57" text-anchor="middle" font-size="12" font-weight="bold" fill="#374151">Source</text>
+
+  <!-- Arrow 1 -->
+  <line x1="100" y1="52" x2="130" y2="52" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Lexer -->
+  <rect x="132" y="30" width="88" height="44" rx="6" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="176" y="57" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">Lexer</text>
+
+  <!-- Arrow 2 -->
+  <line x1="220" y1="52" x2="250" y2="52" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Parser -->
+  <rect x="252" y="30" width="88" height="44" rx="6" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="296" y="57" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">Parser</text>
+
+  <!-- Dashed arrow (conditional) -->
+  <line x1="340" y1="52" x2="395" y2="52" stroke="#D97706" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#a)"/>
+  <text x="367" y="42" text-anchor="middle" font-size="9" fill="#D97706">flags?</text>
+
+  <!-- Semantic (conditional — dashed border) -->
+  <rect x="397" y="30" width="108" height="44" rx="6" fill="#FFF7ED" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6 3"/>
+  <text x="451" y="57" text-anchor="middle" font-size="12" font-weight="bold" fill="#92400E">Semantic</text>
+
+  <!-- Arrow 4 -->
+  <line x1="505" y1="52" x2="538" y2="52" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Error Report -->
+  <rect x="540" y="30" width="130" height="44" rx="6" fill="#ECFDF5" stroke="#059669" stroke-width="1.5"/>
+  <text x="605" y="49" text-anchor="middle" font-size="12" font-weight="bold" fill="#065F46">Error Report</text>
+  <text x="605" y="65" text-anchor="middle" font-size="10" fill="#059669">(all at once)</text>
+
+  <!-- Annotations -->
+  <text x="176" y="96" text-anchor="middle" font-size="10" fill="#6B7280">Always runs</text>
+  <text x="176" y="109" text-anchor="middle" font-size="10" fill="#6B7280">(syntax check)</text>
+  <text x="451" y="96" text-anchor="middle" font-size="10" fill="#B45309">Only with --unused</text>
+  <text x="451" y="109" text-anchor="middle" font-size="10" fill="#B45309">--dead or --all</text>
+</svg>

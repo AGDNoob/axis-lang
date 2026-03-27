@@ -98,7 +98,7 @@ typedef struct {
     int     label_cap;
 
     /* Temp → location mapping */
-    int     var_area_size;   /* fn->stack_size: variables occupy [rbp-1] .. [rbp-var_area_size] */
+    int     var_area_size;   /* fn->stack_size: variables occupy [rsp+frame_size-1] .. [rsp+frame_size-var_area_size] */
 
     /* Register allocation for current function */
     RegAlloc cur_ra;         /* maps temp_id → physical register or REG_SPILLED */
@@ -107,10 +107,15 @@ typedef struct {
     /* Callee-saved register save/restore info for current function */
     int callee_save_regs[16]; /* which phys regs to push/pop */
     int callee_save_count;    /* how many callee-saved regs are used */
-    int callee_save_base;     /* rbp offset base: first saved reg at -(base+8) */
+
+    /* Frame layout: RSP-relative, no frame pointer */
+    int frame_size;           /* bytes subtracted from RSP after callee-save PUSHes */
 
     /* Epilogue label for shared-epilogue optimization */
     int epilogue_label;       /* code offset of the shared epilogue block */
+
+    /* Optimization level (controls codegen heuristics like NOP alignment) */
+    int opt_level;
 
     /* Memory */
     Arena *arena;

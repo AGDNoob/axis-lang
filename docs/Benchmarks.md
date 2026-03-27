@@ -5,7 +5,7 @@ All benchmarks were run on a consumer PC with debloated Windows 11.
 - **CPU**: AMD Ryzen 5 3500 (consumer desktop)
 - **OS**: Windows 11 (debloated)
 - **Method**: 7 interleaved runs per test, best taken
-- **AXCC Version**: v1.2.1
+- **AXCC Version**: v1.3.0
 - **GCC Version**: MinGW-w64 GCC 15.2.0 (`-O0`)
 - **Python Version**: CPython 3.13.7
 
@@ -53,12 +53,12 @@ with `cdq` (sign-extend to 64-bit). Pointer and stack operations remain 64-bit.
 
 ### Binary Size
 
-| Benchmark                     | AXCC      | GCC `-O0`  | Ratio        |
-|-------------------------------|-----------|------------|--------------|
-| Recursive Fibonacci           | 2.0 KB    | 59.6 KB    | **30× smaller** |
-| Prime Count                   | 3.0 KB    | 59.6 KB    | **20× smaller** |
-| Nested Loops                  | 2.5 KB    | 59.6 KB    | **24× smaller** |
-| GCD Stress                    | 3.0 KB    | 59.6 KB    | **20× smaller** |
+| Benchmark | AXCC | GCC `-O0` | Ratio |
+| --------- | ---- | --------- | ----- |
+| Recursive Fibonacci | 2.0 KB | 59.6 KB | **30× smaller** |
+| Prime Count | 3.0 KB | 59.6 KB | **20× smaller** |
+| Nested Loops | 2.5 KB | 59.6 KB | **24× smaller** |
+| GCD Stress | 3.0 KB | 59.6 KB | **20× smaller** |
 
 AXCC produces minimal PE binaries with no C runtime, no standard library, and no linker bloat. GCC links the MinGW CRT by default, which adds ~57 KB of overhead even at `-O0`.
 
@@ -69,7 +69,7 @@ AXCC produces minimal PE binaries with no C runtime, no standard library, and no
 
 **AXIS** (`mode compile`):
 
-``` text
+```text
 mode compile
 func fib(n: i32) i32:
     when n <= 1:
@@ -149,7 +149,8 @@ int main(void) {
 <summary>Benchmark 3 — Nested Loops (100M iterations)</summary>
 
 **AXIS** (`mode compile`):
-```
+
+```text
 mode compile
 func main() i32:
     sum: i32 = 0
@@ -167,6 +168,7 @@ func main() i32:
 ```
 
 **C** (equivalent):
+
 ```c
 int main(void) {
     int sum = 0;
@@ -178,13 +180,15 @@ int main(void) {
     return (sum >> 24) & 255;
 }
 ```
+
 </details>
 
 <details>
 <summary>Benchmark 4 — GCD Stress (2M calls)</summary>
 
 **AXIS** (`mode compile`):
-```
+
+```text
 mode compile
 func gcd(x: i32, y: i32) i32:
     a: i32 = x
@@ -205,6 +209,7 @@ func main() i32:
 ```
 
 **C** (equivalent):
+
 ```c
 int gcd(int x, int y) {
     int a = x, b = y, t;
@@ -218,6 +223,7 @@ int main(void) {
     return sum & 255;
 }
 ```
+
 </details>
 
 ---
@@ -258,7 +264,8 @@ compute-heavy workloads.
 <summary>Benchmark 1 — Recursive Fibonacci fib(38)</summary>
 
 **AXIS** (`mode script`):
-```
+
+```text
 mode script
 
 func fib(n: i32) i32:
@@ -270,6 +277,7 @@ result: i32 = fib(38)
 ```
 
 **Python** (equivalent):
+
 ```python
 import sys
 
@@ -281,13 +289,15 @@ def fib(n):
 result = fib(38)
 sys.exit(result % 256)
 ```
+
 </details>
 
 <details>
 <summary>Benchmark 2 — Prime Count to 500K</summary>
 
 **AXIS** (`mode script`):
-```
+
+```text
 mode script
 
 func is_prime(n: i32) i32:
@@ -308,6 +318,7 @@ while num < 500000:
 ```
 
 **Python** (equivalent):
+
 ```python
 import sys
 
@@ -329,13 +340,14 @@ while num < 500000:
 
 sys.exit(count % 256)
 ```
+
 </details>
 
 ---
 
 ## 3. Compiler & Binary Sizes
 
-| Component                     | Current    | Previous (Initial) |
+| Component                     | Current    | Initial Release    |
 |-------------------------------|------------|--------------------|
 | AXCC compiler (Windows PE)    | 224 KB     | 203 KB             |
 | Compiled AXIS binary (avg)    | ~2.6 KB    | ~2.8 KB            |

@@ -1,0 +1,11 @@
+// Recursive Fibonacci — Compile Mode (heavy workload)
+mode compile
+
+func fib(n: i32) -> i32:
+    when n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+func main() -> i32:
+    writeln(fib(38))
+    return 0

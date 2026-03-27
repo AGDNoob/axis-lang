@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 600" width="520" height="600" font-family="Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,1L9,5L0,9z" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <!-- Input pill -->
+  <rect x="130" y="6" width="260" height="32" rx="16" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+  <text x="260" y="27" text-anchor="middle" font-size="12" font-weight="bold" fill="#374151">Linear IR (from irgen.c)</text>
+
+  <!-- Arrow -->
+  <line x1="260" y1="38" x2="260" y2="52" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Tier 1: SSA Build -->
+  <rect x="60" y="56" width="400" height="62" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="80" y="78" font-size="13" font-weight="bold" fill="#1E40AF">Tier 1 — SSA Build</text>
+  <text x="80" y="100" font-size="10" fill="#374151">Dominators · φ-functions · Alias resolution · Loop detection</text>
+  <text x="430" y="78" text-anchor="end" font-size="10" fill="#93C5FD">ssa.c</text>
+
+  <!-- Arrow -->
+  <line x1="260" y1="118" x2="260" y2="132" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Tier 2: Scalar Opt -->
+  <rect x="60" y="136" width="400" height="62" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="80" y="158" font-size="13" font-weight="bold" fill="#1E40AF">Tier 2 — Scalar Opt</text>
+  <text x="80" y="180" font-size="10" fill="#374151">SCCP · GVN · ADCE · Copy Propagation · Inlining</text>
+  <text x="430" y="158" text-anchor="end" font-size="10" fill="#93C5FD">ssa_opt.c</text>
+
+  <!-- Arrow -->
+  <line x1="260" y1="198" x2="260" y2="212" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Tier 3: Loop Opt -->
+  <rect x="60" y="216" width="400" height="62" rx="6" fill="#ECFDF5" stroke="#059669" stroke-width="1.5"/>
+  <text x="80" y="238" font-size="13" font-weight="bold" fill="#065F46">Tier 3 — Loop Opt</text>
+  <text x="80" y="260" font-size="10" fill="#374151">LICM · IV Simplification · Strength Reduction · Unrolling</text>
+  <text x="430" y="238" text-anchor="end" font-size="10" fill="#6EE7B7">ssa_opt.c</text>
+
+  <!-- Arrow -->
+  <line x1="260" y1="278" x2="260" y2="292" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Tier 4: Lowering -->
+  <rect x="60" y="296" width="400" height="62" rx="6" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+  <text x="80" y="318" font-size="13" font-weight="bold" fill="#92400E">Tier 4 — Lowering</text>
+  <text x="80" y="340" font-size="10" fill="#374151">SSA → Machine IR · Instruction Selection · CMP fusion</text>
+  <text x="430" y="318" text-anchor="end" font-size="10" fill="#FCD34D">opt.c</text>
+
+  <!-- Arrow -->
+  <line x1="260" y1="358" x2="260" y2="372" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Tier 5: RegAlloc -->
+  <rect x="60" y="376" width="400" height="62" rx="6" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+  <text x="80" y="398" font-size="13" font-weight="bold" fill="#92400E">Tier 5 — RegAlloc</text>
+  <text x="80" y="420" font-size="10" fill="#374151">Linear Scan · Spill Cache · φ-Deconstruction</text>
+  <text x="430" y="398" text-anchor="end" font-size="10" fill="#FCD34D">opt.c</text>
+
+  <!-- Arrow -->
+  <line x1="260" y1="438" x2="260" y2="452" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Tier 6: Emission -->
+  <rect x="60" y="456" width="400" height="62" rx="6" fill="#FEF2F2" stroke="#DC2626" stroke-width="1.5"/>
+  <text x="80" y="478" font-size="13" font-weight="bold" fill="#991B1B">Tier 6 — Emission</text>
+  <text x="80" y="500" font-size="10" fill="#374151">Peephole · Branch Relaxation · NOP Alignment · Scheduling</text>
+  <text x="430" y="478" text-anchor="end" font-size="10" fill="#FCA5A5">x64.c</text>
+
+  <!-- Arrow -->
+  <line x1="260" y1="518" x2="260" y2="536" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- Output pill -->
+  <rect x="130" y="540" width="260" height="32" rx="16" fill="#ECFDF5" stroke="#059669" stroke-width="1.5"/>
+  <text x="260" y="561" text-anchor="middle" font-size="12" font-weight="bold" fill="#065F46">ELF / PE Binary</text>
+</svg>

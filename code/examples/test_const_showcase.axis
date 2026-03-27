@@ -1,0 +1,142 @@
+// test_const_showcase.axis
+// Comprehensive showcase of const in AXIS: what works and what doesn't.
+// Run with:   axis check test_const_showcase.axis
+// (Will show all errors/warnings at once without aborting)
+
+mode script
+
+// ═══════════════════════════════════════════════════════════
+// SETUP: Type definitions used throughout
+// ═══════════════════════════════════════════════════════════
+
+Vec2: field:
+    x: i32 = 0
+    y: i32 = 0
+
+Color: enum:
+    Red
+    Green
+    Blue
+
+func double(update n: i32):
+    n = n * 2
+
+func print_val(copy n: i32):
+    writeln(n)
+
+func add(a: i32, b: i32) -> i32:
+    return a + b
+
+// ═══════════════════════════════════════════════════════════
+//  PART 1: VALID const usage (all of these WORK)
+// ═══════════════════════════════════════════════════════════
+
+// --- 1.1 const with scalar types ---
+const age: i32 = 25
+const name: str = "AXIS"
+const flag: bool = True
+
+writeln("--- 1.1 const scalars ---")
+writeln(age)
+writeln(name)
+writeln(flag)
+
+// --- 1.2 const can be used in expressions ---
+writeln("--- 1.2 const in expressions ---")
+result: i32 = age + 10
+writeln(result)
+writeln(add(age, 100))
+
+// --- 1.3 const field (implicit default values, no initializer needed) ---
+writeln("--- 1.3 const field ---")
+const origin: Vec2
+writeln(origin.x)
+writeln(origin.y)
+
+// --- 1.4 const enum (implicit default = first variant) ---
+writeln("--- 1.4 const enum ---")
+const primary: Color
+writeln(primary)
+
+// --- 1.5 const passed to NON-update function (copy or regular) ---
+writeln("--- 1.5 const to copy param ---")
+print_val(age)
+
+// --- 1.6 const with explicit enum value ---
+const sky: Color = Color::Blue
+writeln(sky)
+
+// --- 1.7 const array with initializer ---
+const nums: (i32; 3) = [10, 20, 30]
+writeln("--- 1.7 const array ---")
+writeln(nums[0])
+writeln(nums[1])
+writeln(nums[2])
+
+// --- 1.8 mutable (non-const) variables work as expected ---
+writeln("--- 1.8 mutable (non-const) ---")
+counter: i32 = 0
+counter = counter + 1
+writeln(counter)
+
+pos: Vec2
+pos.x = 42
+pos.y = 99
+writeln(pos.x)
+writeln(pos.y)
+
+mutable_arr: (i32; 2) = [1, 2]
+mutable_arr[0] = 100
+writeln(mutable_arr[0])
+
+mut_val: i32 = 5
+double(mut_val)
+writeln(mut_val)
+
+// ═══════════════════════════════════════════════════════════
+//  PART 2: ERRORS — all of these will be caught by the
+//  semantic analyzer (use `axis check` to see them)
+// ═══════════════════════════════════════════════════════════
+
+// --- 2.1 const reassignment ---
+// Error: Cannot assign to immutable variable: pi
+const pi: i32 = 3
+pi = 4
+
+// --- 2.2 const without initializer (scalar) ---
+// Error: const variable 'oops' must have an initialiser
+const oops: i32
+
+// --- 2.3 const str without initializer ---
+// Error: const variable 'empty' must have an initialiser
+const empty: str
+
+// --- 2.4 const bool without initializer ---
+// Error: const variable 'nope' must have an initialiser
+const nope: bool
+
+// --- 2.5 const field member modification ---
+// Error: Cannot modify fields of immutable variable: frozen_pt
+const frozen_pt: Vec2
+frozen_pt.x = 42
+
+// --- 2.6 const array element modification ---
+// Error: Cannot modify elements of immutable array: locked
+const locked: (i32; 2) = [1, 2]
+locked[0] = 99
+
+// --- 2.7 const with compound assignment (+=) ---
+// Error: Cannot assign to immutable variable: score
+const score: i32 = 100
+score += 50
+
+// --- 2.8 const with compound assignment (-=) ---
+// Error: Cannot assign to immutable variable: hp
+const hp: i32 = 200
+hp -= 10
+
+// --- 2.9 const passed to update parameter ---
+// Error: Argument 1 to 'double': variable 'fixed' must be
+//        mutable for 'update' parameter
+const fixed: i32 = 7
+double(fixed)

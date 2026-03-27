@@ -1,0 +1,38 @@
+// Example 21: Constants
+// The const keyword makes variables immutable — they cannot be reassigned.
+
+mode script
+
+// ── Scalar constants ────────────────────────────────────
+const MAX_SIZE: i32 = 100
+const PI_APPROX: i64 = 3
+const IS_ACTIVE: bool = True
+
+writeln("MAX_SIZE   = ")
+writeln(MAX_SIZE)
+writeln("PI_APPROX  = ")
+writeln(PI_APPROX)
+writeln("IS_ACTIVE  = ")
+writeln(IS_ACTIVE)
+
+// ── Const in expressions ────────────────────────────────
+const WIDTH: i32 = 10
+const HEIGHT: i32 = 20
+const AREA: i32 = WIDTH * HEIGHT
+writeln("AREA = ")
+writeln(AREA)
+
+// ── Mutable variable alongside const ────────────────────
+counter: i32 = 0
+counter = counter + 1
+writeln("counter = ")
+writeln(counter)
+
+// ── Const array ─────────────────────────────────────────
+const SCORES: (i32; 3) = [10, 20, 30]
+writeln("SCORES[0] = ")
+writeln(SCORES[0])
+writeln("SCORES[1] = ")
+writeln(SCORES[1])
+writeln("SCORES[2] = ")
+writeln(SCORES[2])

@@ -1,0 +1,22 @@
+// Example 21: Type Casting with update...as
+// Demonstrates in-place type reinterpretation
+
+mode script
+
+// Widening: i8 -> i64 (sign extend)
+x: i8 = 42
+writeln(x)
+update x as i64
+writeln(x)
+
+// Widening: i32 -> i64 (sign extend, negative)
+y: i32 = -5
+writeln(y)
+update y as i64
+writeln(y)
+
+// Narrowing: i64 -> i8
+big: i64 = 300
+writeln(big)
+update big as i8
+writeln(big)

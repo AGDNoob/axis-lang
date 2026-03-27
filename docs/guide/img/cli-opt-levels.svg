@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 330" width="600" height="330" font-family="Arial, sans-serif">
+  <!-- O3 (outermost) -->
+  <rect x="20" y="12" width="560" height="238" rx="6" fill="#FEF2F2" stroke="#DC2626" stroke-width="1.5"/>
+  <text x="40" y="36" font-size="14" font-weight="bold" fill="#991B1B">-O3</text>
+  <text x="80" y="36" font-size="11" fill="#DC2626">+ aggressive inlining (7&#xD7;)</text>
+
+  <!-- O2 -->
+  <rect x="50" y="56" width="500" height="178" rx="6" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="70" y="80" font-size="14" font-weight="bold" fill="#5B21B6">-O2</text>
+  <text x="104" y="80" font-size="12" fill="#7C3AED">(DEFAULT)</text>
+  <text x="178" y="80" font-size="11" fill="#7C3AED">+ unrolling + scheduling + live-range split + inlining (5&#xD7;)</text>
+
+  <!-- O1 -->
+  <rect x="80" y="100" width="440" height="118" rx="6" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="100" y="124" font-size="14" font-weight="bold" fill="#1E40AF">-O1</text>
+  <text x="134" y="124" font-size="11" fill="#3B82F6">+ SSA scalar (SCCP, GVN, ADCE) + inlining (3&#xD7;) + loop opts + 25 flat-IR passes</text>
+
+  <!-- O0 (innermost) -->
+  <rect x="110" y="144" width="380" height="58" rx="6" fill="#F9FAFB" stroke="#6B7280" stroke-width="1.5"/>
+  <text x="130" y="168" font-size="14" font-weight="bold" fill="#374151">-O0</text>
+  <text x="164" y="168" font-size="11" fill="#6B7280">constfold + DCE only (no SSA)</text>
+  <text x="130" y="186" font-size="10" fill="#9CA3AF">Debug-friendly &#x2014; no transformations</text>
+
+  <!-- Os (separate, dashed border) -->
+  <rect x="20" y="270" width="560" height="48" rx="6" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="6 3"/>
+  <text x="40" y="293" font-size="14" font-weight="bold" fill="#92400E">-Os</text>
+  <text x="74" y="293" font-size="11" fill="#B45309">Like -O2 but without loop unrolling &#x2014; optimized for code size</text>
+  <text x="74" y="308" font-size="10" fill="#D97706">Same passes as -O2, only loop_unroll disabled</text>
+</svg>

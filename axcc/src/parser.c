@@ -17,6 +17,7 @@
  */
 
 #include "axis_parser.h"
+#include "axis_error.h"
 #include <stdarg.h>
 #include <setjmp.h>
 
@@ -28,11 +29,9 @@ static void parse_error(Parser *p, const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    fprintf(stderr, "%s:%d:%d: parse error: ",
-            p->filename, p->cur ? p->cur->loc.line : 0,
-            p->cur ? p->cur->loc.col : 0);
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
+    int line = p->cur ? p->cur->loc.line : 0;
+    int col  = p->cur ? p->cur->loc.col  : 0;
+    diag_reportv(DIAG_ERROR, p->filename, p->source, line, col, fmt, ap);
     va_end(ap);
     p->error_count++;
     if (p->check_mode) {
@@ -262,7 +261,7 @@ static ASTExpr *parse_primary(Parser *p)
         return e;
     }
 
-    /* copy [.mode] expr */
+    /* copy [.mode] expr [as type] */
     if (match(p, TOK_COPY)) {
         SrcLoc l = loc(p);
         advance(p);
@@ -279,6 +278,19 @@ static ASTExpr *parse_primary(Parser *p)
             }
         }
         ASTExpr *operand = parse_unary(p);  /* copy applies to a single operand */
+
+        /* copy expr as TYPE → copy cast */
+        if (match(p, TOK_AS)) {
+            advance(p);
+            ASTTypeNode *target = parse_type_node(p);
+            ASTExpr *e = NEW_EXPR(p);
+            e->kind = EXPR_COPY_CAST;
+            e->loc  = l;
+            e->copy_cast.expr        = operand;
+            e->copy_cast.target_type = target;
+            return e;
+        }
+
         ASTExpr *e = NEW_EXPR(p);
         e->kind = EXPR_COPY;
         e->loc  = l;
@@ -309,46 +321,49 @@ static ASTExpr *parse_primary(Parser *p)
         return e;
     }
 
-    /* Built-in read functions: read(), readln(), readchar() → Call */
-    if (match3(p, TOK_READ, TOK_READLN, TOK_READCHAR)) {
-        SrcLoc l = loc(p);
-        const char *name = NULL;
-        switch (cur(p)->type) {
-        case TOK_READ:     name = "read";     break;
-        case TOK_READLN:   name = "readln";   break;
-        case TOK_READCHAR: name = "readchar"; break;
-        default: break;
-        }
-        advance(p);
-        expect(p, TOK_LPAREN);
-        expect(p, TOK_RPAREN);
-        ASTExpr *e = NEW_EXPR(p);
-        e->kind = EXPR_CALL;
-        e->loc  = l;
-        e->call.name         = name;
-        e->call.args         = NULL;
-        e->call.update_flags = NULL;
-        e->call.arg_count    = 0;
-        return e;
-    }
-
-    /* read_failed() */
-    if (match(p, TOK_READ_FAILED)) {
+    /* Built-in input(): input() or input(prompt) */
+    if (match(p, TOK_INPUT)) {
         SrcLoc l = loc(p);
         advance(p);
         expect(p, TOK_LPAREN);
+        ASTExpr *prompt = NULL;
+        if (!match(p, TOK_RPAREN))
+            prompt = parse_expression(p);
         expect(p, TOK_RPAREN);
         ASTExpr *e = NEW_EXPR(p);
-        e->kind = EXPR_READ_FAILED;
+        e->kind = EXPR_INPUT;
         e->loc  = l;
+        e->input.prompt = prompt;
         return e;
     }
 
-    /* Identifier, function call, or enum access (Name::Variant) */
+    /* Identifier, function call, enum access, or _input_failed() */
     if (match(p, TOK_IDENT)) {
         SrcLoc l = loc(p);
         const char *name = cur(p)->str_val;
         advance(p);
+
+        /* Check for var_input_failed() pattern */
+        {
+            size_t nlen = strlen(name);
+            const char *suffix = "_input_failed";
+            size_t slen = strlen(suffix);
+            if (nlen > slen && strcmp(name + nlen - slen, suffix) == 0
+                && match(p, TOK_LPAREN)) {
+                advance(p);
+                expect(p, TOK_RPAREN);
+                /* extract variable name prefix */
+                size_t plen = nlen - slen;
+                char *var = arena_alloc(p->arena, plen + 1);
+                memcpy(var, name, plen);
+                var[plen] = '\0';
+                ASTExpr *e = NEW_EXPR(p);
+                e->kind = EXPR_INPUT_FAILED;
+                e->loc  = l;
+                e->input_failed.var_name = var;
+                return e;
+            }
+        }
 
         /* Enum access: Name::Variant */
         if (match(p, TOK_COLONCOLON)) {
@@ -583,7 +598,7 @@ static void parse_block(Parser *p, ASTStmt ***out_body, int *out_count)
  * Statement parsing
  * ═════════════════════════════════════════════════════════════ */
 
-static ASTStmt *parse_var_decl(Parser *p)
+static ASTStmt *parse_var_decl(Parser *p, bool is_const)
 {
     SrcLoc l = loc(p);
     const char *name = expect(p, TOK_IDENT)->str_val;
@@ -604,13 +619,15 @@ static ASTStmt *parse_var_decl(Parser *p)
     s->var_decl.value        = value;
     s->var_decl.stack_offset = 0;
     s->var_decl.total_size   = 0;
+    s->var_decl.input_flag_offset = 0;
+    s->var_decl.is_const     = is_const;
     return s;
 }
 
 static ASTStmt *parse_return(Parser *p)
 {
     SrcLoc l = loc(p);
-    advance(p); /* GIVE or RETURN */
+    advance(p); /* RETURN */
     ASTExpr *value = NULL;
     if (!match3(p, TOK_NEWLINE, TOK_DEDENT, TOK_EOF))
         value = parse_expression(p);
@@ -663,7 +680,7 @@ static ASTStmt *parse_if(Parser *p)
     return s;
 }
 
-static ASTStmt *parse_while(Parser *p)
+static ASTStmt *parse_while(Parser *p, const char *flag)
 {
     SrcLoc l = loc(p);
     expect(p, TOK_WHILE);
@@ -681,10 +698,11 @@ static ASTStmt *parse_while(Parser *p)
     s->while_loop.condition  = cond;
     s->while_loop.body       = body;
     s->while_loop.body_count = body_count;
+    s->while_loop.flag       = flag;
     return s;
 }
 
-static ASTStmt *parse_repeat(Parser *p)
+static ASTStmt *parse_repeat(Parser *p, const char *flag)
 {
     SrcLoc l = loc(p);
     advance(p); /* REPEAT (or LOOP, both map to TOK_REPEAT) */
@@ -700,6 +718,7 @@ static ASTStmt *parse_repeat(Parser *p)
     s->loc  = l;
     s->repeat_loop.body       = body;
     s->repeat_loop.body_count = body_count;
+    s->repeat_loop.flag       = flag;
     return s;
 }
 
@@ -753,7 +772,7 @@ static ASTStmt *parse_match(Parser *p)
     return s;
 }
 
-static ASTStmt *parse_for(Parser *p)
+static ASTStmt *parse_for(Parser *p, const char *flag)
 {
     SrcLoc l = loc(p);
     expect(p, TOK_FOR);
@@ -799,6 +818,7 @@ static ASTStmt *parse_for(Parser *p)
     s->for_loop.iterable   = iterable;
     s->for_loop.body       = body;
     s->for_loop.body_count = body_count;
+    s->for_loop.flag       = flag;
     return s;
 }
 
@@ -893,31 +913,74 @@ static ASTStmt *parse_expr_statement(Parser *p)
 
 static ASTStmt *parse_statement(Parser *p)
 {
+    /* update cast: update ident as type */
+    if (match(p, TOK_UPDATE)) {
+        Token *nxt = peek(p, 1);
+        if (nxt && nxt->type == TOK_IDENT) {
+            Token *nxt2 = peek(p, 2);
+            if (nxt2 && nxt2->type == TOK_AS) {
+                SrcLoc l = loc(p);
+                advance(p);                         /* consume 'update'  */
+                const char *name = cur(p)->str_val;
+                advance(p);                         /* consume ident     */
+                advance(p);                         /* consume 'as'      */
+                ASTTypeNode *target = parse_type_node(p);
+                skip_newlines(p);
+                ASTStmt *s = NEW_STMT(p);
+                s->kind = STMT_UPDATE_CAST;
+                s->loc  = l;
+                s->update_cast.var_name    = name;
+                s->update_cast.target_type = target;
+                s->update_cast.old_offset   = 0;
+                s->update_cast.new_offset   = 0;
+                s->update_cast.old_size     = 0;
+                s->update_cast.new_size     = 0;
+                return s;
+            }
+        }
+    }
+
+    /* const variable declaration: const ident : type = expr */
+    if (match(p, TOK_CONST)) {
+        advance(p);
+        return parse_var_decl(p, true);
+    }
+
     /* Variable declaration: ident : type [= expr] */
     if (match(p, TOK_IDENT)) {
         Token *nxt = peek(p, 1);
         if (nxt && nxt->type == TOK_COLON) {
             Token *nxt2 = peek(p, 2);
             if (!nxt2 || (nxt2->type != TOK_FIELD && nxt2->type != TOK_ENUM))
-                return parse_var_decl(p);
+                return parse_var_decl(p, false);
         }
     }
 
-    /* return / give */
-    if (match2(p, TOK_GIVE, TOK_RETURN))
+    /* return */
+    if (match(p, TOK_RETURN))
         return parse_return(p);
 
     /* when (if) */
     if (match(p, TOK_WHEN))
         return parse_if(p);
 
+    /* @flag before loop keyword */
+    if (match(p, TOK_FLAG)) {
+        const char *flag = cur(p)->str_val;
+        advance(p);
+        if (match(p, TOK_WHILE))  return parse_while(p, flag);
+        if (match(p, TOK_REPEAT)) return parse_repeat(p, flag);
+        if (match(p, TOK_FOR))    return parse_for(p, flag);
+        parse_error(p, "'@%s' must be followed by while, repeat, loop, or for", flag);
+    }
+
     /* while */
     if (match(p, TOK_WHILE))
-        return parse_while(p);
+        return parse_while(p, NULL);
 
     /* repeat / loop */
     if (match(p, TOK_REPEAT))
-        return parse_repeat(p);
+        return parse_repeat(p, NULL);
 
     /* match */
     if (match(p, TOK_MATCH))
@@ -925,16 +988,22 @@ static ASTStmt *parse_statement(Parser *p)
 
     /* for */
     if (match(p, TOK_FOR))
-        return parse_for(p);
+        return parse_for(p, NULL);
 
     /* break / stop */
     if (match(p, TOK_BREAK)) {
         SrcLoc l = loc(p);
         advance(p);
+        const char *flag = NULL;
+        if (match(p, TOK_FLAG)) {
+            flag = cur(p)->str_val;
+            advance(p);
+        }
         skip_newlines(p);
         ASTStmt *s = NEW_STMT(p);
         s->kind = STMT_BREAK;
         s->loc  = l;
+        s->break_stmt.flag = flag;
         return s;
     }
 
@@ -942,10 +1011,16 @@ static ASTStmt *parse_statement(Parser *p)
     if (match(p, TOK_CONTINUE)) {
         SrcLoc l = loc(p);
         advance(p);
+        const char *flag = NULL;
+        if (match(p, TOK_FLAG)) {
+            flag = cur(p)->str_val;
+            advance(p);
+        }
         skip_newlines(p);
         ASTStmt *s = NEW_STMT(p);
         s->kind = STMT_CONTINUE;
         s->loc  = l;
+        s->continue_stmt.flag = flag;
         return s;
     }
 

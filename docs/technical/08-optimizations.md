@@ -1,6 +1,6 @@
 # Optimizations
 
-AXCC v1.2.1 includes a 14-pass optimization pipeline. Passes run after IR generation and before (or during) x64 code emission.
+AXCC v1.3.0 includes a multi-tier optimization pipeline with 34 SSA passes and 25+ flat-IR passes. Passes run after IR generation, through SSA construction and optimization, and during x64 code emission.
 
 ## Pipeline Overview
 

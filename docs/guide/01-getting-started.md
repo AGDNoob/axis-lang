@@ -53,7 +53,7 @@ Run it:
 
 Output:
 
-```
+```text
 Hello, World!
 ```
 
@@ -94,7 +94,7 @@ Use `axis check` to validate a source file without producing a binary:
 axis check program.axis --all
 ```
 
-This reports all syntax and semantic errors at once, plus optional warnings for dead code (`--dead`) and unused variables (`--unused`). See [Check Command](12-check-command.md) for details.
+This reports all syntax and semantic errors at once, plus optional warnings for dead code (`--dead`) and unused variables (`--unused`). See [Command-Line Interface](12-cli.md) for details.
 
 ## VS Code Extension
 

@@ -40,6 +40,8 @@ p.position.x = 50
 p.position.y = 100
 ```
 
+![Nested field layout — Player containing Vec2](img/field-layout.svg)
+
 ## Inline Anonymous Fields
 
 You can define fields inline without creating a separate type:

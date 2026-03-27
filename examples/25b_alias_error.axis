@@ -1,0 +1,6 @@
+mode script
+
+// Error: const alias of mutable variable
+x: i32 = 42
+const y: i32 = x
+writeln(y)

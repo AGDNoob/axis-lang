@@ -30,12 +30,12 @@ typedef enum {
     TOK_IN,
     TOK_BREAK,          /* "break" / "stop"     */
     TOK_CONTINUE,       /* "continue" / "skip"  */
+    TOK_FLAG,           /* @name (loop flag)    */
     TOK_MATCH,
 
     /* ── Function keywords ────────────────────────────── */
     TOK_FUNC,
-    TOK_GIVE,           /* return (primary)  */
-    TOK_RETURN,         /* return (alias)    */
+    TOK_RETURN,         /* return             */
 
     /* ── Declaration / modifier ───────────────────────── */
     TOK_MODE,
@@ -45,14 +45,13 @@ typedef enum {
     TOK_ENUM,
     TOK_UPDATE,
     TOK_COPY,
+    TOK_CONST,
+    TOK_AS,
 
     /* ── Built-in I/O ─────────────────────────────────── */
     TOK_WRITE,
     TOK_WRITELN,
-    TOK_READ,
-    TOK_READLN,
-    TOK_READCHAR,
-    TOK_READ_FAILED,
+    TOK_INPUT,
 
     /* ── Syscall ──────────────────────────────────────── */
     TOK_SYSCALL,

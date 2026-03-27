@@ -16,10 +16,13 @@
 #include "axis_ast.h"
 #include "axis_parser.h"
 #include "axis_semantic.h"
+#include "axis_error.h"
 #include "axis_ir.h"
 #include "axis_x64.h"
 #include "axis_pe.h"
 #include "axis_elf.h"
+#include "axis_opt.h"
+#include "axis_ssa.h"
 
 #include <errno.h>
 #include <sys/stat.h>
@@ -64,6 +67,7 @@ typedef struct {
     const char  *input_file;
     const char  *output_file;   /* only for build */
     OutputFormat format;
+    OptLevel     opt_level;     /* -O0, -O1, -O2 (default), -O3, -Os */
     bool         dump_tokens;
     bool         dump_ast;
     bool         dump_ir;
@@ -96,6 +100,11 @@ static void print_usage(const char *prog) {
         "  --dump-tokens   Print token stream\n"
         "  --dump-ir       Print IR\n"
         "  --dump-x64      Print x64 code info\n"
+        "  -O0             No optimization (debug-friendly)\n"
+        "  -O1             Basic scalar optimizations\n"
+        "  -O2             Full optimization (default)\n"
+        "  -O3             Aggressive optimization (all 32 passes)\n"
+        "  -Os             Optimize for size\n"
         "  -v, --verbose   Verbose output\n"
         "  --version       Show version\n"
         "  -h, --help      Show this help\n"
@@ -124,6 +133,7 @@ static void print_version(void) {
 static int parse_args(int argc, char **argv, Options *opts) {
     memset(opts, 0, sizeof(*opts));
     opts->command = CMD_NONE;
+    opts->opt_level = OPT_O2;  /* default optimization level */
 
     if (argc < 2) {
         opts->command = CMD_HELP;
@@ -186,6 +196,11 @@ static int parse_args(int argc, char **argv, Options *opts) {
             opts->verbose = true;
             continue;
         }
+        if (strcmp(arg, "-O0") == 0) { opts->opt_level = OPT_O0; continue; }
+        if (strcmp(arg, "-O1") == 0) { opts->opt_level = OPT_O1; continue; }
+        if (strcmp(arg, "-O2") == 0) { opts->opt_level = OPT_O2; continue; }
+        if (strcmp(arg, "-O3") == 0) { opts->opt_level = OPT_O3; continue; }
+        if (strcmp(arg, "-Os") == 0) { opts->opt_level = OPT_Os; continue; }
         /* Unknown flag */
         if (arg[0] == '-') {
             fprintf(stderr, "error: unknown option '%s'\n", arg);
@@ -472,7 +487,7 @@ static int compile_to_exe(const char *input_path, const char *output_path,
     if (opts->verbose) fprintf(stderr, "[axis] analyzing...\n");
 
     Semantic sem;
-    semantic_init(&sem, &arena, input_path);
+    semantic_init(&sem, &arena, input_path, source);
 
     int sem_result = semantic_analyze(&sem, ast);
     if (sem_result != 0) {
@@ -489,23 +504,27 @@ static int compile_to_exe(const char *input_path, const char *output_path,
 
     IRProgram ir;
     ir_program_init(&ir, &arena);
-    ir_generate(&ir, ast, input_path);
+    if (ast->mode == MODE_SCRIPT)
+        script_ir_generate(&ir, ast, input_path, source);
+    else
+        ir_generate(&ir, ast, input_path, source);
 
     /* ── Optimization passes (compile mode only) ──────── */
     if (ast->mode == MODE_COMPILE) {
-        if (opts->verbose) fprintf(stderr, "[axis] running optimization passes...\n");
-        opt_dce(&ir);
-        opt_inline(&ir);
-        opt_constfold(&ir);
-        opt_copyprop(&ir);
-        opt_strength_reduce(&ir);
-        opt_peephole(&ir);
-        opt_loadstore_elim(&ir);
-        opt_licm(&ir);
-        opt_unroll(&ir);
-        opt_loadstore_elim(&ir); /* re-run after unrolling */
-        opt_rie(&ir);
-        opt_dce(&ir);            /* final cleanup */
+        if (opts->opt_level == OPT_O0) {
+            /* O0: minimal – only DCE for correctness */
+            if (opts->verbose)
+                fprintf(stderr, "[axis] -O0: minimal passes\n");
+            opt_dce(&ir);
+        } else {
+            /* O1+: full SSA pipeline */
+            if (opts->verbose)
+                fprintf(stderr, "[axis] running SSA optimization pipeline (-O%s)...\n",
+                        opts->opt_level == OPT_O1 ? "1" :
+                        opts->opt_level == OPT_O2 ? "2" :
+                        opts->opt_level == OPT_O3 ? "3" : "s");
+            ssa_optimize(&ir, opts->opt_level, &arena, opts->verbose);
+        }
     } else if (opts->verbose) {
         fprintf(stderr, "[axis] skipping optimizations (script mode)\n");
     }
@@ -521,6 +540,7 @@ static int compile_to_exe(const char *input_path, const char *output_path,
 
     X64Ctx x64;
     memset(&x64, 0, sizeof(x64));
+    x64.opt_level = opts->opt_level;
     x64_codegen(&x64, &ir, &arena);
 
     if (opts->dump_x64) x64_dump(&x64, stderr);
@@ -708,7 +728,7 @@ static int check_file(const char *input_path, const Options *opts) {
 
     if (run_semantic && ast && parser.error_count == 0) {
         Semantic sem;
-        semantic_init(&sem, &arena, input_path);
+        semantic_init(&sem, &arena, input_path, source);
         sem.check_mode   = true;
         sem.check_unused = opts->check_unused || opts->check_all;
         sem.check_dead   = opts->check_dead   || opts->check_all;
@@ -735,6 +755,8 @@ static int check_file(const char *input_path, const Options *opts) {
  * ═════════════════════════════════════════════════════════════ */
 
 int main(int argc, char **argv) {
+    diag_init();
+
     Options opts;
     if (parse_args(argc, argv, &opts) != 0) {
         print_usage(argv[0]);

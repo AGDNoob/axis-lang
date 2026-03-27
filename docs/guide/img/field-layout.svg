@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 280" width="480" height="280" font-family="Arial, sans-serif">
+
+  <!-- Player outer box -->
+  <rect x="20" y="10" width="440" height="260" rx="8" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+  <rect x="20" y="10" width="440" height="36" rx="8" fill="#2563EB"/>
+  <rect x="20" y="30" width="440" height="16" fill="#2563EB"/>
+  <text x="240" y="34" text-anchor="middle" fill="white" font-size="14" font-weight="bold">Player : field</text>
+
+  <!-- name field -->
+  <rect x="40" y="60" width="180" height="50" rx="6" fill="white" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="130" y="82" text-anchor="middle" fill="#1E40AF" font-size="12" font-weight="bold">name : str</text>
+  <text x="130" y="100" text-anchor="middle" fill="#6B7280" font-size="11">"Alice"</text>
+
+  <!-- position field (Vec2 nested) -->
+  <rect x="40" y="125" width="400" height="130" rx="6" fill="#ECFDF5" stroke="#059669" stroke-width="1.5"/>
+  <rect x="40" y="125" width="400" height="30" rx="6" fill="#059669"/>
+  <rect x="40" y="140" width="400" height="15" fill="#059669"/>
+  <text x="240" y="146" text-anchor="middle" fill="white" font-size="12" font-weight="bold">position : Vec2</text>
+
+  <!-- x field inside Vec2 -->
+  <rect x="60" y="170" width="175" height="50" rx="6" fill="white" stroke="#059669" stroke-width="1.5"/>
+  <text x="147" y="192" text-anchor="middle" fill="#065F46" font-size="12" font-weight="bold">x : i32</text>
+  <text x="147" y="210" text-anchor="middle" fill="#6B7280" font-size="11">50</text>
+
+  <!-- y field inside Vec2 -->
+  <rect x="250" y="170" width="175" height="50" rx="6" fill="white" stroke="#059669" stroke-width="1.5"/>
+  <text x="337" y="192" text-anchor="middle" fill="#065F46" font-size="12" font-weight="bold">y : i32</text>
+  <text x="337" y="210" text-anchor="middle" fill="#6B7280" font-size="11">100</text>
+</svg>

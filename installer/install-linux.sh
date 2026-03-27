@@ -179,7 +179,21 @@ check_path() {
 }
 
 # ── Success message ──────────────────────────────────────────
-show_success() {
+hello${RESET}"
+    echo -e "    ${BOLD}./hello${RESET}"
+    echo ""
+    read -rp "  Would you like to download the AXIS Guide? [Y/n] " openguide
+    openguide="${openguide:-Y}"
+    if [[ "$openguide" =~ ^[Yy]$ ]]; then
+        local url="https://github.com/${REPO}/tree/main/docs/guide"
+        if check_cmd xdg-open; then
+            xdg-open "$url" 2>/dev/null &
+        elif check_cmd open; then
+            open "$url" 2>/dev/null &
+        else
+            echo -e "  Open manually: ${CYAN}${url}${RESET}"
+        fi
+    fishow_success() {
     echo ""
     echo -e "${GREEN}════════════════════════════════════════${RESET}"
     echo -e "${GREEN}  Installation complete!${RESET}"
@@ -203,21 +217,7 @@ show_success() {
     read -rp "  Did you understand? [Y/n] " understood
     echo ""
     echo -e "  Quick start:"
-    echo -e "    ${BOLD}axis hello.axis -o hello${RESET}"
-    echo -e "    ${BOLD}./hello${RESET}"
-    echo ""
-    read -rp "  Would you like to download the AXIS Guide? [Y/n] " openguide
-    openguide="${openguide:-Y}"
-    if [[ "$openguide" =~ ^[Yy]$ ]]; then
-        local url="https://github.com/${REPO}/tree/main/docs/guide"
-        if check_cmd xdg-open; then
-            xdg-open "$url" 2>/dev/null &
-        elif check_cmd open; then
-            open "$url" 2>/dev/null &
-        else
-            echo -e "  Open manually: ${CYAN}${url}${RESET}"
-        fi
-    fi
+    echo -e "    ${BOLD}axis hello.axis -o 
     echo ""
     echo -e "  ${GREEN}Happy coding!${RESET}"
     echo ""

@@ -1,0 +1,55 @@
+// ============================================
+// AXIS Example 22: Const Immutability
+// Script Mode – demonstrates const variables
+// ============================================
+
+mode script
+
+// 1. Basic const declaration
+const greeting: str = "Hello"
+const answer: i32 = 42
+const pi_approx: i64 = 3
+const flag: bool = True
+
+writeln("=== Const Variables ===")
+writeln(greeting)
+writeln(answer)
+writeln(pi_approx)
+writeln(flag)
+
+// 2. Mutable variable vs const
+counter: i32 = 0
+counter = 10
+writeln("")
+writeln("=== Mutable vs Const ===")
+writeln(counter)
+
+// 3. Const with expressions
+const doubled: i32 = answer * 2
+writeln(doubled)
+
+// 4. Const array
+const scores: (i32; 5) = [10, 20, 30, 40, 50]
+writeln("")
+writeln("=== Const Array ===")
+for s in scores:
+    write(s)
+    write(" ")
+writeln("")
+
+// 5. Const in loops – loop var is separate
+for i in range(0, 5):
+    writeln(i)
+
+// 6. Const with different integer types
+const small: i8 = 127
+const medium: i16 = 32000
+const large: i64 = 100000
+writeln("")
+writeln("=== Const Types ===")
+writeln(small)
+writeln(medium)
+writeln(large)
+
+writeln("")
+writeln("=== All const tests passed ===")

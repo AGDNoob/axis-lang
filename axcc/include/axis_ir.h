@@ -88,6 +88,13 @@ typedef enum {
     /* ── Syscall ─────────────────────────────────────────── */
     IR_SYSCALL,         /* syscall with src1.imm args (regs loaded via IR_ARG) */
 
+    /* ── String operations ───────────────────────────────── */
+    IR_STR_CONCAT,      /* dest = str_concat(src1, src2)       */
+    IR_STR_EQ,          /* dest = str_eq(src1, src2); extra: 0 == eq, 1 == ne */
+
+    /* ── Conditional move ────────────────────────────────── */
+    IR_CMOV,            /* if (src2 != 0) dest = src1; extra = cc hint */
+
     IR_OPCODE_COUNT
 } IROpcode;
 
@@ -175,7 +182,12 @@ typedef struct {
  * ═════════════════════════════════════════════════════════════ */
 
 void      ir_program_init(IRProgram *p, Arena *arena);
-void      ir_generate(IRProgram *p, ASTProgram *ast, const char *filename);
+void      ir_generate(IRProgram *p, ASTProgram *ast, const char *filename,
+                      const char *source);
+
+/* Lightweight IR generator for script mode – fewer temps, inline folding */
+void      script_ir_generate(IRProgram *p, ASTProgram *ast, const char *filename,
+                             const char *source);
 
 /* Debug: dump IR to FILE* in text form */
 void      ir_dump(const IRProgram *p, FILE *out);

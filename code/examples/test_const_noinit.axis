@@ -1,0 +1,4 @@
+// Test: const without initializer should fail
+mode script
+
+const x: i32

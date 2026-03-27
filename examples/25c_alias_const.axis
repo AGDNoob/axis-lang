@@ -1,0 +1,6 @@
+mode script
+
+// alias of const is immutable too
+const x: i32 = 42
+y: i32 = x
+y = 99

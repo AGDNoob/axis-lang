@@ -40,7 +40,7 @@ Full-featured VS Code extension for the AXIS programming language.
 Type a prefix and press `Tab`:
 
 | Prefix | Expands to |
-|--------|-----------|
+| ------ | ---------- |
 | `func` | Function definition |
 | `main` | `func main() -> i32:` template |
 | `var` | Variable declaration with type |

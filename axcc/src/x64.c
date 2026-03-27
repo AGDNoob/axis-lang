@@ -1,15 +1,15 @@
 /*
- * x64.c – x86-64 native code generator for the AXIS compiler.
+ * x64.c â€“ x86-64 native code generator for the AXIS compiler.
  *
  * Strategy:
- *   • Variables live at [rbp + stack_off] (stack_off is negative).
- *   • Temps are assigned physical registers via linear-scan regalloc.
+ *   â€¢ Variables live at [rbp + stack_off] (stack_off is negative).
+ *   â€¢ Temps are assigned physical registers via linear-scan regalloc.
  *     Spilled temps live below variables: [rbp - var_area - (temp_id+1)*8].
- *   • RAX, RCX, RDX are scratch registers for instruction lowering.
- *   • R8, R9 are reserved for function call arguments.
- *   • Allocatable: RBX, RSI, RDI, R10, R11, R12–R15.
- *   • Calling convention: Windows x64 (rcx, rdx, r8, r9 + shadow space).
- *   • The linker/PE-writer patches RELOC_REL32 for function calls
+ *   â€¢ RAX, RCX, RDX are scratch registers for instruction lowering.
+ *   â€¢ R8, R9 are reserved for function call arguments.
+ *   â€¢ Allocatable: RBX, RSI, RDI, R10, R11, R12â€“R15.
+ *   â€¢ Calling convention: Windows x64 (rcx, rdx, r8, r9 + shadow space).
+ *   â€¢ The linker/PE-writer patches RELOC_REL32 for function calls
  *     and RELOC_RIP_REL32 for string literal references.
  *
  * Encoding reference:
@@ -22,9 +22,9 @@
 #include <inttypes.h>
 #include <stdarg.h>
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Helpers / Forward declarations
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 static void resolve_label_relocs(X64Ctx *ctx);
 
@@ -32,14 +32,14 @@ _Noreturn static void x64_error(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    fprintf(stderr, "axisc: x64 codegen error: ");
+    fprintf(stderr, "\n  \033[1;31merror:\033[0m ");
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
     va_end(ap);
     exit(1);
 }
 
-/* ── Code buffer operations ──────────────────────────────── */
+/* â”€â”€ Code buffer operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void cb_init(CodeBuf *cb)
 {
@@ -95,7 +95,7 @@ static void cb_patch32(CodeBuf *cb, int offset, uint32_t v)
     memcpy(&cb->data[offset], &v, 4);
 }
 
-/* ── Relocations ─────────────────────────────────────────── */
+/* â”€â”€ Relocations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void add_reloc(X64Ctx *ctx, RelocKind kind, int offset,
                       const char *sym, int label, int addend)
@@ -113,7 +113,7 @@ static void add_reloc(X64Ctx *ctx, RelocKind kind, int offset,
     r->addend      = addend;
 }
 
-/* ── Label management ────────────────────────────────────── */
+/* â”€â”€ Label management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void ensure_label(X64Ctx *ctx, int id)
 {
@@ -139,9 +139,9 @@ static int get_label(X64Ctx *ctx, int id)
     return ctx->label_offsets[id];
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * x86-64 register encoding
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 enum {
     RAX = 0, RCX = 1, RDX = 2, RBX = 3,
@@ -170,27 +170,27 @@ static uint8_t modrm(int mod, int reg, int rm)
     return (uint8_t)(((mod & 3) << 6) | ((reg & 7) << 3) | (rm & 7));
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Stack slot helpers
  *
  * Variables occupy [rbp + stack_off] where stack_off is negative.
  * Temps live below the variable area (spilled temps only):
- *   spill slot 0 → [rbp - var_area - 8], slot 1 → [rbp - var_area - 16], etc.
+ *   spill slot 0 â†’ [rbp - var_area - 8], slot 1 â†’ [rbp - var_area - 16], etc.
  *   Register-allocated temps have no stack slot.
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-static int temp_rbp_off(const X64Ctx *ctx, int temp_id)
+static int temp_off(const X64Ctx *ctx, int temp_id)
 {
     int slot = ctx->spill_map[temp_id];
-    return -(ctx->var_area_size + (slot + 1) * 8);
+    return ctx->frame_size - ctx->var_area_size - (slot + 1) * 8;
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Instruction emission helpers (commonly used patterns)
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /*
- * emit_mov_reg_reg(cb, dst, src)  –  mov dst, src  (32-bit)
+ * emit_mov_reg_reg(cb, dst, src)  â€“  mov dst, src  (32-bit)
  * Encoding: [REX] 89 /r  (mov r/m32, r32)
  */
 static void emit_mov_reg_reg(CodeBuf *cb, int dst, int src)
@@ -209,7 +209,7 @@ static void emit_mov_reg_reg64(CodeBuf *cb, int dst, int src)
 }
 
 /*
- * emit_mov_reg_imm64(cb, reg, val)  –  movabs reg, imm64
+ * emit_mov_reg_imm64(cb, reg, val)  â€“  movabs reg, imm64
  * Encoding: REX.W + B8+rd  imm64
  */
 static void emit_mov_reg_imm64(CodeBuf *cb, int reg, int64_t val)
@@ -220,8 +220,8 @@ static void emit_mov_reg_imm64(CodeBuf *cb, int reg, int64_t val)
 }
 
 /*
- * emit_mov_reg_imm32(cb, reg, val)  –  mov reg, imm32 (zero-extend)
- * Encoding: B8+rd imm32  (no REX.W → 32-bit op, upper 32 bits zeroed)
+ * emit_mov_reg_imm32(cb, reg, val)  â€“  mov reg, imm32 (zero-extend)
+ * Encoding: B8+rd imm32  (no REX.W â†’ 32-bit op, upper 32 bits zeroed)
  */
 static void emit_mov_reg_imm32(CodeBuf *cb, int reg, int32_t val)
 {
@@ -232,7 +232,7 @@ static void emit_mov_reg_imm32(CodeBuf *cb, int reg, int32_t val)
 }
 
 /*
- * emit_load_imm(cb, reg, val) – load immediate, shortest encoding
+ * emit_load_imm(cb, reg, val) â€“ load immediate, shortest encoding
  */
 static void emit_load_imm(CodeBuf *cb, int reg, int64_t val)
 {
@@ -256,20 +256,22 @@ static void emit_load_imm(CodeBuf *cb, int reg, int64_t val)
  * offset is always negative for our usage.
  * Uses disp32 encoding with RBP base.
  */
-static void emit_load_rbp(CodeBuf *cb, int dst, int off)
+static void __attribute__((unused)) emit_load_rbp(CodeBuf *cb, int dst, int off)
 {
-    emit_rex32(cb, dst, 0, RBP);
-    cb_emit8(cb, 0x8B);                    /* mov r32, r/m32 */
-    cb_emit8(cb, modrm(2, dst, RBP));      /* mod=10 (disp32), rm=rbp */
+    emit_rex32(cb, dst, 0, RSP);
+    cb_emit8(cb, 0x8B);                    /* mov r32, [rsp + disp32] */
+    cb_emit8(cb, modrm(2, dst, RSP));
+    cb_emit8(cb, 0x24);                    /* SIB: base=RSP, no index */
     cb_emit32(cb, (uint32_t)off);
 }
 
 /* 64-bit variant for callee-save / pointer loads */
 static void emit_load_rbp64(CodeBuf *cb, int dst, int off)
 {
-    cb_emit8(cb, rex(1, dst, 0, RBP));
-    cb_emit8(cb, 0x8B);                    /* mov r64, r/m64 */
-    cb_emit8(cb, modrm(2, dst, RBP));
+    cb_emit8(cb, rex(1, dst, 0, RSP));
+    cb_emit8(cb, 0x8B);                    /* mov r64, [rsp + disp32] */
+    cb_emit8(cb, modrm(2, dst, RSP));
+    cb_emit8(cb, 0x24);                    /* SIB: base=RSP, no index */
     cb_emit32(cb, (uint32_t)off);
 }
 
@@ -279,18 +281,20 @@ static void emit_load_rbp64(CodeBuf *cb, int dst, int off)
  */
 static void emit_store_rbp(CodeBuf *cb, int off, int src)
 {
-    emit_rex32(cb, src, 0, RBP);
-    cb_emit8(cb, 0x89);                    /* mov r/m32, r32 */
-    cb_emit8(cb, modrm(2, src, RBP));
+    emit_rex32(cb, src, 0, RSP);
+    cb_emit8(cb, 0x89);                    /* mov [rsp + disp32], r32 */
+    cb_emit8(cb, modrm(2, src, RSP));
+    cb_emit8(cb, 0x24);                    /* SIB: base=RSP, no index */
     cb_emit32(cb, (uint32_t)off);
 }
 
 /* 64-bit variant for callee-save / pointer stores */
 static void emit_store_rbp64(CodeBuf *cb, int off, int src)
 {
-    cb_emit8(cb, rex(1, src, 0, RBP));
-    cb_emit8(cb, 0x89);                    /* mov r/m64, r64 */
-    cb_emit8(cb, modrm(2, src, RBP));
+    cb_emit8(cb, rex(1, src, 0, RSP));
+    cb_emit8(cb, 0x89);                    /* mov [rsp + disp32], r64 */
+    cb_emit8(cb, modrm(2, src, RSP));
+    cb_emit8(cb, 0x24);                    /* SIB: base=RSP, no index */
     cb_emit32(cb, (uint32_t)off);
 }
 
@@ -305,24 +309,27 @@ static void emit_load_rbp_sx(CodeBuf *cb, int dst, int off, int size)
 {
     switch (size) {
     case 1:
-        cb_emit8(cb, rex(1, dst, 0, RBP));  /* REX.W */
+        cb_emit8(cb, rex(1, dst, 0, RSP));  /* REX.W */
         cb_emit8(cb, 0x0F);
         cb_emit8(cb, 0xBE);                  /* movsx r64, r/m8 */
-        cb_emit8(cb, modrm(2, dst, RBP));
+        cb_emit8(cb, modrm(2, dst, RSP));
+        cb_emit8(cb, 0x24);                  /* SIB: base=RSP */
         cb_emit32(cb, (uint32_t)off);
         break;
     case 2:
-        cb_emit8(cb, rex(1, dst, 0, RBP));  /* REX.W */
+        cb_emit8(cb, rex(1, dst, 0, RSP));  /* REX.W */
         cb_emit8(cb, 0x0F);
         cb_emit8(cb, 0xBF);                  /* movsx r64, r/m16 */
-        cb_emit8(cb, modrm(2, dst, RBP));
+        cb_emit8(cb, modrm(2, dst, RSP));
+        cb_emit8(cb, 0x24);                  /* SIB: base=RSP */
         cb_emit32(cb, (uint32_t)off);
         break;
     case 4:
-        /* mov r32, dword [rbp+off] — 32-bit load, implicit zero-extend */
-        emit_rex32(cb, dst, 0, RBP);
-        cb_emit8(cb, 0x8B);
-        cb_emit8(cb, modrm(2, dst, RBP));
+        /* movsxd r64, dword [rbp+off] â€” sign-extend i32 to i64 */
+        cb_emit8(cb, rex(1, dst, 0, RSP));  /* REX.W */
+        cb_emit8(cb, 0x63);                  /* movsxd r64, r/m32 */
+        cb_emit8(cb, modrm(2, dst, RSP));
+        cb_emit8(cb, 0x24);                  /* SIB: base=RSP */
         cb_emit32(cb, (uint32_t)off);
         break;
     default: /* 8 or unknown */
@@ -336,29 +343,32 @@ static void emit_load_rbp_zx(CodeBuf *cb, int dst, int off, int size)
 {
     switch (size) {
     case 1:
-        /* movzx r32, byte [rbp+off]  — no REX.W so result zero-extends to r64 */
-        if (dst >= 8 || RBP >= 8)
-            cb_emit8(cb, rex(0, dst, 0, RBP));
+        /* movzx r32, byte [rbp+off]  â€” no REX.W so result zero-extends to r64 */
+        if (dst >= 8 || RSP >= 8)
+            cb_emit8(cb, rex(0, dst, 0, RSP));
         cb_emit8(cb, 0x0F);
         cb_emit8(cb, 0xB6);
-        cb_emit8(cb, modrm(2, dst, RBP));
+        cb_emit8(cb, modrm(2, dst, RSP));
+        cb_emit8(cb, 0x24);  /* SIB: [RSP + disp32] */
         cb_emit32(cb, (uint32_t)off);
         break;
     case 2:
-        /* movzx r32, word [rbp+off] */
-        if (dst >= 8 || RBP >= 8)
-            cb_emit8(cb, rex(0, dst, 0, RBP));
+        /* movzx r32, word [rsp+off] */
+        if (dst >= 8 || RSP >= 8)
+            cb_emit8(cb, rex(0, dst, 0, RSP));
         cb_emit8(cb, 0x0F);
         cb_emit8(cb, 0xB7);
-        cb_emit8(cb, modrm(2, dst, RBP));
+        cb_emit8(cb, modrm(2, dst, RSP));
+        cb_emit8(cb, 0x24);  /* SIB: [RSP + disp32] */
         cb_emit32(cb, (uint32_t)off);
         break;
     case 4:
-        /* mov r32, dword [rbp+off] — writing to r32 auto-zero-extends to r64 */
-        if (dst >= 8 || RBP >= 8)
-            cb_emit8(cb, rex(0, dst, 0, RBP));
+        /* mov r32, dword [rbp+off] â€” writing to r32 auto-zero-extends to r64 */
+        if (dst >= 8 || RSP >= 8)
+            cb_emit8(cb, rex(0, dst, 0, RSP));
         cb_emit8(cb, 0x8B);
-        cb_emit8(cb, modrm(2, dst, RBP));
+        cb_emit8(cb, modrm(2, dst, RSP));
+        cb_emit8(cb, 0x24);  /* SIB: [RSP + disp32] */
         cb_emit32(cb, (uint32_t)off);
         break;
     default:
@@ -379,32 +389,33 @@ static void emit_store_rbp_sz(CodeBuf *cb, int off, int src, int size)
     switch (size) {
     case 1:
         if (src >= 4) /* need REX for spl/bpl/sil/dil or r8b-r15b */
-            cb_emit8(cb, rex(0, src, 0, RBP));
+            cb_emit8(cb, rex(0, src, 0, RSP));
         else {
-            /* For al/cl/dl/bl we still need REX if RBP is base (for mod=10) */
-            /* Actually RBP base doesn't need REX.B; but emit it for safety */
-            cb_emit8(cb, rex(0, src, 0, RBP));
+            cb_emit8(cb, rex(0, src, 0, RSP));
         }
         cb_emit8(cb, 0x88);                  /* mov r/m8, r8 */
-        cb_emit8(cb, modrm(2, src, RBP));
+        cb_emit8(cb, modrm(2, src, RSP));
+        cb_emit8(cb, 0x24);                  /* SIB: [RSP + disp32] */
         cb_emit32(cb, (uint32_t)off);
         break;
     case 2:
-        cb_emit8(cb, 0x66);                  /* operand size prefix → 16-bit */
+        cb_emit8(cb, 0x66);                  /* operand size prefix â†’ 16-bit */
         if (src >= 8)
-            cb_emit8(cb, rex(0, src, 0, RBP));
+            cb_emit8(cb, rex(0, src, 0, RSP));
         else
-            cb_emit8(cb, rex(0, src, 0, RBP));
+            cb_emit8(cb, rex(0, src, 0, RSP));
         cb_emit8(cb, 0x89);                  /* mov r/m16, r16 */
-        cb_emit8(cb, modrm(2, src, RBP));
+        cb_emit8(cb, modrm(2, src, RSP));
+        cb_emit8(cb, 0x24);                  /* SIB: [RSP + disp32] */
         cb_emit32(cb, (uint32_t)off);
         break;
     case 4:
-        /* No REX.W → 32-bit operation */
+        /* No REX.W â†’ 32-bit operation */
         if (src >= 8)
-            cb_emit8(cb, rex(0, src, 0, RBP));
+            cb_emit8(cb, rex(0, src, 0, RSP));
         cb_emit8(cb, 0x89);                  /* mov r/m32, r32 */
-        cb_emit8(cb, modrm(2, src, RBP));
+        cb_emit8(cb, modrm(2, src, RSP));
+        cb_emit8(cb, 0x24);                  /* SIB: [RSP + disp32] */
         cb_emit32(cb, (uint32_t)off);
         break;
     default: /* 8 or unknown */
@@ -413,13 +424,13 @@ static void emit_store_rbp_sz(CodeBuf *cb, int off, int src, int size)
     }
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Spill-Reload Cache
  *
  * Tracks which physical register currently caches a recently-
  * spilled temp, allowing subsequent load_oper calls to skip
  * the memory load if the value is still in a register.
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 static int src_reg_temp[16];  /* src_reg_temp[phys_reg] = temp_id or -1 */
 
@@ -462,22 +473,33 @@ static void load_oper(X64Ctx *ctx, int reg, const IROper *op)
         const RegAlloc *ra = &ctx->cur_ra;
         int phys = (ra->temp_reg && op->temp_id < ra->temp_count)
                    ? ra->temp_reg[op->temp_id] : REG_SPILLED;
+        int narrow = (op->size > 0 && op->size <= 4);
         if (phys != REG_SPILLED) {
             src_invalidate(reg);
-            if (phys != reg)
-                emit_mov_reg_reg(cb, reg, phys);
+            if (phys != reg) {
+                if (narrow)
+                    emit_mov_reg_reg(cb, reg, phys);
+                else
+                    emit_mov_reg_reg64(cb, reg, phys);
+            }
         } else {
             /* Check spill-reload cache */
             int cached = src_find(op->temp_id);
             if (cached >= 0) {
                 if (cached != reg) {
                     src_invalidate(reg);
-                    emit_mov_reg_reg(cb, reg, cached);
+                    if (narrow)
+                        emit_mov_reg_reg(cb, reg, cached);
+                    else
+                        emit_mov_reg_reg64(cb, reg, cached);
                 }
                 /* else: already in the right register, skip */
             } else {
                 src_invalidate(reg);
-                emit_load_rbp(cb, reg, temp_rbp_off(ctx, op->temp_id));
+                if (narrow)
+                    emit_load_rbp(cb, reg, temp_off(ctx, op->temp_id));
+                else
+                    emit_load_rbp64(cb, reg, temp_off(ctx, op->temp_id));
             }
             src_set(reg, op->temp_id);
         }
@@ -489,7 +511,7 @@ static void load_oper(X64Ctx *ctx, int reg, const IROper *op)
         break;
     case OPER_STACK:
         src_invalidate(reg);
-        emit_load_rbp_sx(cb, reg, op->stack_off, op->size);
+        emit_load_rbp_sx(cb, reg, ctx->frame_size + op->stack_off, op->size);
         break;
     case OPER_NONE:
         src_invalidate(reg);
@@ -505,24 +527,33 @@ static void load_oper(X64Ctx *ctx, int reg, const IROper *op)
  * Store a register value to an IR temp's allocated location.
  * If the temp is in a physical register, emit reg-to-reg move
  * (or nothing if already there). Otherwise store to stack.
+ * size: operand byte-width (1â€“8); 0 falls back to 64-bit.
  */
-static void store_temp(X64Ctx *ctx, int temp_id, int reg)
+static void store_temp(X64Ctx *ctx, int temp_id, int reg, int size)
 {
     const RegAlloc *ra = &ctx->cur_ra;
     int phys = (ra->temp_reg && temp_id < ra->temp_count)
                ? ra->temp_reg[temp_id] : REG_SPILLED;
+    int narrow = (size > 0 && size <= 4);
     if (phys != REG_SPILLED) {
         src_invalidate(phys);
         src_invalidate(reg);
-        if (phys != reg)
-            emit_mov_reg_reg(&ctx->code, phys, reg);
+        if (phys != reg) {
+            if (narrow)
+                emit_mov_reg_reg(&ctx->code, phys, reg);
+            else
+                emit_mov_reg_reg64(&ctx->code, phys, reg);
+        }
     } else {
-        emit_store_rbp(&ctx->code, temp_rbp_off(ctx, temp_id), reg);
+        if (narrow)
+            emit_store_rbp(&ctx->code, temp_off(ctx, temp_id), reg);
+        else
+            emit_store_rbp64(&ctx->code, temp_off(ctx, temp_id), reg);
         src_set(reg, temp_id);
     }
 }
 
-/* ── Register-aware codegen helpers ──────────────────────── */
+/* â”€â”€ Register-aware codegen helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /* Get the physical register for a temp, or REG_SPILLED. */
 static int temp_phys(const X64Ctx *ctx, int temp_id)
@@ -551,12 +582,35 @@ static int dest_reg(const X64Ctx *ctx, const IROper *dest, int fallback)
     return fallback;
 }
 
-/* ── ALU helpers (reg = reg OP reg) ──────────────────────── */
+/* â”€â”€ ALU helpers (reg = reg OP reg) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /* Two-operand ALU: op eax, ecx (32-bit) */
 static void emit_alu_rr(CodeBuf *cb, uint8_t opcode, int dst, int src)
 {
     emit_rex32(cb, src, 0, dst);
+    cb_emit8(cb, opcode);
+    cb_emit8(cb, modrm(3, src, dst));
+}
+
+/* ALU immediate: op r/m32, imm32  (83 /ext imm8 or 81 /ext imm32) */
+static void emit_alu_ri32(CodeBuf *cb, int reg, uint8_t ext, int32_t imm)
+{
+    emit_rex32(cb, 0, 0, reg);
+    if (imm >= -128 && imm <= 127) {
+        cb_emit8(cb, 0x83);
+        cb_emit8(cb, modrm(3, ext, reg));
+        cb_emit8(cb, (uint8_t)(int8_t)imm);
+    } else {
+        cb_emit8(cb, 0x81);
+        cb_emit8(cb, modrm(3, ext, reg));
+        cb_emit32(cb, (uint32_t)imm);
+    }
+}
+
+/* Two-operand ALU: op rax, rcx (64-bit) */
+static void emit_alu_rr64(CodeBuf *cb, uint8_t opcode, int dst, int src)
+{
+    cb_emit8(cb, rex(1, src, 0, dst));
     cb_emit8(cb, opcode);
     cb_emit8(cb, modrm(3, src, dst));
 }
@@ -600,7 +654,7 @@ static void emit_setcc(CodeBuf *cb, uint8_t cc)
     cb_emit8(cb, modrm(3, 0, RAX));     /* ModRM for al */
 }
 
-/* movzx eax, al — no REX needed (RAX = reg 0) */
+/* movzx eax, al â€” no REX needed (RAX = reg 0) */
 static void emit_movzx_rax_al(CodeBuf *cb)
 {
     cb_emit8(cb, 0x0F);
@@ -609,7 +663,7 @@ static void emit_movzx_rax_al(CodeBuf *cb)
 }
 
 /*
- * emit_jmp_rel32(cb) – jmp rel32; returns offset of the rel32 for patching
+ * emit_jmp_rel32(cb) â€“ jmp rel32; returns offset of the rel32 for patching
  */
 static int emit_jmp_rel32(CodeBuf *cb)
 {
@@ -620,7 +674,7 @@ static int emit_jmp_rel32(CodeBuf *cb)
 }
 
 /*
- * emit_jcc_rel32(cb, cc) – jCC rel32; returns offset of rel32
+ * emit_jcc_rel32(cb, cc) â€“ jCC rel32; returns offset of rel32
  */
 static int emit_jcc_rel32(CodeBuf *cb, uint8_t cc)
 {
@@ -640,7 +694,7 @@ static void patch_jmp(CodeBuf *cb, int patch_offset)
     cb_patch32(cb, patch_offset, (uint32_t)rel);
 }
 
-/* ── PUSH / POP ──────────────────────────────────────────── */
+/* â”€â”€ PUSH / POP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_push(CodeBuf *cb, int reg)
 {
@@ -654,14 +708,14 @@ static void emit_pop(CodeBuf *cb, int reg)
     cb_emit8(cb, (uint8_t)(0x58 + (reg & 7)));
 }
 
-/* ── RET ─────────────────────────────────────────────────── */
+/* â”€â”€ RET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_ret(CodeBuf *cb)
 {
     cb_emit8(cb, 0xC3);
 }
 
-/* ── CALL rel32 ──────────────────────────────────────────── */
+/* â”€â”€ CALL rel32 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static int emit_call_rel32(CodeBuf *cb)
 {
@@ -671,7 +725,7 @@ static int emit_call_rel32(CodeBuf *cb)
     return patch;
 }
 
-/* ── sub rsp, imm32 / add rsp, imm32 ───────────────────── */
+/* â”€â”€ sub rsp, imm32 / add rsp, imm32 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_sub_rsp_imm32(CodeBuf *cb, int32_t val)
 {
@@ -681,7 +735,7 @@ static void emit_sub_rsp_imm32(CodeBuf *cb, int32_t val)
     cb_emit32(cb, (uint32_t)val);
 }
 
-static void emit_add_rsp_imm32(CodeBuf *cb, int32_t val)
+static void __attribute__((unused)) emit_add_rsp_imm32(CodeBuf *cb, int32_t val)
 {
     cb_emit8(cb, rex(1, 0, 0, RSP));
     cb_emit8(cb, 0x81);
@@ -689,7 +743,7 @@ static void emit_add_rsp_imm32(CodeBuf *cb, int32_t val)
     cb_emit32(cb, (uint32_t)val);
 }
 
-/* ── sub reg, imm32  (32-bit) ───────────────────────────── */
+/* â”€â”€ sub reg, imm32  (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_sub_reg_imm32(CodeBuf *cb, int reg, int32_t val)
 {
@@ -699,7 +753,7 @@ static void emit_sub_reg_imm32(CodeBuf *cb, int reg, int32_t val)
     cb_emit32(cb, (uint32_t)val);
 }
 
-/* ── cmp reg, imm32  (32-bit) ───────────────────────────── */
+/* â”€â”€ cmp reg, imm32  (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_cmp_reg_imm32(CodeBuf *cb, int reg, int32_t val)
 {
@@ -709,7 +763,7 @@ static void emit_cmp_reg_imm32(CodeBuf *cb, int reg, int32_t val)
     cb_emit32(cb, (uint32_t)val);
 }
 
-/* ── add reg, imm32  (32-bit) ───────────────────────────── */
+/* â”€â”€ add reg, imm32  (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_add_reg_imm32(CodeBuf *cb, int reg, int32_t val)
 {
@@ -719,27 +773,45 @@ static void emit_add_reg_imm32(CodeBuf *cb, int reg, int32_t val)
     cb_emit32(cb, (uint32_t)val);
 }
 
-/* ── LEA reg, [rbp + disp32] ────────────────────────────── */
+/* â”€â”€ LEA reg, [rbp + disp32] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_lea_rbp(CodeBuf *cb, int dst, int off)
 {
-    cb_emit8(cb, rex(1, dst, 0, RBP));
-    cb_emit8(cb, 0x8D);
-    cb_emit8(cb, modrm(2, dst, RBP));
+    cb_emit8(cb, rex(1, dst, 0, RSP));
+    cb_emit8(cb, 0x8D);                    /* lea r64, [rsp + disp32] */
+    cb_emit8(cb, modrm(2, dst, RSP));
+    cb_emit8(cb, 0x24);                    /* SIB: base=RSP, no index */
     cb_emit32(cb, (uint32_t)off);
 }
 
-/* ── Shift: sal/shr reg, cl ─────────────────────────────── */
+/* â”€â”€ Shift: sal/shr reg, cl â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_shift_cl(CodeBuf *cb, int reg, uint8_t ext)
 {
-    /* D3 /ext  → shift r32 by CL */
+    /* D3 /ext  â†’ shift r32 by CL */
     emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0xD3);
     cb_emit8(cb, modrm(3, ext, reg));
 }
 
-/* ── imul rax, rcx (signed 64-bit multiply) ─────────────── */
+/* â”€â”€ Shift: sal/shr reg, imm8 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+static void emit_shift_imm(CodeBuf *cb, int reg, uint8_t ext, uint8_t imm)
+{
+    emit_rex32(cb, 0, 0, reg);
+    if (imm == 1) {
+        /* D1 /ext â†’ shift r32 by 1 (shorter encoding) */
+        cb_emit8(cb, 0xD1);
+        cb_emit8(cb, modrm(3, ext, reg));
+    } else {
+        /* C1 /ext imm8 â†’ shift r32 by imm8 */
+        cb_emit8(cb, 0xC1);
+        cb_emit8(cb, modrm(3, ext, reg));
+        cb_emit8(cb, imm);
+    }
+}
+
+/* â”€â”€ imul rax, rcx (signed 64-bit multiply) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_imul_rr(CodeBuf *cb, int dst, int src)
 {
@@ -749,9 +821,25 @@ static void emit_imul_rr(CodeBuf *cb, int dst, int src)
     cb_emit8(cb, modrm(3, dst, src));
 }
 
-/* ── LEA-multiply: lea dst, [src + src*scale] ───────────── */
-/* Computes dst = src * (1 + scale) where scale ∈ {2,4,8}.
- * Used for ×3, ×5, ×9 to replace IMUL with a single LEA. */
+/* â”€â”€ 3-operand imul: imul $imm, src, dst â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+static void emit_imul_ri3(CodeBuf *cb, int dst, int src, int32_t imm)
+{
+    emit_rex32(cb, dst, 0, src);
+    if (imm >= -128 && imm <= 127) {
+        cb_emit8(cb, 0x6B);
+        cb_emit8(cb, modrm(3, dst, src));
+        cb_emit8(cb, (uint8_t)(int8_t)imm);
+    } else {
+        cb_emit8(cb, 0x69);
+        cb_emit8(cb, modrm(3, dst, src));
+        cb_emit32(cb, (uint32_t)imm);
+    }
+}
+
+/* â”€â”€ LEA-multiply: lea dst, [src + src*scale] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* Computes dst = src * (1 + scale) where scale âˆˆ {2,4,8}.
+ * Used for Ã—3, Ã—5, Ã—9 to replace IMUL with a single LEA. */
 
 static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
 {
@@ -767,16 +855,73 @@ static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
     cb_emit8(cb, 0x8D);
     /* ModRM: mod depends on base (RBP/R13 need mod=01+disp8) */
     int mod = ((src & 7) == 5) ? 1 : 0;
-    cb_emit8(cb, modrm(mod, dst, 4));  /* rm=4 → SIB follows */
+    cb_emit8(cb, modrm(mod, dst, 4));  /* rm=4 â†’ SIB follows */
     cb_emit8(cb, (uint8_t)((ss << 6) | ((src & 7) << 3) | (src & 7)));
     if (mod == 1) cb_emit8(cb, 0);     /* disp8=0 for RBP/R13 base */
 }
 
-/* ── idiv rcx (signed 64-bit divide: rdx:rax / rcx) ────── */
+/* â”€â”€ LEA dst, [base + index*scale] (32-bit, base â‰  index) â”€â”€ */
+/* Computes dst = base + index * scale where scale âˆˆ {1,2,4,8}.
+ * Unlike emit_lea_scale, base and index are separate registers.
+ * Used for fused MUL+ADD patterns (e.g. Ã—7+add â†’ lea+sub). */
+
+static void emit_lea_base_idx_scale(CodeBuf *cb, int dst, int base,
+                                     int idx, int scale)
+{
+    int ss;
+    switch (scale) {
+    case 1: ss = 0; break;
+    case 2: ss = 1; break;
+    case 4: ss = 2; break;
+    case 8: ss = 3; break;
+    default: return;
+    }
+    /* SIB index field 0b100 means 'no index' â€” caller must avoid
+     * passing RSP/R12 (reg & 7 == 4) as the index register.       */
+    emit_rex32(cb, dst, idx, base);
+    cb_emit8(cb, 0x8D);
+    int mod = ((base & 7) == 5) ? 1 : 0;  /* RBP/R13 base needs mod=01+disp8 */
+    cb_emit8(cb, modrm(mod, dst, 4));       /* rm=4 â†’ SIB follows */
+    cb_emit8(cb, (uint8_t)((ss << 6) | ((idx & 7) << 3) | (base & 7)));
+    if (mod == 1) cb_emit8(cb, 0);          /* disp8=0 for RBP/R13 */
+}
+
+/* â”€â”€ LEA dst, [base + index] (32-bit, no scale) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+static void emit_lea_rr(CodeBuf *cb, int dst, int base, int idx)
+{
+    /* SIB can't encode RSP as index; swap if needed (commutative) */
+    if ((idx & 7) == 4) { int t = base; base = idx; idx = t; }
+    emit_rex32(cb, dst, idx, base);
+    cb_emit8(cb, 0x8D);
+    int mod = ((base & 7) == 5) ? 1 : 0;  /* RBP/R13 needs mod=01+disp8 */
+    cb_emit8(cb, modrm(mod, dst, 4));       /* rm=4 â†’ SIB follows */
+    cb_emit8(cb, (uint8_t)(((idx & 7) << 3) | (base & 7)));
+    if (mod == 1) cb_emit8(cb, 0);
+}
+
+/* â”€â”€ LEA dst, [base + disp] (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+static void emit_lea_ri(CodeBuf *cb, int dst, int base, int32_t disp)
+{
+    emit_rex32(cb, dst, 0, base);
+    cb_emit8(cb, 0x8D);
+    if (disp >= -128 && disp <= 127) {
+        cb_emit8(cb, modrm(1, dst, base));
+        if ((base & 7) == 4) cb_emit8(cb, 0x24);  /* SIB for RSP/R12 */
+        cb_emit8(cb, (uint8_t)(int8_t)disp);
+    } else {
+        cb_emit8(cb, modrm(2, dst, base));
+        if ((base & 7) == 4) cb_emit8(cb, 0x24);
+        cb_emit32(cb, (uint32_t)disp);
+    }
+}
+
+/* â”€â”€ idiv rcx (signed 64-bit divide: rdx:rax / rcx) â”€â”€â”€â”€â”€â”€ */
 
 static void emit_cdq(CodeBuf *cb)
 {
-    cb_emit8(cb, 0x99);             /* CDQ: sign-extend eax → edx:eax */
+    cb_emit8(cb, 0x99);             /* CDQ: sign-extend eax â†’ edx:eax */
 }
 
 static void emit_idiv_reg(CodeBuf *cb, int reg)
@@ -786,7 +931,7 @@ static void emit_idiv_reg(CodeBuf *cb, int reg)
     cb_emit8(cb, modrm(3, 7, reg)); /* /7 = idiv */
 }
 
-/* ── mov [reg + disp32], src (64-bit) ───────────────────── */
+/* â”€â”€ mov [reg + disp32], src (64-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_store_mem(CodeBuf *cb, int base, int32_t disp, int src)
 {
@@ -797,9 +942,9 @@ static void emit_store_mem(CodeBuf *cb, int base, int32_t disp, int src)
     cb_emit32(cb, (uint32_t)disp);
 }
 
-/* ── mov dst, [reg + disp32] (64-bit) ───────────────────── */
+/* â”€â”€ mov dst, [reg + disp32] (64-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-static void emit_load_mem(CodeBuf *cb, int dst, int base, int32_t disp)
+static void __attribute__((unused)) emit_load_mem(CodeBuf *cb, int dst, int base, int32_t disp)
 {
     cb_emit8(cb, rex(1, dst, 0, base));
     cb_emit8(cb, 0x8B);
@@ -808,9 +953,9 @@ static void emit_load_mem(CodeBuf *cb, int dst, int base, int32_t disp)
     cb_emit32(cb, (uint32_t)disp);
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * rdata section builder (string literals)
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 static void rdata_init(X64Ctx *ctx)
 {
@@ -832,9 +977,9 @@ static int rdata_add_string(X64Ctx *ctx, const char *s)
     return off;
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Per-function code generation
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /*
  * Windows x64 calling convention:
@@ -869,12 +1014,13 @@ static const char *RT_WRITE_CHAR  = "__axis_write_char";
 static const char *RT_WRITE_NL    = "__axis_write_nl";
 static const char *RT_READ_I64    = "__axis_read_i64";
 static const char *RT_READ_LINE   = "__axis_read_line";
-static const char *RT_READ_CHAR   = "__axis_read_char";
 static const char *RT_READ_FAILED = "__axis_read_failed";
 static const char *RT_MEMCPY      = "__axis_memcpy";
 static const char *RT_DIV_ZERO    = "__axis_div_zero";
+static const char *RT_STR_CONCAT  = "__axis_str_concat";
+static const char *RT_STR_EQ      = "__axis_str_eq";
 
-/* ── Emit a call to a named function (relocation-based) ── */
+/* â”€â”€ Emit a call to a named function (relocation-based) â”€â”€ */
 
 static void emit_call_sym(X64Ctx *ctx, const char *name)
 {
@@ -882,7 +1028,7 @@ static void emit_call_sym(X64Ctx *ctx, const char *name)
     add_reloc(ctx, RELOC_REL32, patch, name, 0, 0);
 }
 
-/* ── Emit a LEA for a string literal (RIP-relative) ────── */
+/* â”€â”€ Emit a LEA for a string literal (RIP-relative) â”€â”€â”€â”€â”€â”€ */
 
 static void emit_lea_string(X64Ctx *ctx, int reg, int str_idx)
 {
@@ -890,7 +1036,7 @@ static void emit_lea_string(X64Ctx *ctx, int reg, int str_idx)
     /* lea reg, [rip + disp32] */
     cb_emit8(cb, rex(1, reg, 0, 0));
     cb_emit8(cb, 0x8D);
-    cb_emit8(cb, modrm(0, reg, 5));    /* mod=00, rm=5 → RIP+disp32 */
+    cb_emit8(cb, modrm(0, reg, 5));    /* mod=00, rm=5 â†’ RIP+disp32 */
     int patch = cb_pos(cb);
     cb_emit32(cb, 0);                  /* placeholder disp32 */
 
@@ -898,15 +1044,15 @@ static void emit_lea_string(X64Ctx *ctx, int reg, int str_idx)
     add_reloc(ctx, RELOC_RIP_REL32, patch, NULL, str_idx, 0);
 }
 
-/* ═════════════════════════════════════════════════════════════
- * IR instruction → x86-64 lowering
- * ═════════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * IR instruction â†’ x86-64 lowering
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/* Forward declaration – defined after gen_instr */
+/* Forward declaration â€“ defined after gen_instr */
 static void emit_epilogue(X64Ctx *ctx);
 
 /*
- * gen_instr – Lower a single IR instruction to x86-64 machine code.
+ * gen_instr â€“ Lower a single IR instruction to x86-64 machine code.
  *
  * Returns the number of IR instructions consumed (normally 1, but
  * CMP+Branch fusion may consume 2).  idx is the current instruction
@@ -919,7 +1065,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
 
     /* Flush spill-reload cache for instructions that clobber registers
      * outside of load_oper/store_temp (calls, divs, memory ops, etc.).
-     * Simple ALU/MOV/CMP/branch instructions are safe — their register
+     * Simple ALU/MOV/CMP/branch instructions are safe â€” their register
      * usage is fully tracked through load_oper and store_temp.
      *
      * We flush both BEFORE and AFTER non-safe instructions.  The pre-flush
@@ -939,6 +1085,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     case IR_LOG_NOT: case IR_ARG:
     case IR_JMP: case IR_JZ: case IR_JNZ:
     case IR_SEXT: case IR_ZEXT: case IR_TRUNC:
+    case IR_CMOV:
         break;
     default:
         src_flush();
@@ -948,53 +1095,53 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
 
     switch (ins->op) {
 
-    /* ── NOP ─────────────────────────────────────────────── */
+    /* â”€â”€ NOP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_NOP:
         cb_emit8(cb, 0x90);
         break;
 
-    /* ── MOV: dest = src1 ────────────────────────────────── */
+    /* â”€â”€ MOV: dest = src1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_MOV: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
         load_oper(ctx, dr, &ins->src1);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         else if (ins->dest.kind == OPER_STACK)
             emit_store_rbp(cb, ins->dest.stack_off, dr);
         break;
     }
 
-    /* ── LOAD_IMM: dest = imm ────────────────────────────── */
+    /* â”€â”€ LOAD_IMM: dest = imm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LOAD_IMM: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
         emit_load_imm(cb, dr, ins->src1.imm);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
-    /* ── LOAD_STR: dest = &string[idx] ───────────────────── */
+    /* â”€â”€ LOAD_STR: dest = &string[idx] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LOAD_STR: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
         emit_lea_string(ctx, dr, ins->src1.str_idx);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
-    /* ── LOAD_VAR: dest = [rbp + stack_off] ─────────────── */
+    /* â”€â”€ LOAD_VAR: dest = [rbp + stack_off] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LOAD_VAR: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        if (ins->extra)   /* unsigned → zero-extend */
+        if (ins->extra)   /* unsigned â†’ zero-extend */
             emit_load_rbp_zx(cb, dr, ins->src1.stack_off, ins->src1.size);
-        else              /* signed   → sign-extend */
+        else              /* signed   â†’ sign-extend */
             emit_load_rbp_sx(cb, dr, ins->src1.stack_off, ins->src1.size);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
-    /* ── STORE_VAR: [rbp + stack_off] = src1 ────────────── */
+    /* â”€â”€ STORE_VAR: [rbp + stack_off] = src1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_STORE_VAR: {
         int s1r = oper_phys(ctx, &ins->src1);
         int r = (s1r >= 0) ? s1r : RAX;
@@ -1003,7 +1150,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* ── Arithmetic ──────────────────────────────────────── */
+    /* â”€â”€ Arithmetic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_ADD: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
         /* Check if either operand is an immediate (commutative) */
@@ -1011,19 +1158,31 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         if (ins->src2.kind == OPER_IMM) { imm_op = &ins->src2; reg_op = &ins->src1; }
         else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
         if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
-            load_oper(ctx, dr, reg_op);
-            emit_add_reg_imm32(cb, dr, (int32_t)imm_op->imm);
+            int sr = oper_phys(ctx, reg_op);
+            if (sr >= 0) {
+                /* LEA: non-destructive reg + imm */
+                emit_lea_ri(cb, dr, sr, (int32_t)imm_op->imm);
+            } else {
+                load_oper(ctx, dr, reg_op);
+                emit_add_reg_imm32(cb, dr, (int32_t)imm_op->imm);
+            }
         } else {
+            int s1r = oper_phys(ctx, &ins->src1);
             int s2r = oper_phys(ctx, &ins->src2);
-            const IROper *a = &ins->src1, *b = &ins->src2;
-            if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
-            load_oper(ctx, dr, a);
-            int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
-            if (s2 != s2r) load_oper(ctx, s2, b);
-            emit_alu_rr(cb, 0x01, dr, s2);
+            if (s1r >= 0 && s2r >= 0) {
+                /* LEA: non-destructive reg + reg */
+                emit_lea_rr(cb, dr, s1r, s2r);
+            } else {
+                const IROper *a = &ins->src1, *b = &ins->src2;
+                if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+                load_oper(ctx, dr, a);
+                int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+                if (s2 != s2r) load_oper(ctx, s2, b);
+                emit_alu_rr(cb, 0x01, dr, s2);
+            }
         }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
@@ -1031,10 +1190,20 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         int dr = dest_reg(ctx, &ins->dest, RAX);
         if (ins->src2.kind == OPER_IMM) {
             int64_t v = ins->src2.imm;
-            load_oper(ctx, dr, &ins->src1);
-            if (v >= INT32_MIN && v <= INT32_MAX) {
+            if (v >= INT32_MIN && v <= INT32_MAX && v != (int64_t)INT32_MIN) {
+                /* Try LEA for non-destructive reg - imm */
+                int sr = oper_phys(ctx, &ins->src1);
+                if (sr >= 0) {
+                    emit_lea_ri(cb, dr, sr, -(int32_t)v);
+                } else {
+                    load_oper(ctx, dr, &ins->src1);
+                    emit_sub_reg_imm32(cb, dr, (int32_t)v);
+                }
+            } else if (v >= INT32_MIN && v <= INT32_MAX) {
+                load_oper(ctx, dr, &ins->src1);
                 emit_sub_reg_imm32(cb, dr, (int32_t)v);
             } else {
+                load_oper(ctx, dr, &ins->src1);
                 load_oper(ctx, RCX, &ins->src2);
                 emit_alu_rr(cb, 0x29, dr, RCX);
             }
@@ -1047,12 +1216,12 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             emit_alu_rr(cb, 0x29, dr, s2);
         }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
     case IR_MUL: {
-        /* LEA-multiply for small constants: ×3, ×5, ×9 */
+        /* LEA-multiply for small constants: Ã—3, Ã—5, Ã—9 */
         const IROper *var_op = NULL;
         int64_t cval = 0;
         if (ins->src2.kind == OPER_IMM) {
@@ -1066,7 +1235,93 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             int scale = (cval == 3) ? 2 : (cval == 5) ? 4 : 8;
             emit_lea_scale(cb, dr, dr, scale);
             if (ins->dest.kind == OPER_TEMP)
-                store_temp(ctx, ins->dest.temp_id, dr);
+                store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
+            break;
+        }
+        /* Ã—7 via mov+shl+sub: x*8-x (2c latency vs 4c for two complex LEAs) */
+        if (var_op && cval == 7) {
+            /* â”€â”€ MULÃ—7 + ADD fusion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+             * Pattern: t1 = src * 7;  t2 = t1 + other;
+             * Fused:   lea t2, [other + src*8]; sub t2, src
+             * Saves 2 instructions vs non-fused (4 â†’ 2 insns). */
+            if (ins->dest.kind == OPER_TEMP && idx + 1 < fn->instr_count) {
+                const IRInstr *nx = &fn->instrs[idx + 1];
+                if (nx->op == IR_ADD) {
+                    const IROper *add_other = NULL;
+                    if (nx->src1.kind == OPER_TEMP &&
+                        nx->src1.temp_id == ins->dest.temp_id)
+                        add_other = &nx->src2;
+                    else if (nx->src2.kind == OPER_TEMP &&
+                             nx->src2.temp_id == ins->dest.temp_id)
+                        add_other = &nx->src1;
+                    if (add_other && add_other->kind != OPER_IMM) {
+                        int sr = oper_phys(ctx, var_op);
+                        if (sr < 0 || sr == REG_SPILLED) {
+                            sr = RCX;
+                            load_oper(ctx, sr, var_op);
+                        }
+                        /* SIB can't encode R12/RSP as index */
+                        if ((sr & 7) != 4) {
+                            int ar = oper_phys(ctx, add_other);
+                            if (ar < 0 || ar == REG_SPILLED) {
+                                ar = (sr == RDX) ? RAX : RDX;
+                                load_oper(ctx, ar, add_other);
+                            }
+                            int dr = dest_reg(ctx, &nx->dest, RAX);
+                            if (dr != sr) {
+                                /* Normal: lea dr,[other+src*8]; sub dr,src */
+                                emit_lea_base_idx_scale(cb, dr, ar, sr, 8);
+                                emit_alu_rr(cb, 0x29, dr, sr);
+                            } else {
+                                /* dr==sr collision: use scratch to avoid
+                                 * clobbering src before the SUB */
+                                int tmp = RAX;
+                                if (tmp == sr || tmp == ar) tmp = RCX;
+                                if (tmp == sr || tmp == ar) tmp = RDX;
+                                emit_lea_base_idx_scale(cb, tmp, ar, sr, 8);
+                                emit_alu_rr(cb, 0x29, tmp, sr);
+                                emit_mov_reg_reg64(cb, dr, tmp);
+                            }
+                            if (nx->dest.kind == OPER_TEMP)
+                                store_temp(ctx, nx->dest.temp_id, dr, nx->dest.size);
+                            return 2; /* consumed MUL + ADD */
+                        }
+                    }
+                }
+            }
+            /* â”€â”€ Non-fused Ã—7: mov+shl+sub â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+            int dr = dest_reg(ctx, &ins->dest, RAX);
+            int sr = oper_phys(ctx, var_op);
+            if (sr < 0 || sr == REG_SPILLED) {
+                sr = (dr == RCX) ? RDX : RCX;
+                load_oper(ctx, sr, var_op);
+            }
+            if (sr == dr) {
+                /* src and dest share register; stash src first */
+                int scratch = (dr == RCX) ? RDX : RCX;
+                emit_mov_reg_reg64(cb, scratch, sr);
+                emit_shift_imm(cb, dr, 4, 3);        /* dr = src*8 */
+                emit_alu_rr(cb, 0x29, dr, scratch);   /* dr -= src  */
+            } else {
+                emit_mov_reg_reg64(cb, dr, sr);       /* dr = src   */
+                emit_shift_imm(cb, dr, 4, 3);         /* dr = src*8 */
+                emit_alu_rr(cb, 0x29, dr, sr);        /* dr -= src  */
+            }
+            if (ins->dest.kind == OPER_TEMP)
+                store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
+            break;
+        }
+        /* 3-operand IMUL with immediate: imul $imm, src, dst */
+        if (var_op) {
+            int dr = dest_reg(ctx, &ins->dest, RAX);
+            int sr = oper_phys(ctx, var_op);
+            if (sr < 0 || sr == REG_SPILLED) {
+                sr = RCX;
+                load_oper(ctx, sr, var_op);
+            }
+            emit_imul_ri3(cb, dr, sr, (int32_t)cval);
+            if (ins->dest.kind == OPER_TEMP)
+                store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
             break;
         }
         /* General case: IMUL */
@@ -1079,7 +1334,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         if (s2 != s2r) load_oper(ctx, s2, b);
         emit_imul_rr(cb, dr, s2);        /* imul dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
@@ -1099,7 +1354,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             emit_idiv_reg(cb, RCX);
         }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
 
     case IR_MOD:
@@ -1119,7 +1374,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         }
         emit_mov_reg_reg(cb, RAX, RDX);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
 
     case IR_NEG: {
@@ -1127,76 +1382,114 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         load_oper(ctx, dr, &ins->src1);
         emit_neg_reg(cb, dr);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
-    /* ── Bitwise ─────────────────────────────────────────── */
+    /* â”€â”€ Bitwise â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_BIT_AND: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        int s2r = oper_phys(ctx, &ins->src2);
-        const IROper *a = &ins->src1, *b = &ins->src2;
-        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
-        load_oper(ctx, dr, a);
-        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
-        if (s2 != s2r) load_oper(ctx, s2, b);
-        emit_alu_rr(cb, 0x21, dr, s2);  /* and dr, s2 */
+        /* immediate path: and reg, imm32 */
+        const IROper *imm_op = NULL, *reg_op = NULL;
+        if (ins->src2.kind == OPER_IMM) { imm_op = &ins->src2; reg_op = &ins->src1; }
+        else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
+        if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
+            load_oper(ctx, dr, reg_op);
+            emit_alu_ri32(cb, dr, 4, (int32_t)imm_op->imm);  /* and dr, imm */
+        } else {
+            int s2r = oper_phys(ctx, &ins->src2);
+            const IROper *a = &ins->src1, *b = &ins->src2;
+            if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+            load_oper(ctx, dr, a);
+            int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+            if (s2 != s2r) load_oper(ctx, s2, b);
+            emit_alu_rr(cb, 0x21, dr, s2);  /* and dr, s2 */
+        }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
     case IR_BIT_OR: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        int s2r = oper_phys(ctx, &ins->src2);
-        const IROper *a = &ins->src1, *b = &ins->src2;
-        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
-        load_oper(ctx, dr, a);
-        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
-        if (s2 != s2r) load_oper(ctx, s2, b);
-        emit_alu_rr(cb, 0x09, dr, s2);  /* or dr, s2 */
+        /* immediate path: or reg, imm32 */
+        const IROper *imm_op = NULL, *reg_op = NULL;
+        if (ins->src2.kind == OPER_IMM) { imm_op = &ins->src2; reg_op = &ins->src1; }
+        else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
+        if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
+            load_oper(ctx, dr, reg_op);
+            emit_alu_ri32(cb, dr, 1, (int32_t)imm_op->imm);  /* or dr, imm */
+        } else {
+            int s2r = oper_phys(ctx, &ins->src2);
+            const IROper *a = &ins->src1, *b = &ins->src2;
+            if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+            load_oper(ctx, dr, a);
+            int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+            if (s2 != s2r) load_oper(ctx, s2, b);
+            emit_alu_rr(cb, 0x09, dr, s2);  /* or dr, s2 */
+        }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
     case IR_BIT_XOR: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        int s2r = oper_phys(ctx, &ins->src2);
-        const IROper *a = &ins->src1, *b = &ins->src2;
-        if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
-        load_oper(ctx, dr, a);
-        int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
-        if (s2 != s2r) load_oper(ctx, s2, b);
-        emit_alu_rr(cb, 0x31, dr, s2);  /* xor dr, s2 */
+        /* immediate path: xor reg, imm32 */
+        const IROper *imm_op = NULL, *reg_op = NULL;
+        if (ins->src2.kind == OPER_IMM) { imm_op = &ins->src2; reg_op = &ins->src1; }
+        else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
+        if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
+            load_oper(ctx, dr, reg_op);
+            emit_alu_ri32(cb, dr, 6, (int32_t)imm_op->imm);  /* xor dr, imm */
+        } else {
+            int s2r = oper_phys(ctx, &ins->src2);
+            const IROper *a = &ins->src1, *b = &ins->src2;
+            if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
+            load_oper(ctx, dr, a);
+            int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
+            if (s2 != s2r) load_oper(ctx, s2, b);
+            emit_alu_rr(cb, 0x31, dr, s2);  /* xor dr, s2 */
+        }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
     case IR_SHL: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        if (dr == RCX) dr = RAX;  /* shift count goes in CL */
         load_oper(ctx, dr, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);   /* shift count must be in CL */
-        emit_shift_cl(cb, dr, 4);          /* sal dr, cl (/4) */
+        if (ins->src2.kind == OPER_IMM) {
+            emit_shift_imm(cb, dr, 4, (uint8_t)(ins->src2.imm & 31));
+        } else {
+            if (dr == RCX) dr = RAX;
+            load_oper(ctx, dr, &ins->src1);
+            load_oper(ctx, RCX, &ins->src2);
+            emit_shift_cl(cb, dr, 4);
+        }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
     case IR_SHR: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
-        if (dr == RCX) dr = RAX;  /* shift count goes in CL */
+        uint8_t ext = ins->extra ? 5 : 7; /* shr or sar */
         load_oper(ctx, dr, &ins->src1);
-        load_oper(ctx, RCX, &ins->src2);
-        emit_shift_cl(cb, dr, ins->extra ? 5 : 7); /* shr or sar */
+        if (ins->src2.kind == OPER_IMM) {
+            emit_shift_imm(cb, dr, ext, (uint8_t)(ins->src2.imm & 31));
+        } else {
+            if (dr == RCX) dr = RAX;
+            load_oper(ctx, dr, &ins->src1);
+            load_oper(ctx, RCX, &ins->src2);
+            emit_shift_cl(cb, dr, ext);
+        }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr);
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
-    /* ── Comparison ──────────────────────────────────────── */
+    /* â”€â”€ Comparison â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_CMP_EQ:
     case IR_CMP_NE:
     case IR_CMP_LT:
@@ -1242,7 +1535,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             }
         }
 
-        /* ── CMP+Branch fusion ───────────────────────────── */
+        /* â”€â”€ CMP+Branch fusion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         /* If the next IR instruction is JZ/JNZ on the same temp,
          * emit CMP + Jcc directly instead of SETCC+MOVZX+store
          * then load+TEST+Jcc (saves ~5 instructions).           */
@@ -1251,8 +1544,8 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             if ((next->op == IR_JZ || next->op == IR_JNZ) &&
                 next->src1.kind == OPER_TEMP &&
                 next->src1.temp_id == ins->dest.temp_id) {
-                /* JNZ = jump when cmp is true  → use cc as-is
-                 * JZ  = jump when cmp is false → invert cc (XOR 1) */
+                /* JNZ = jump when cmp is true  â†’ use cc as-is
+                 * JZ  = jump when cmp is false â†’ invert cc (XOR 1) */
                 uint8_t bcc = (next->op == IR_JNZ) ? cc : (uint8_t)(cc ^ 1);
                 int lbl = next->dest.label_id;
                 int target = get_label(ctx, lbl);
@@ -1273,37 +1566,54 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         emit_setcc(cb, cc);
         emit_movzx_rax_al(cb);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
     }
 
-    /* ── Logical NOT ─────────────────────────────────────── */
+    /* â”€â”€ Logical NOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LOG_NOT:
         load_oper(ctx, RAX, &ins->src1);
         emit_test_rr(cb, RAX, RAX);
         emit_setcc(cb, 0x04);              /* sete al (ZF=1 when RAX==0) */
         emit_movzx_rax_al(cb);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
 
-    /* ── Labels ──────────────────────────────────────────── */
+    /* â”€â”€ Conditional move â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_CMOV: {
+        /* if (src2 != 0) dest = src1 */
+        load_oper(ctx, RAX, &ins->dest);   /* current default value */
+        load_oper(ctx, RCX, &ins->src1);   /* alternative value */
+        load_oper(ctx, RDX, &ins->src2);   /* condition (0 or 1) */
+        emit_test_rr(cb, RDX, RDX);
+        /* CMOVne rax, rcx â€” REX.W 0F 45 ModRM(3,rax,rcx) */
+        cb_emit8(cb, rex(1, RAX, 0, RCX));
+        cb_emit8(cb, 0x0F);
+        cb_emit8(cb, 0x45);               /* CMOVne */
+        cb_emit8(cb, modrm(3, RAX, RCX));
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ Labels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LABEL:
-        src_flush();  /* branch target — register state unknown */
+        src_flush();  /* branch target â€” register state unknown */
         set_label(ctx, ins->dest.label_id, cb_pos(cb));
         break;
 
-    /* ── Unconditional jump ──────────────────────────────── */
+    /* â”€â”€ Unconditional jump â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_JMP: {
         int lbl = ins->dest.label_id;
         int target = get_label(ctx, lbl);
         if (target >= 0) {
-            /* Backward jump – target known */
+            /* Backward jump â€“ target known */
             cb_emit8(cb, 0xE9);
             int from = cb_pos(cb) + 4;
             cb_emit32(cb, (uint32_t)(target - from));
         } else {
-            /* Forward jump – need to patch later */
+            /* Forward jump â€“ need to patch later */
             int patch = emit_jmp_rel32(cb);
             /* Store patch info associated with label */
             add_reloc(ctx, RELOC_REL32, patch, NULL, lbl, 0);
@@ -1311,7 +1621,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* ── Conditional jumps ───────────────────────────────── */
+    /* â”€â”€ Conditional jumps â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_JZ:
     case IR_JNZ: {
         load_oper(ctx, RAX, &ins->src1);
@@ -1331,13 +1641,13 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* ── ARG: handled by IR_CALL below ──────────────────── */
+    /* â”€â”€ ARG: handled by IR_CALL below â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_ARG:
         /* IR_ARGs are processed directly by the IR_CALL handler
          * which scans backwards to find them.  Nothing to emit here. */
         break;
 
-    /* ── CALL ────────────────────────────────────────────── */
+    /* â”€â”€ CALL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_CALL: {
         /* Shadow + stack-arg space is pre-allocated in the frame.
          * Just load arguments and emit the call. */
@@ -1353,7 +1663,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
                     load_oper(ctx, win64_arg_regs[arg_idx], &ai->src1);
                 } else {
                     load_oper(ctx, RAX, &ai->src1);
-                    emit_store_mem(cb, RSP, (int32_t)(arg_idx * 8), RAX);
+                    emit_store_mem(cb, RSP, (int32_t)((arg_idx - 4) * 8), RAX);
                 }
             }
         }
@@ -1365,38 +1675,50 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             x64_error("IR_CALL with non-function operand");
         }
 
-        /* Result in RAX → store to dest */
+        /* Result in RAX â†’ store to dest */
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
     }
 
-    /* ── RET ─────────────────────────────────────────────── */
+    /* â”€â”€ RET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_RET:
         load_oper(ctx, RAX, &ins->src1);
         __attribute__((fallthrough));
     case IR_RET_VOID: {
-        int lbl = ctx->epilogue_label;
-        int target = get_label(ctx, lbl);
-        if (target >= 0) {
-            cb_emit8(cb, 0xE9);
-            int from = cb_pos(cb) + 4;
-            cb_emit32(cb, (uint32_t)(target - from));
-        } else {
-            int patch = emit_jmp_rel32(cb);
-            add_reloc(ctx, RELOC_REL32, patch, NULL, lbl, 0);
+        /* Dead-jump elimination: if all remaining IR instructions are
+         * NOP/LABEL, the epilogue follows directly â€” no jmp needed. */
+        bool at_end = true;
+        for (int j = idx + 1; j < fn->instr_count; j++) {
+            IROpcode op2 = fn->instrs[j].op;
+            if (op2 != IR_NOP && op2 != IR_LABEL) {
+                at_end = false;
+                break;
+            }
+        }
+        if (!at_end) {
+            int lbl = ctx->epilogue_label;
+            int target = get_label(ctx, lbl);
+            if (target >= 0) {
+                cb_emit8(cb, 0xE9);
+                int from = cb_pos(cb) + 4;
+                cb_emit32(cb, (uint32_t)(target - from));
+            } else {
+                int patch = emit_jmp_rel32(cb);
+                add_reloc(ctx, RELOC_REL32, patch, NULL, lbl, 0);
+            }
         }
         break;
     }
 
-    /* ── WRITE (built-in I/O) ────────────────────────────── */
+    /* â”€â”€ WRITE (built-in I/O) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_WRITE: {
         /* src1 = value to write, dest.imm = newline flag
          * extra = write-type hint (0=int, 1=str, 2=bool, 3=char) */
         load_oper(ctx, RAX, &ins->src1);
 
         /* Prepare argument: value in RCX (first arg, Win64) */
-        emit_mov_reg_reg(cb, RCX, RAX);
+        emit_mov_reg_reg64(cb, RCX, RAX);
 
         /* Shadow space is pre-allocated in the frame */
         switch (ins->extra) {
@@ -1413,23 +1735,22 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* ── READ (built-in I/O) ─────────────────────────────── */
+    /* â”€â”€ READ (built-in I/O) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_READ: {
         /* dest = result temp, src1.imm = read kind */
         /* Shadow space is pre-allocated in the frame */
         switch ((int)ins->src1.imm) {
-        case 1:  emit_call_sym(ctx, RT_READ_LINE);   break; /* readln */
-        case 2:  emit_call_sym(ctx, RT_READ_CHAR);   break; /* readchar */
-        case 3:  emit_call_sym(ctx, RT_READ_FAILED); break; /* read_failed */
-        default: emit_call_sym(ctx, RT_READ_I64);    break; /* read */
+        case 1:  emit_call_sym(ctx, RT_READ_LINE);   break; /* read line */
+        case 3:  emit_call_sym(ctx, RT_READ_FAILED); break; /* read_failed flag */
+        default: emit_call_sym(ctx, RT_READ_I64);    break; /* read i64 */
         }
 
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
     }
 
-    /* ── INDEX_LOAD: dest = base[idx] ────────────────────── */
+    /* â”€â”€ INDEX_LOAD: dest = base[idx] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_INDEX_LOAD: {
         /* dest = result, src1 = base (stack off), src2 = index
          * extra = element size | 0x100 if unsigned */
@@ -1439,18 +1760,18 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         /* Load index into RCX */
         load_oper(ctx, RCX, &ins->src2);
 
-        /* Multiply index by element size → RCX */
+        /* Multiply index by element size â†’ RCX */
         emit_load_imm(cb, RDX, esz);
         emit_imul_rr(cb, RCX, RDX);
 
-        /* LEA base address → RAX (stack_off is already negative) */
+        /* LEA base address â†’ RAX (stack_off is already negative) */
         if (ins->src1.kind == OPER_STACK)
             emit_lea_rbp(cb, RAX, ins->src1.stack_off);
         else
             load_oper(ctx, RAX, &ins->src1);
 
         /* Add offset (array grows upward in our layout) */
-        emit_alu_rr(cb, 0x01, RAX, RCX);  /* add rax, rcx */
+        emit_alu_rr64(cb, 0x01, RAX, RCX);  /* add rax, rcx */
 
         /* Width-aware load from [rax] */
         if (esz == 1) {
@@ -1465,7 +1786,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             cb_emit8(cb, modrm(0, RAX, RAX));
         } else if (esz <= 4) {
             if (is_unsig) {
-                /* mov eax, [rax] — auto zero-extends to rax */
+                /* mov eax, [rax] â€” auto zero-extends to rax */
                 cb_emit8(cb, 0x8B);
                 cb_emit8(cb, modrm(0, RAX, RAX));
             } else {
@@ -1482,11 +1803,11 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         }
 
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
     }
 
-    /* ── INDEX_STORE: base[idx] = val ────────────────────── */
+    /* â”€â”€ INDEX_STORE: base[idx] = val â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_INDEX_STORE: {
         /* dest = base (stack off), src1 = index, src2 = value
          * extra = element size */
@@ -1496,13 +1817,13 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         emit_load_imm(cb, RDX, esz);
         emit_imul_rr(cb, RCX, RDX);         /* RCX = index * esz */
 
-        /* LEA base address → RAX (stack_off is already negative) */
+        /* LEA base address â†’ RAX (stack_off is already negative) */
         if (ins->dest.kind == OPER_STACK)
             emit_lea_rbp(cb, RAX, ins->dest.stack_off);
         else
             load_oper(ctx, RAX, &ins->dest);
 
-        emit_alu_rr(cb, 0x01, RAX, RCX);   /* RAX = base + offset */
+        emit_alu_rr64(cb, 0x01, RAX, RCX);   /* RAX = base + offset */
 
         load_oper(ctx, RDX, &ins->src2);    /* value */
 
@@ -1530,7 +1851,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* ── FIELD_LOAD: dest = *(base + offset), width-aware ── */
+    /* â”€â”€ FIELD_LOAD: dest = *(base + offset), width-aware â”€â”€ */
     case IR_FIELD_LOAD: {
         /* src1 = base, src2 = oper_imm(field_offset),
          * extra = member size | 0x100 if unsigned */
@@ -1545,7 +1866,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         int foff = (int)ins->src2.imm;
         if (foff != 0) {
             emit_load_imm(cb, RCX, foff);
-            emit_alu_rr(cb, 0x01, RAX, RCX);  /* add rax, rcx */
+            emit_alu_rr64(cb, 0x01, RAX, RCX);  /* add rax, rcx */
         }
 
         /* Width-aware load from [rax] */
@@ -1561,7 +1882,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             cb_emit8(cb, modrm(0, RAX, RAX));
         } else if (esz <= 4) {
             if (is_unsig) {
-                /* mov eax, [rax] — auto zero-extends to rax */
+                /* mov eax, [rax] â€” auto zero-extends to rax */
                 cb_emit8(cb, 0x8B);
                 cb_emit8(cb, modrm(0, RAX, RAX));
             } else {
@@ -1577,11 +1898,11 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         }
 
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
     }
 
-    /* ── FIELD_STORE: *(base + offset) = val, width-aware ── */
+    /* â”€â”€ FIELD_STORE: *(base + offset) = val, width-aware â”€â”€ */
     case IR_FIELD_STORE: {
         /* dest = base, src1 = oper_imm(field_offset), src2 = value,
          * extra = member size */
@@ -1595,7 +1916,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         int foff = (int)ins->src1.imm;
         if (foff != 0) {
             emit_load_imm(cb, RDX, foff);
-            emit_alu_rr(cb, 0x01, RAX, RDX);  /* add rax, rdx */
+            emit_alu_rr64(cb, 0x01, RAX, RDX);  /* add rax, rdx */
         }
 
         load_oper(ctx, RCX, &ins->src2);  /* value */
@@ -1619,17 +1940,17 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* ── LEA: dest = address of stack slot ───────────────── */
+    /* â”€â”€ LEA: dest = address of stack slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LEA:
         if (ins->src1.kind == OPER_STACK)
             emit_lea_rbp(cb, RAX, ins->src1.stack_off);
         else
             load_oper(ctx, RAX, &ins->src1);
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
 
-    /* ── MEMCPY ──────────────────────────────────────────── */
+    /* â”€â”€ MEMCPY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_MEMCPY: {
         /* dest = dst_addr (temp), src1 = src_addr (temp),
          * src2.imm = byte count, extra: 0=runtime, 1=compile */
@@ -1637,7 +1958,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         load_oper(ctx, RDX, &ins->src1);   /* arg1: src */
         emit_load_imm(cb, R8, ins->src2.imm); /* arg2: count */
         if (ins->extra) {
-            /* copy.compile — inline byte-copy loop (no call overhead) */
+            /* copy.compile â€” inline byte-copy loop (no call overhead) */
             /* test r8, r8 */
             cb_emit8(cb, 0x4D); cb_emit8(cb, 0x85); cb_emit8(cb, 0xC0);
             /* jz skip (patch offset below) */
@@ -1661,14 +1982,14 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             /* patch jz to skip past loop */
             cb->data[jz_patch] = (uint8_t)(cb->len - (jz_patch + 1));
         } else {
-            /* copy.runtime — REP MOVSB via runtime stub */
+            /* copy.runtime â€” REP MOVSB via runtime stub */
             /* Shadow space is pre-allocated in the frame */
             emit_call_sym(ctx, RT_MEMCPY);
         }
         break;
     }
 
-    /* ── STORE_IND: *dest = src1 (store through pointer) ── */
+    /* â”€â”€ STORE_IND: *dest = src1 (store through pointer) â”€â”€ */
     case IR_STORE_IND: {
         /* dest = address (temp), src1 = value (temp), extra = size */
         load_oper(ctx, RAX, &ins->dest);   /* address */
@@ -1692,25 +2013,111 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* ── Sign/Zero extend, Truncate ──────────────────────── */
-    case IR_SEXT:
-    case IR_ZEXT:
-    case IR_TRUNC:
-        /* For our simple codegen, all temps are 64-bit on stack.
-         * Extension/truncation is effectively a NOP since values
-         * are already stored as 64-bit. */
+    /* â”€â”€ Sign extend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_SEXT: {
         load_oper(ctx, RAX, &ins->src1);
+        int src_sz = ins->src1.size;
+        if (src_sz == 1) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xBE);                 /* movsx rax, al    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 2) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xBF);                 /* movsx rax, ax    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 4) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x63);                 /* movsxd rax, eax  */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        }
         if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX);
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ Zero extend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_ZEXT: {
+        load_oper(ctx, RAX, &ins->src1);
+        int src_sz = ins->src1.size;
+        if (src_sz == 1) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB6);                 /* movzx eax, al    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 2) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB7);                 /* movzx eax, ax    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 4) {
+            cb_emit8(cb, 0x89);                 /* mov eax, eax     */
+            cb_emit8(cb, modrm(3, RAX, RAX));   /* clears upper 32  */
+        }
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ Truncate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_TRUNC: {
+        load_oper(ctx, RAX, &ins->src1);
+        int dst_sz = ins->dest.size;
+        if (dst_sz == 1) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB6);                 /* movzx eax, al    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (dst_sz == 2) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB7);                 /* movzx eax, ax    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (dst_sz == 4) {
+            cb_emit8(cb, 0x89);                 /* mov eax, eax     */
+            cb_emit8(cb, modrm(3, RAX, RAX));   /* clears upper 32  */
+        }
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ String concat: dest = str_concat(src1, src2) â”€â”€â”€â”€â”€ */
+    case IR_STR_CONCAT:
+        load_oper(ctx, RCX, &ins->src1);
+        load_oper(ctx, RDX, &ins->src2);
+        emit_call_sym(ctx, RT_STR_CONCAT);
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
 
-    /* ── SYSCALL ─────────────────────────────────────────── */
+    /* â”€â”€ String equality: dest = str_eq(src1, src2) â”€â”€â”€â”€â”€â”€ */
+    case IR_STR_EQ: {
+        load_oper(ctx, RCX, &ins->src1);
+        load_oper(ctx, RDX, &ins->src2);
+        emit_call_sym(ctx, RT_STR_EQ);
+        /* RAX = 0 if equal.  extra==0 â†’ want eq (sete), extra==1 â†’ want ne (setne) */
+        /* test eax, eax */
+        cb_emit8(cb, 0x85);
+        cb_emit8(cb, modrm(3, RAX, RAX));
+        if (ins->extra == 0) {
+            /* sete al */
+            cb_emit8(cb, 0x0F); cb_emit8(cb, 0x94); cb_emit8(cb, 0xC0);
+        } else {
+            /* setne al */
+            cb_emit8(cb, 0x0F); cb_emit8(cb, 0x95); cb_emit8(cb, 0xC0);
+        }
+        /* movzx eax, al */
+        cb_emit8(cb, 0x0F); cb_emit8(cb, 0xB6); cb_emit8(cb, modrm(3, RAX, RAX));
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ SYSCALL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_SYSCALL: {
         /* Arguments pre-loaded via IR_ARG.
          * syscall on Windows: not directly used; on Linux the
          * ELF backend would remap for System V ABI.
          * For now emit INT3 as placeholder. */
-        cb_emit8(cb, 0xCC);  /* int3 – breakpoint / placeholder */
+        cb_emit8(cb, 0xCC);  /* int3 â€“ breakpoint / placeholder */
         break;
     }
 
@@ -1728,9 +2135,9 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     return 1;
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Function prologue / epilogue + instruction loop
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /*
  * Emit function epilogue: restore callee-saved registers, then
@@ -1766,10 +2173,10 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     xf->name = fn->name;
     xf->text_offset = cb_pos(cb);
 
-    /* ── Register allocation ───────────────────────── */
+    /* â”€â”€ Register allocation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     opt_regalloc(&ctx->cur_ra, fn, ctx->arena);
 
-    /* Build spill_map: maps temp_id → compact spill slot index.
+    /* Build spill_map: maps temp_id â†’ compact spill slot index.
      * Only spilled temps get a slot; register-allocated temps get -1. */
     {
         int tc = ctx->cur_ra.temp_count;
@@ -1790,65 +2197,297 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
             ctx->callee_save_regs[ctx->callee_save_count++] = r;
     }
 
-    /* Compute frame size:
-     * Variables occupy [rbp-1] down to [rbp - stack_size].
-     * Temps start below variables: temp i at [rbp - stack_size - (i+1)*8].
-     * Callee-saved save area below temps.
-     * Call space (shadow + extra args) at bottom of frame.
-     * Total frame = stack_size + temps + save_area + call_space, aligned to 16.
+    /* Compute frame size (RSP-relative, no frame pointer).
+     * Variables occupy [RSP + frame_size - 1] down to [RSP + frame_size - stack_size].
+     * Spill slots below variables.  Call space at bottom.
+     * Callee-saved GPRs are PUSHed before SUB RSP, so NOT included here.
      *
      * Only SPILLED temps need stack slots; register-allocated temps skip. */
     ctx->var_area_size = fn->stack_size;
     int spill_count = ctx->cur_ra.spill_count;
     int temps_space = spill_count * 8;
-    ctx->callee_save_base = fn->stack_size + temps_space;
-    int save_area = ctx->callee_save_count * 8;
 
     /* Scan instructions to find maximum call-site allocation needed.
-     * This includes shadow space (32) + extra stack args for >4-arg calls.
-     * Also accounts for IR_WRITE, IR_READ, and IR_MEMCPY runtime calls. */
+     * AXIS callees store params to their own frame (not the caller's
+     * shadow space), and runtime stubs manage their own stack, so
+     * no 32-byte shadow space is reserved.  Only extra stack args
+     * for >4-parameter calls need space. */
     int max_call_alloc = 0;
     for (int i = 0; i < fn->instr_count; i++) {
         int needed = 0;
-        switch (fn->instrs[i].op) {
-        case IR_CALL: {
+        if (fn->instrs[i].op == IR_CALL) {
             int nargs = (int)fn->instrs[i].src2.imm;
-            int extra = (nargs > 4) ? (nargs - 4) * 8 : 0;
-            needed = AXIS_ALIGN(32 + extra, 16);
-            break;
-        }
-        case IR_WRITE:
-        case IR_READ:
-            needed = 32;
-            break;
-        case IR_MEMCPY:
-            if (!fn->instrs[i].extra) needed = 32; /* runtime memcpy */
-            break;
-        default: break;
+            if (nargs > 4) {
+                needed = AXIS_ALIGN((nargs - 4) * 8, 16);
+            }
         }
         if (needed > max_call_alloc) max_call_alloc = needed;
     }
-    /* Prologue memcpy for field params also needs call space */
-    for (int i = 0; i < fn->param_count; i++) {
-        if (fn->param_info[i].is_field) {
-            if (32 > max_call_alloc) max_call_alloc = 32;
-            break;
+
+    int raw = fn->stack_size + temps_space + max_call_alloc;
+    int frame = AXIS_ALIGN(raw, 16);
+    /* After CALL, RSP is 8-misaligned (return address).
+     * Each callee-save PUSH subtracts 8:
+     *   odd  push count -> RSP re-aligned (0 mod 16) -> frame 0 mod 16 OK
+     *   even push count -> RSP still 8 mod 16        -> need +8          */
+    if (!(ctx->callee_save_count & 1))
+        frame += 8;
+    ctx->frame_size = frame;
+    xf->stack_size = frame;
+
+    /* â”€â”€ Shrink-wrapping analysis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+     * Scan the function's entry IR for a compare-and-branch on
+     * a parameter that leads to a simple return.  Two cases:
+     *   (a) BRANCH TARGET is a simple return â†’ post-prologue
+     *       fast path (cmp+jcc after prologue; fast ret after
+     *       epilogue, skipping callee-save restore).
+     *   (b) FALL-THROUGH is a simple return â†’ pre-prologue
+     *       fast path (cmp+jcc+ret BEFORE prologue; zero frame
+     *       overhead, matching GCC -O1 shrink-wrapping).       */
+    int  sw_patch = -1;       /* code-buf offset of Jcc's rel32 field  */
+    bool sw_has_retval = false;
+    int64_t sw_retval = 0;
+    bool sw_branch_target = false;  /* (a) post-prologue fast path */
+    bool sw_fallthrough   = false;  /* (b) pre-prologue fast path  */
+    bool sw_ret_param     = false;  /* fall-through returns param  */
+    int  sw_param_reg     = -1;
+    int  sw_param_size    = 0;
+    uint8_t sw_bcc        = 0;
+    int  sw_preg          = -1;
+    int32_t sw_fv         = 0;
+    IROpcode sw_cop       = (IROpcode)0;
+    int  sw_skip_start    = -1;   /* first IR index to skip (inclusive) */
+    int  sw_skip_end      = -1;   /* last IR index to skip (exclusive)  */
+
+    if (ctx->opt_level >= 1 && ctx->callee_save_count > 0 &&
+        fn->param_count >= 1 && fn->param_count <= 4 &&
+        fn->instr_count >= 3)
+    {
+        const IRInstr *ir = fn->instrs;
+        int ic = fn->instr_count;
+        int k = 0;
+        while (k < ic && ir[k].op == IR_NOP) k++;
+
+        /* Expect LOAD_VAR loading a parameter (first 4 only) */
+        if (k < ic && ir[k].op == IR_LOAD_VAR &&
+            ir[k].src1.kind == OPER_STACK)
+        {
+            int poff = ir[k].src1.stack_off;
+            int pt   = ir[k].dest.temp_id;
+            int pidx = -1;
+            for (int p = 0; p < fn->param_count && p < 4; p++) {
+                if (fn->param_info[p].offset == poff &&
+                    !fn->param_info[p].is_field) {
+                    pidx = p; break;
+                }
+            }
+            if (pidx >= 0) {
+                int j = k + 1;
+                while (j < ic && ir[j].op == IR_NOP) j++;
+
+                /* Optional LOAD_IMM for comparison constant */
+                int64_t cval = 0;  int ct = -1;
+                if (j < ic && ir[j].op == IR_LOAD_IMM) {
+                    cval = ir[j].src1.imm;
+                    ct   = ir[j].dest.temp_id;
+                    j++;
+                    while (j < ic && ir[j].op == IR_NOP) j++;
+                }
+
+                /* Expect CMP_xx */
+                if (j < ic && ir[j].op >= IR_CMP_EQ && ir[j].op <= IR_CMP_GE) {
+                    const IRInstr *cmp = &ir[j];
+                    bool ok = false;
+                    int64_t fv = 0;
+                    bool swapped = false;
+
+                    if (cmp->src1.kind == OPER_TEMP && cmp->src1.temp_id == pt) {
+                        if (cmp->src2.kind == OPER_IMM) {
+                            ok = true; fv = cmp->src2.imm;
+                        } else if (ct >= 0 && cmp->src2.kind == OPER_TEMP &&
+                                   cmp->src2.temp_id == ct) {
+                            ok = true; fv = cval;
+                        }
+                    } else if (cmp->src2.kind == OPER_TEMP && cmp->src2.temp_id == pt) {
+                        if (cmp->src1.kind == OPER_IMM) {
+                            ok = true; fv = cmp->src1.imm; swapped = true;
+                        } else if (ct >= 0 && cmp->src1.kind == OPER_TEMP &&
+                                   cmp->src1.temp_id == ct) {
+                            ok = true; fv = cval; swapped = true;
+                        }
+                    }
+
+                    if (ok && fv >= INT32_MIN && fv <= INT32_MAX) {
+                        int cmpt = cmp->dest.temp_id;
+                        int b = j + 1;
+                        while (b < ic && ir[b].op == IR_NOP) b++;
+
+                        /* Expect JZ or JNZ on the CMP result */
+                        if (b < ic &&
+                            (ir[b].op == IR_JZ || ir[b].op == IR_JNZ) &&
+                            ir[b].src1.kind == OPER_TEMP &&
+                            ir[b].src1.temp_id == cmpt)
+                        {
+                            int blabel = ir[b].dest.label_id;
+                            bool is_jnz = (ir[b].op == IR_JNZ);
+
+                            /* Build x86 condition code */
+                            IROpcode cop = cmp->op;
+                            if (swapped) {
+                                if (cop == IR_CMP_LT) cop = IR_CMP_GT;
+                                else if (cop == IR_CMP_LE) cop = IR_CMP_GE;
+                                else if (cop == IR_CMP_GT) cop = IR_CMP_LT;
+                                else if (cop == IR_CMP_GE) cop = IR_CMP_LE;
+                            }
+                            uint8_t cc;
+                            if (cmp->extra) { /* unsigned */
+                                switch (cop) {
+                                case IR_CMP_EQ: cc=0x04; break;
+                                case IR_CMP_NE: cc=0x05; break;
+                                case IR_CMP_LT: cc=0x02; break;
+                                case IR_CMP_LE: cc=0x06; break;
+                                case IR_CMP_GT: cc=0x07; break;
+                                case IR_CMP_GE: cc=0x03; break;
+                                default:        cc=0x04; break;
+                                }
+                            } else { /* signed */
+                                switch (cop) {
+                                case IR_CMP_EQ: cc=0x04; break;
+                                case IR_CMP_NE: cc=0x05; break;
+                                case IR_CMP_LT: cc=0x0C; break;
+                                case IR_CMP_LE: cc=0x0E; break;
+                                case IR_CMP_GT: cc=0x0F; break;
+                                case IR_CMP_GE: cc=0x0D; break;
+                                default:        cc=0x04; break;
+                                }
+                            }
+                            uint8_t bcc = is_jnz ? cc : (uint8_t)(cc ^ 1);
+                            int preg = win64_arg_regs[pidx];
+
+                            /* Save analysis results for emission */
+                            sw_bcc  = bcc;
+                            sw_preg = preg;
+                            sw_fv   = (int32_t)fv;
+                            sw_cop  = cop;
+
+                            /* (a) Check branch TARGET â†’ simple return */
+                            int li = -1;
+                            for (int i2 = 0; i2 < ic; i2++) {
+                                if (ir[i2].op == IR_LABEL &&
+                                    ir[i2].dest.label_id == blabel) {
+                                    li = i2 + 1; break;
+                                }
+                            }
+                            if (li >= 0) {
+                                while (li < ic && ir[li].op == IR_NOP) li++;
+                                if (li < ic && ir[li].op == IR_RET_VOID) {
+                                    sw_branch_target = true;
+                                } else if (li < ic && ir[li].op == IR_RET &&
+                                           ir[li].src1.kind == OPER_IMM) {
+                                    sw_branch_target = true;
+                                    sw_has_retval = true;
+                                    sw_retval = ir[li].src1.imm;
+                                } else if (li < ic && ir[li].op == IR_LOAD_IMM) {
+                                    int rt = ir[li].dest.temp_id;
+                                    int64_t rv = ir[li].src1.imm;
+                                    int ri = li + 1;
+                                    while (ri < ic && ir[ri].op == IR_NOP) ri++;
+                                    if (ri < ic && ir[ri].op == IR_RET &&
+                                        ir[ri].src1.kind == OPER_TEMP &&
+                                        ir[ri].src1.temp_id == rt) {
+                                        sw_branch_target = true;
+                                        sw_has_retval = true;
+                                        sw_retval = rv;
+                                    }
+                                }
+                            }
+
+                            /* (b) Check FALL-THROUGH â†’ simple return */
+                            if (!sw_branch_target) {
+                                int ft = b + 1;
+                                while (ft < ic && ir[ft].op == IR_NOP) ft++;
+                                if (ft < ic && ir[ft].op == IR_RET_VOID) {
+                                    sw_fallthrough = true;
+                                    sw_skip_start = k + 1;
+                                    sw_skip_end   = ft + 1;
+                                } else if (ft < ic && ir[ft].op == IR_RET) {
+                                    if (ir[ft].src1.kind == OPER_IMM) {
+                                        sw_fallthrough = true;
+                                        sw_has_retval = true;
+                                        sw_retval = ir[ft].src1.imm;
+                                        sw_skip_start = k + 1;
+                                        sw_skip_end   = ft + 1;
+                                    } else if (ir[ft].src1.kind == OPER_TEMP &&
+                                               ir[ft].src1.temp_id == pt) {
+                                        sw_fallthrough = true;
+                                        sw_ret_param = true;
+                                        sw_param_reg = preg;
+                                        sw_param_size = fn->param_info[pidx].size;
+                                        sw_skip_start = k + 1;
+                                        sw_skip_end   = ft + 1;
+                                    }
+                                } else if (ft < ic && ir[ft].op == IR_LOAD_IMM) {
+                                    int rt = ir[ft].dest.temp_id;
+                                    int64_t rv = ir[ft].src1.imm;
+                                    int ri = ft + 1;
+                                    while (ri < ic && ir[ri].op == IR_NOP) ri++;
+                                    if (ri < ic && ir[ri].op == IR_RET &&
+                                        ir[ri].src1.kind == OPER_TEMP &&
+                                        ir[ri].src1.temp_id == rt) {
+                                        sw_fallthrough = true;
+                                        sw_has_retval = true;
+                                        sw_retval = rv;
+                                        sw_skip_start = k + 1;
+                                        sw_skip_end   = ri + 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    int frame = fn->stack_size + temps_space + save_area + max_call_alloc;
-    frame = AXIS_ALIGN(frame, 16);
-    /* After push rbp (8 bytes), RSP is 8-misaligned; sub by 16-aligned
-     * frame re-aligns to 16.  If frame is 0, stack is still 8-misaligned,
-     * so bump it to 16 for any function that might call out. */
-    if (frame == 0 && fn->instr_count > 0) frame = 16;
-    xf->stack_size = frame;
+    /* â”€â”€ Pre-prologue fast return (fall-through case) â”€â”€â”€â”€â”€
+     * Emit cmp + jcc + retval + ret BEFORE the prologue.
+     * Base-case callers pay zero frame overhead.              */
+    if (sw_fallthrough) {
+        if (sw_fv == 0 && (sw_cop == IR_CMP_EQ || sw_cop == IR_CMP_NE)) {
+            emit_test_rr(cb, sw_preg, sw_preg);
+        } else {
+            emit_cmp_reg_imm32(cb, sw_preg, sw_fv);
+        }
+        int skip_patch = emit_jcc_rel32(cb, sw_bcc);
+        if (sw_ret_param) {
+            if (sw_param_size > 4)
+                emit_mov_reg_reg64(cb, RAX, sw_param_reg);
+            else
+                emit_mov_reg_reg(cb, RAX, sw_param_reg);
+        } else if (sw_has_retval) {
+            emit_load_imm(cb, RAX, sw_retval);
+        }
+        emit_ret(cb);
+        patch_jmp(cb, skip_patch);
+    }
 
-    /* ── Prologue ──────────────────────────────────── */
+    /* â”€â”€ Prologue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     emit_push(cb, RBP);
     emit_mov_reg_reg64(cb, RBP, RSP);
     if (frame > 0)
         emit_sub_rsp_imm32(cb, frame);
+
+    /* â”€â”€ Post-prologue fast path (branch-target case) â”€â”€â”€â”€â”€â”€
+     * CMP + Jcc emitted after prologue; the fast return itself
+     * is placed after the epilogue (patched via sw_patch).     */
+    if (sw_branch_target) {
+        if (sw_fv == 0 && (sw_cop == IR_CMP_EQ || sw_cop == IR_CMP_NE)) {
+            emit_test_rr(cb, sw_preg, sw_preg);
+        } else {
+            emit_cmp_reg_imm32(cb, sw_preg, sw_fv);
+        }
+        sw_patch = emit_jcc_rel32(cb, sw_bcc);
+    }
 
     /* Save callee-saved registers to their stack slots */
     for (int i = 0; i < ctx->callee_save_count; i++) {
@@ -1860,15 +2499,83 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
      * Win64 ABI: first 4 integer args in RCX, RDX, R8, R9.
      * Parameters beyond 4 are already on the caller's stack and
      * need to be copied to the callee's local slots.
-     * Field/struct params are passed by pointer — we first spill
+     * Field/struct params are passed by pointer â€” we first spill
      * ALL register args as raw 8-byte values (preserving pointers),
      * then memcpy field params in a second pass. This avoids
      * clobbering registers before all args are saved. */
+
+    /* â”€â”€ Param-spill elimination analysis (O1+) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+     * For each register param: if it is NOT a field param, has no
+     * STORE_VARs to its slot, no IR_LEA taking its address, and
+     * exactly one IR_LOAD_VAR whose dest temp is register-allocated,
+     * we can skip the memory spill and emit a direct reg-to-reg
+     * transfer in the prologue, then skip the LOAD_VAR at codegen. */
+    int  param_skip_ir[4]  = {-1, -1, -1, -1};  /* IR index to skip */
+    bool param_skip[4]     = {false};             /* skip spill?      */
+    int  param_dest[4]     = {0};                 /* dest phys reg    */
+    int  param_src_size[4] = {0};                 /* src operand size */
+    bool param_is_zx[4]    = {false};             /* zero-extend?     */
+
     {
         int n = fn->param_count < 4 ? fn->param_count : 4;
 
+        if (ctx->opt_level >= 1) {
+            for (int p = 0; p < n; p++) {
+                if (fn->param_info[p].is_field)  continue;
+                if (fn->param_info[p].is_update) continue;
+                int poff = fn->param_info[p].offset;
+                int load_count = 0, store_count = 0, lea_count = 0;
+                int load_idx = -1;
+                for (int j = 0; j < fn->instr_count; j++) {
+                    const IRInstr *ins = &fn->instrs[j];
+                    if (ins->op == IR_LOAD_VAR &&
+                        ins->src1.kind == OPER_STACK &&
+                        ins->src1.stack_off == poff) {
+                        load_count++;
+                        load_idx = j;
+                    }
+                    if (ins->op == IR_STORE_VAR &&
+                        ins->dest.kind == OPER_STACK &&
+                        ins->dest.stack_off == poff) {
+                        store_count++;
+                    }
+                    if (ins->op == IR_LEA &&
+                        ins->src1.kind == OPER_STACK &&
+                        ins->src1.stack_off == poff) {
+                        lea_count++;
+                    }
+                }
+                if (load_count != 1 || store_count != 0 || lea_count != 0)
+                    continue;
+                /* Check that the LOAD_VAR dest temp is register-allocated */
+                const IRInstr *li = &fn->instrs[load_idx];
+                if (li->dest.kind != OPER_TEMP) continue;
+                int dreg = temp_phys(ctx, li->dest.temp_id);
+                if (dreg < 0 || dreg == REG_SPILLED) continue;
+                param_skip[p]     = true;
+                param_skip_ir[p]  = load_idx;
+                param_dest[p]     = dreg;
+                param_src_size[p] = li->src1.size;
+                param_is_zx[p]    = (li->extra != 0);
+            }
+            /* Conflict check: if an optimised param's dest_reg equals
+             * another param's ABI source reg, disable the former to
+             * avoid clobbering before the source is consumed. */
+            for (int p = 0; p < n; p++) {
+                if (!param_skip[p]) continue;
+                for (int q = 0; q < n; q++) {
+                    if (q == p) continue;
+                    if (param_dest[p] == win64_arg_regs[q]) {
+                        param_skip[p] = false;
+                        break;
+                    }
+                }
+            }
+        }
+
         /* Pass 1: spill all register args (pointers or scalars) */
         for (int i = 0; i < n; i++) {
+            if (param_skip[i]) continue;   /* optimised â€” no spill needed */
             int off  = fn->param_info[i].offset;
             int size = fn->param_info[i].size;
             if (fn->param_info[i].is_field) {
@@ -1877,6 +2584,59 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
                 emit_store_rbp64(cb, off, win64_arg_regs[i]);
             } else {
                 emit_store_rbp_sz(cb, off, win64_arg_regs[i], size);
+            }
+        }
+
+        /* Pass 1b: emit direct reg-to-reg transfers for optimised params.
+         * This runs AFTER all non-optimised spills so we don't clobber
+         * any ABI registers before they are saved. */
+        for (int p = 0; p < n; p++) {
+            if (!param_skip[p]) continue;
+            int src = win64_arg_regs[p];
+            int dst = param_dest[p];
+            int sz  = param_src_size[p];
+            if (param_is_zx[p]) {
+                /* zero-extend */
+                switch (sz) {
+                case 1: /* movzx r32, r8  */
+                    emit_rex32(cb, dst, 0, src);
+                    cb_emit8(cb, 0x0F); cb_emit8(cb, 0xB6);
+                    cb_emit8(cb, modrm(3, dst, src));
+                    break;
+                case 2: /* movzx r32, r16 */
+                    emit_rex32(cb, dst, 0, src);
+                    cb_emit8(cb, 0x0F); cb_emit8(cb, 0xB7);
+                    cb_emit8(cb, modrm(3, dst, src));
+                    break;
+                case 4: /* mov r32, r32 â€” implicit zero-ext */
+                    emit_mov_reg_reg(cb, dst, src);
+                    break;
+                default: /* 8-byte: plain 64-bit mov */
+                    if (dst != src) emit_mov_reg_reg64(cb, dst, src);
+                    break;
+                }
+            } else {
+                /* sign-extend */
+                switch (sz) {
+                case 1: /* movsx r64, r8  */
+                    cb_emit8(cb, rex(1, dst, 0, src));
+                    cb_emit8(cb, 0x0F); cb_emit8(cb, 0xBE);
+                    cb_emit8(cb, modrm(3, dst, src));
+                    break;
+                case 2: /* movsx r64, r16 */
+                    cb_emit8(cb, rex(1, dst, 0, src));
+                    cb_emit8(cb, 0x0F); cb_emit8(cb, 0xBF);
+                    cb_emit8(cb, modrm(3, dst, src));
+                    break;
+                case 4: /* movsxd r64, r32 */
+                    cb_emit8(cb, rex(1, dst, 0, src));
+                    cb_emit8(cb, 0x63);
+                    cb_emit8(cb, modrm(3, dst, src));
+                    break;
+                default: /* 8-byte: plain 64-bit mov */
+                    if (dst != src) emit_mov_reg_reg64(cb, dst, src);
+                    break;
+                }
             }
         }
 
@@ -1920,23 +2680,71 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
         ctx->label_offsets[i] = -1;
 
     /* Reserve a label ID for the shared epilogue (max label + 1) */
+    int max_lbl = -1;
     {
-        int max_lbl = -1;
         for (int i = 0; i < fn->instr_count; i++)
             if (fn->instrs[i].op == IR_LABEL && fn->instrs[i].dest.label_id > max_lbl)
                 max_lbl = fn->instrs[i].dest.label_id;
         ctx->epilogue_label = max_lbl + 1;
     }
 
-    /* ── Instruction loop ────────────────────────── */
-    src_flush();  /* start with clean spill-reload cache */
-    for (int i = 0; i < fn->instr_count; ) {
-        i += gen_instr(ctx, fn, i);
+    /* â”€â”€ Identify loop header labels (back-edge targets) for alignment â”€â”€ */
+    int lbl_count = max_lbl + 2;  /* +1 for epilogue, +1 for size */
+    bool *loop_headers = (bool *)calloc((size_t)lbl_count, sizeof(bool));
+    {
+        bool *label_seen = (bool *)calloc((size_t)lbl_count, sizeof(bool));
+        for (int i = 0; i < fn->instr_count; i++) {
+            const IRInstr *ins = &fn->instrs[i];
+            if (ins->op == IR_LABEL)
+                label_seen[ins->dest.label_id] = true;
+            else if (ins->op == IR_JMP || ins->op == IR_JZ || ins->op == IR_JNZ) {
+                int lbl = ins->dest.label_id;
+                if (lbl < lbl_count && label_seen[lbl])
+                    loop_headers[lbl] = true;
+            }
+        }
+        free(label_seen);
     }
 
-    /* ── Shared epilogue ─────────────────────────── */
+    /* â”€â”€ Instruction loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    src_flush();  /* start with clean spill-reload cache */
+    for (int i = 0; i < fn->instr_count; ) {
+        /* Skip IR instructions already handled by pre-prologue shrink-wrap */
+        if (sw_skip_start >= 0 && i >= sw_skip_start && i < sw_skip_end) {
+            i++;
+            continue;
+        }
+        /* Skip LOAD_VARs replaced by param-spill elimination */
+        if (param_skip_ir[0] == i || param_skip_ir[1] == i ||
+            param_skip_ir[2] == i || param_skip_ir[3] == i) {
+            i++;
+            continue;
+        }
+        /* Align loop header labels to 16-byte boundary (DSB optimization, O2+ only) */
+        if (ctx->opt_level >= 2 && fn->instrs[i].op == IR_LABEL && loop_headers[fn->instrs[i].dest.label_id]) {
+            while (cb_pos(cb) & 15)
+                cb_emit8(cb, 0x90);  /* NOP padding */
+        }
+        i += gen_instr(ctx, fn, i);
+    }
+    free(loop_headers);
+
+    /* â”€â”€ Shared epilogue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     set_label(ctx, ctx->epilogue_label, cb_pos(cb));
     emit_epilogue(ctx);
+
+    /* â”€â”€ Shrink-wrap fast return â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    if (sw_patch >= 0) {
+        uint32_t fast_ret_pos = cb_pos(cb);
+        if (sw_has_retval)
+            emit_load_imm(cb, RAX, sw_retval);
+        emit_mov_reg_reg64(cb, RSP, RBP);
+        emit_pop(cb, RBP);
+        emit_ret(cb);
+        /* Patch the Jcc rel32 to point here */
+        cb_patch32(&ctx->code, sw_patch,
+                   (uint32_t)(fast_ret_pos - (sw_patch + 4)));
+    }
 
     xf->text_size = cb_pos(cb) - xf->text_offset;
 
@@ -1944,9 +2752,9 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     resolve_label_relocs(ctx);
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Label relocation resolution (second pass within .text)
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 static void resolve_label_relocs(X64Ctx *ctx)
 {
@@ -1981,16 +2789,16 @@ static void compact_relocs(X64Ctx *ctx)
     ctx->reloc_count = w;
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Resolve function call relocations (intra-module)
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 static int find_func_offset(const X64Ctx *ctx, const char *name)
 {
     for (int i = 0; i < ctx->func_count; i++)
         if (strcmp(ctx->funcs[i].name, name) == 0)
             return ctx->funcs[i].text_offset;
-    return -1; /* external / runtime – leave for PE/ELF linker */
+    return -1; /* external / runtime â€“ leave for PE/ELF linker */
 }
 
 static void resolve_func_relocs(X64Ctx *ctx)
@@ -2001,7 +2809,7 @@ static void resolve_func_relocs(X64Ctx *ctx)
         if (r->kind != RELOC_REL32) continue;
 
         int target = find_func_offset(ctx, r->target_sym);
-        if (target < 0) continue;  /* external – keep for linker */
+        if (target < 0) continue;  /* external â€“ keep for linker */
 
         int from = r->offset + 4;
         int rel = target - from + r->addend;
@@ -2011,13 +2819,15 @@ static void resolve_func_relocs(X64Ctx *ctx)
     compact_relocs(ctx);
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Public API
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 void x64_codegen(X64Ctx *ctx, const IRProgram *ir, Arena *arena)
 {
+    int saved_opt = ctx->opt_level;
     memset(ctx, 0, sizeof(*ctx));
+    ctx->opt_level = saved_opt;
     ctx->ir    = ir;
     ctx->arena = arena;
 
@@ -2054,9 +2864,9 @@ void x64_codegen(X64Ctx *ctx, const IRProgram *ir, Arena *arena)
     resolve_func_relocs(ctx);
 }
 
-/* ═════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Debug dump
- * ═════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 void x64_dump(const X64Ctx *ctx, FILE *out)
 {
@@ -2085,7 +2895,7 @@ void x64_dump(const X64Ctx *ctx, FILE *out)
         case RELOC_RIP_REL32: kind_s = "RIP_REL32"; break;
         default: break;
         }
-        fprintf(out, "  [%d] %s at .text+0x%04X → %s (addend=%d)\n",
+        fprintf(out, "  [%d] %s at .text+0x%04X â†’ %s (addend=%d)\n",
                 i, kind_s, r->offset,
                 r->target_sym ? r->target_sym : "(string)",
                 r->addend);

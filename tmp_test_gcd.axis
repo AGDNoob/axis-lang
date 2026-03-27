@@ -1,0 +1,15 @@
+mode script
+
+func gcd(x: i32, y: i32) -> i32:
+    a: i32 = copy x
+    b: i32 = copy y
+    while b != 0:
+        temp: i32 = copy b
+        b = a % b
+        a = copy temp
+    return a
+
+write("gcd(48, 18) = ")
+writeln(gcd(48, 18))
+write("gcd(100, 75) = ")
+writeln(gcd(100, 75))

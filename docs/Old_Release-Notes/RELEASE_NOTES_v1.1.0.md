@@ -179,7 +179,7 @@ The compile mode backend has been completely rewritten from Python to C. AXCC is
 
 **Architecture:**
 
-```
+```text
 .axis source → Lexer → Parser → AST → Semantic Analysis → IR → x64 Codegen → PE/ELF
 ```
 
@@ -509,14 +509,13 @@ The `_` pattern is the wildcard/default case that matches any value.
 
 ---
 
-
 ## � Benchmarks vs GCC
 
 AXCC produces unoptimized code (no optimization passes yet), so this is a baseline comparison.
 Four benchmarks, identical algorithms in AXIS and C, measured on the same machine (5 runs, median):
 
 | Benchmark | AXIS | GCC -O0 | GCC -O2 | vs -O0 | vs -O2 |
-|---|---:|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: | ---: |
 | Recursive Fibonacci (63M calls) | 554ms | 256ms | 78ms | 2.2x | 7.1x |
 | Prime Counting (500K) | 161ms | 78ms | 77ms | 2.1x | 2.1x |
 | Nested Loops (100M iterations) | 686ms | 347ms | 146ms | 2.0x | 4.7x |

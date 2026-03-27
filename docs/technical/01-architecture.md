@@ -18,53 +18,67 @@ standalone native executables (Windows PE or Linux ELF64).
 
 ## Pipeline Overview
 
+![AXCC compiler pipeline — Frontend, Middle-end, Optimizer, Backend](img/compiler-pipeline.svg)
+
 ```text
 Source Code (.axis)
     │
     ▼
 ┌──────────┐
-│  Lexer   │  lexer.c (~540 lines)
+│  Lexer   │  lexer.c (~630 lines)
 │          │  Source text → Token stream
 └────┬─────┘
      │
      ▼
 ┌──────────┐
-│  Parser  │  parser.c (~1240 lines)
+│  Parser  │  parser.c (~1470 lines)
 │          │  Token stream → Abstract Syntax Tree (AST)
 └────┬─────┘
      │
      ▼
 ┌──────────────────┐
-│ Semantic Analyzer │  semantic.c (~1170 lines)
+│ Semantic Analyzer │  semantic.c (~1620 lines)
 │                  │  Type checking, scope analysis, stack layout
 └────┬─────────────┘
      │
      ▼
 ┌──────────────┐
-│ IR Generator │  irgen.c (~1400 lines)
+│ IR Generator │  irgen.c (~1690 lines)  /  script_irgen.c (~1570 lines)
 │              │  AST → Three-address intermediate representation
 └────┬─────────┘
      │
      ▼
 ┌──────────────┐
-│  Optimizer   │  opt.c (~1510 lines)
-│              │  14-pass optimization pipeline
+│ SSA Builder  │  ssa.c (~920 lines)
+│              │  IR → SSA form (dominators, φ-functions)
 └────┬─────────┘
      │
      ▼
 ┌──────────────────┐
-│ x64 Code Generator│  x64.c (~1880 lines)
+│ SSA Optimizer    │  ssa_opt.c (~2280 lines)
+│                  │  SCCP, GVN, ADCE, LICM, loop opts
+└────┬─────────────┘
+     │
+     ▼
+┌──────────────┐
+│  Optimizer   │  opt.c (~4840 lines)
+│              │  Pre-RA optimization pipeline
+└────┬─────────┘
+     │
+     ▼
+┌──────────────────┐
+│ x64 Code Generator│  x64.c (~2740 lines)
 │                   │  IR → x86-64 machine code + relocations
 └────┬──────────────┘
      │
      ▼
 ┌─────────────┐
-│ PE/ELF Writer│  pe.c (~1020 lines) / elf.c (~810 lines)
+│ PE/ELF Writer│  pe.c (~1210 lines) / elf.c (~1050 lines)
 │             │  Machine code → Executable binary
 └─────────────┘
 ```
 
-Total: approximately 11,600 lines of C (10 source files, 12 headers).
+Total: approximately 21,200 lines of C (14 source files, 14 headers).
 
 ## File Structure
 
@@ -72,11 +86,15 @@ Total: approximately 11,600 lines of C (10 source files, 12 headers).
 | --- | --- |
 | `main.c` | Driver, CLI parsing, script mode caching, build pipeline |
 | `arena.c` | Arena (bump-pointer) memory allocator |
+| `error.c` | Error reporting and diagnostic formatting |
 | `lexer.c` | Tokenizer with indentation tracking |
 | `parser.c` | Recursive descent parser |
 | `semantic.c` | Multi-pass type checker and scope analyzer |
-| `irgen.c` | IR instruction generator |
-| `opt.c` | 14-pass optimization pipeline |
+| `irgen.c` | IR instruction generator (compile mode) |
+| `script_irgen.c` | IR instruction generator (script mode) |
+| `opt.c` | Pre-RA optimization pipeline |
+| `ssa.c` | SSA construction (dominators, φ-insertion, renaming) |
+| `ssa_opt.c` | SSA-based optimizations (SCCP, GVN, ADCE, LICM, loop opts) |
 | `x64.c` | x86-64 native code generator |
 | `pe.c` | Windows PE32+ executable writer |
 | `elf.c` | Linux ELF64 executable writer |
@@ -84,12 +102,14 @@ Total: approximately 11,600 lines of C (10 source files, 12 headers).
 | `axis_ast.h` | AST node definitions |
 | `axis_ir.h` | IR opcode and operand definitions |
 | `axis_opt.h` | Optimizer pass declarations |
+| `axis_ssa.h` | SSA construction and optimization declarations |
 | `axis_x64.h` | x64 code generator declarations |
 | `axis_pe.h` | PE format definitions |
 | `axis_elf.h` | ELF format definitions |
 | `axis_lexer.h` | Lexer declarations |
 | `axis_parser.h` | Parser declarations |
 | `axis_semantic.h` | Semantic analyzer declarations |
+| `axis_error.h` | Error reporting declarations |
 | `axis_common.h` | Shared type system, constants |
 | `axis_arena.h` | Arena allocator header |
 

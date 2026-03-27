@@ -4,16 +4,16 @@
 mode script
 
 func gcd(x: i32, y: i32) -> i32:
-    a: i32 = x
-    b: i32 = y
+    a: i32 = copy x
+    b: i32 = copy y
     while b != 0:
-        temp: i32 = b
+        temp: i32 = copy b
         b = a % b
-        a = temp
-    give a
+        a = copy temp
+    return a
 
 func lcm(a: i32, b: i32) -> i32:
-    give (a / gcd(a, b)) * b
+    return (a / gcd(a, b)) * b
 
 write("gcd(48, 18) = ")
 writeln(gcd(48, 18))

@@ -20,12 +20,16 @@ No `-o` flag, no build step. Just run.
 
 ## How the Cache Works
 
+![Script mode cache workflow](img/script-cache.svg)
+
 On first run:
+
 1. AXCC compiles the `.axis` file to a native binary
 2. The binary is stored in an `__axcache__/` directory next to the source file
 3. The binary is executed
 
 On subsequent runs:
+
 1. AXCC checks if the source file has changed (timestamp comparison)
 2. If unchanged, it runs the cached binary directly
 3. If changed, it recompiles and updates the cache
@@ -42,7 +46,7 @@ y: i32 = 20
 writeln(x + y)
 
 func helper(a: i32) -> i32:
-    give a * 2
+    return a * 2
 
 result: i32 = helper(x)
 writeln(result)

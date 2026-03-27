@@ -1,0 +1,23 @@
+// Test: Loop Flags mit beliebigen Namen
+mode script
+
+writeln("Test: kreative Flag-Namen")
+
+@hodenkobold while True:
+    writeln("hodenkobold läuft")
+    x: i32 = 0
+    @kartoffel while x < 5:
+        when x == 2:
+            writeln("stop hodenkobold bei x=2")
+            stop @hodenkobold
+        x += 1
+    writeln("nie erreicht")
+
+writeln("---")
+
+@bananenbrot for i in range(0, 10):
+    when i % 3 == 0:
+        skip @bananenbrot
+    writeln(i)
+
+writeln("fertig")

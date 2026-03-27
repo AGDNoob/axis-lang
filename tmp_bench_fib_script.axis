@@ -1,0 +1,9 @@
+// Recursive Fibonacci — Script Mode (heavy workload)
+mode script
+
+func fib(n: i32) -> i32:
+    when n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+writeln(fib(38))

@@ -30,6 +30,8 @@ struct Symbol {
     bool          is_update;      /* parameter "update" modifier */
     ASTTypeNode  *array_type;     /* non-NULL for array variables  */
     bool          used;           /* set when variable is referenced */
+    bool          is_input;       /* true if declared with input() */
+    int           input_flag_offset; /* stack offset for input flag */
     SrcLoc        def_loc;        /* location of definition */
     Symbol       *next;           /* linked list within scope      */
 };
@@ -56,6 +58,7 @@ struct Scope {
 typedef struct {
     Arena       *arena;
     const char  *filename;
+    const char  *source;         /* original source text (for diagnostics) */
 
     Scope       *global_scope;
     Scope       *current_scope;
@@ -74,17 +77,24 @@ typedef struct {
     int          stack_offset;    /* grows positive, stored as negative */
     int          loop_depth;      /* for break/continue validation     */
 
+    /* Loop flag stack (for flagged break/continue) */
+    #define MAX_FLAG_DEPTH 16
+    const char  *flag_stack[MAX_FLAG_DEPTH];
+    int          flag_count;
+
     /* Check mode: collect errors instead of aborting */
     bool         check_mode;
     int          error_count;
     jmp_buf      err_jmp;         /* recovery point */
     bool         check_unused;    /* report unused variables */
     bool         check_dead;      /* report dead code ranges */
+    bool         in_vardecl_init; /* true while analysing vardecl RHS */
 } Semantic;
 
 /* ── Public API ─────────────────────────────────────────────── */
 
-void semantic_init(Semantic *s, Arena *arena, const char *filename);
+void semantic_init(Semantic *s, Arena *arena, const char *filename,
+                   const char *source);
 
 /* Returns 0 on success, non-zero on first error (printed to stderr). */
 int  semantic_analyze(Semantic *s, ASTProgram *prog);

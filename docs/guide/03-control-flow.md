@@ -32,6 +32,10 @@ else:
 
 `else when` works like `else if` in other languages — only the first matching branch runs.
 
+## Loops
+
+![AXIS loop types — repeat, while, for](img/loop-types.svg)
+
 ## Infinite Loops: `repeat`
 
 `repeat` starts a loop that runs until you `stop` it:
@@ -47,7 +51,7 @@ repeat:
 
 Output:
 
-```
+```text
 0
 1
 2
@@ -102,7 +106,7 @@ repeat:
 
 Output:
 
-```
+```text
 1
 2
 4
@@ -124,6 +128,26 @@ while row <= 3:
     writeln("")
     row = row + 1
 ```
+
+## Labeled Loops
+
+Use `@name` to tag a loop, then `stop @name` or `skip @name` to target it from an inner scope:
+
+```axis
+row: i32 = 1
+@outer while row <= 3:
+    col: i32 = 1
+    while col <= 3:
+        when row == 2 and col == 2:
+            stop @outer     # exits the outer loop entirely
+        write(row * col)
+        write(" ")
+        col = col + 1
+    writeln("")
+    row = row + 1
+```
+
+The `@name` tag goes before the loop keyword. Loop flags work on `while`, `repeat`, and `for`. Unlabeled `stop` and `skip` still apply to the innermost loop.
 
 ## Next
 

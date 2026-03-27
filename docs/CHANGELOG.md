@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-03-26
+
+### Added
+
+- `@name` syntax to tag loops for targeted `stop @name` / `skip @name` from nested scopes; syntax: `@outer while condition:`, `@search for i in range(0, n):`, `@main repeat:`
+- `stop @name` breaks the named loop; `skip @name` continues to the next iteration of the named loop
+- Loop flags supported on `while`, `repeat`, and `for`; unflagged loops are unaffected
+- Duplicate flag names and unknown flag references are rejected at compile time
+- Loop flags supported in both script mode (`axis run`) and compile mode (`axis build`)
+- `const` keyword for immutable variables; values are read-only after initialization
+- Scalars: `const x: i32 = 42`
+- Arrays: `const arr: (i32; 3) = [1, 2, 3]`
+- Enums: `const Color: enum:` makes the entire enum constant; individual variants can also be `const`
+- Fields: `const Player: field:` makes the entire field including members and subfields constant; individual members can also be `const`
+- `const` prevents reassignment, compound assignment (`+=`, `-=`, …), index mutation, and field mutation
+- Passing a `const` variable as an `update` parameter is a compile error
+- New example: `21_constants.axis`
+- String concatenation with `+` operator in compile mode: `greeting: str = "Hello, " + name`
+- String comparison with `==` and `!=` in compile mode: `when name == "Alice":`
+- Runtime stubs `__axis_str_concat` and `__axis_str_eq` added to PE and ELF backends
+- `copy ... as` and `update ... as` for explicit type casting between integer types
+- Widening cast: `copy x as i64` — sign-extension for signed types, zero-extension for unsigned
+- Narrowing cast: `update x as i8` — truncation with a compiler warning
+- `bool ↔ integer` casting is a compile error
+- No-op casts between equal-size types are eliminated by the compiler
+- Variable assignment `x: i32 = y` creates an alias (shared storage) — no keyword required
+- `x: i32 = copy y` creates an independent copy instead of an alias
+- Aliases inherit the constness of their source; a `const` alias of a mutable variable is a compile error
+- Array index access in declarations and assignments requires `copy`: `x: i32 = copy arr[0]`; `x: i32 = arr[0]` is a compile error
+- Array elements cannot be aliased, only copied
+- `for` loops copy array elements implicitly — no `copy` keyword needed in loop body
+- Direct array access in expressions (`writeln(arr[0])`, `if arr[1] > 0:`) does not require `copy`
+- `input()` function for explicit, type-safe user input
+- `x: i32 = input("Prompt: ")` — reads an integer and displays the prompt
+- `s: str = input()` — reads a line with no prompt; prompt argument can be a string literal or variable
+- `{var}_input_failed()` returns `bool` to check if the preceding `input()` call failed — e.g. `x_input_failed()`
+- `const` variables with `input()` are a compile error
+- `input()` supported in PE and ELF backends (scanf/printf runtime stubs)
+
+### Removed
+
+- `read()`, `readln()`, `readchar()`, and `read_failed()` removed — replaced by `input()` and `{var}_input_failed()`
+- `give` keyword removed — use `return` instead
+
+### Fixed
+
+- **pe.c**: `.rdata` section now has WRITE flag — `input()` runtime stubs write to `.rdata` (scanf buffer, input_failed flag), causing ACCESS_VIOLATION when read-only
+
+---
+
 ## [1.2.1] - 2026-03-16
 
 ### Added
@@ -20,8 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Benchmarks: AXCC now reaches GCC `-O0` parity on Prime Count, beats GCC on GCD Stress
-- Fibonacci improved from 1.3× to 1.11× slower than GCC `-O0`
+- Improved codegen for Prime Count benchmark (~GCC `-O0` parity) and GCD Stress benchmark
+- Improved Fibonacci benchmark runtime (~1.11× vs GCC `-O0`, previously ~1.3×)
 - Binary sizes reduced (Fibonacci: 2.5 KB → 2.0 KB) via shorter 32-bit instruction encoding
 
 ### Fixed
@@ -61,7 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Benchmarks 1.1–1.7× faster than v1.1.0; within 10–30% of GCC `-O0`
+- Benchmark performance improved 1.1–1.7× over v1.1.0 (within 10–30% of GCC `-O0`)
 - New docs: `08-optimizations.md`, `12-check-command.md`
 - Updated docs: `05-arrays.md`, `06-x64-codegen.md`, `11-compile-mode.md`
 
@@ -149,7 +199,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0-beta] - 2026-01-12
 
 Initial beta release of the AXIS programming language.
-
----
-
-> **Note**: This is beta software under active development. Breaking changes may occur.

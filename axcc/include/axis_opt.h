@@ -1,15 +1,32 @@
 /*
- * axis_opt.h – Optimization passes for the AXIS compiler IR.
+ * axis_opt.h – Flat-IR optimization passes for the AXIS compiler.
  *
- * Currently provides:
- *   1. Dead Code Elimination (DCE) – removes unreachable instructions
- *      after unconditional jumps/returns until the next label.
- *   2. Constant Folding / Propagation – evaluates compile-time-known
- *      arithmetic and propagates constants through temps.
- *   3. Strength Reduction – replaces expensive ops (MUL, DIV, MOD)
- *      with cheaper equivalents (SHL, SHR, AND) when possible.
- *   4. Linear-scan register allocation – assigns physical x86-64
- *      registers to IR temporaries, spilling the rest to stack.
+ * Provides 20 passes operating on the flat three-address-code IR.
+ * These complement the SSA-level passes declared in axis_ssa.h;
+ * together they form the 37-pass optimization pipeline.
+ *
+ * Pass                    Min Level   Description
+ * ─────────────────────── ───────── ─────────────────────────────────
+ *  1. opt_dce              O0        Dead Code Elimination
+ *  2. opt_constfold         O0        Constant Folding & Propagation
+ *  3. opt_strength_reduce   O1        Strength Reduction (MUL→SHL etc.)
+ *  4. opt_peephole          O1        Algebraic Simplifications
+ *  5. opt_loadstore_elim    O1        Load-Store Elimination
+ *  6. opt_copyprop          O1        Copy Propagation
+ *  7. opt_inline            O1        Function Inlining (leaf, <48 instrs)
+ *  8. opt_licm              O2        Loop-Invariant Code Motion
+ *  9. opt_loop_invert       O2        Loop Inversion (top→bottom test)
+ * 10. opt_unroll            O2        Loop Unrolling (2× unroll)
+ * 11. opt_regpromote        O2        Register Promotion for loops
+ * 12. opt_ivsr              O2        Induction Variable Strength Red.
+ * 13. opt_rie               O1        Redundant Instruction Elimination
+ * 14. opt_dead_store        O1        Dead Store Elimination
+ * 15. opt_regalloc          always    Linear-scan Register Allocation
+ * 16. opt_tail_call         O1        Tail Call Optimization
+ * 17. opt_jump_thread       O1        Jump Threading
+ * 18. opt_if_convert        O1        If-Conversion (CMOV)
+ * 19. opt_simplify_cfg      O1        CFG Simplification
+ * 20. opt_reassociate       O1        Reassociation
  */
 #ifndef AXIS_OPT_H
 #define AXIS_OPT_H
@@ -122,6 +139,20 @@ void opt_inline(IRProgram *ir);
 void opt_licm(IRProgram *ir);
 
 /* ═════════════════════════════════════════════════════════════
+ * Loop Inversion
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_loop_invert – Convert top-test loops to bottom-test form.
+ *
+ * Transforms: LABEL top → [cond] → JZ/JNZ exit → [body] → JMP top
+ * Into:       [guard_cond] → JZ/JNZ exit → LABEL top → [body] → [cond] → inv_branch top
+ *
+ * Eliminates the unconditional JMP from the hot loop path.
+ */
+void opt_loop_invert(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
  * Loop Unrolling
  * ═════════════════════════════════════════════════════════════ */
 
@@ -147,6 +178,99 @@ void opt_unroll(IRProgram *ir);
  * the original instruction is dead and can be eliminated.
  */
 void opt_rie(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Dead Store Elimination
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_dead_store – Remove STORE_VAR instructions to stack slots that
+ * are never read by any LOAD_VAR, and eliminate redundant stores
+ * within the same basic block.
+ */
+void opt_dead_store(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Tail Call Optimization
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_tail_call – Convert self-recursive tail calls into jumps.
+ *
+ * Detects pattern: IR_ARG... IR_CALL self IR_RET (returning call
+ * result) and replaces with parameter stores + JMP to entry label.
+ */
+void opt_tail_call(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Jump Threading
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_jump_thread – Thread jumps through intermediate blocks.
+ *
+ * When a JMP/JZ/JNZ targets a label followed only by another JMP,
+ * redirect to the final target. Follows chains up to 8 hops.
+ */
+void opt_jump_thread(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * If-Conversion (CMOV)
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_if_convert – Replace simple if/else diamonds with CMOV.
+ *
+ * Pattern: CMP → JZ/JNZ → MOV/LOAD_IMM → JMP → LABEL → MOV/LOAD_IMM → LABEL
+ * Converted to: CMP → MOV default → CMOV alternate, cond
+ */
+void opt_if_convert(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * CFG Simplification
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_simplify_cfg – Simplify the control-flow graph.
+ *
+ * Removes redundant JMP-to-next-label, merges consecutive labels,
+ * and eliminates empty basic blocks.
+ */
+void opt_simplify_cfg(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * Reassociation
+ * ═════════════════════════════════════════════════════════════ */
+
+/*
+ * opt_reassociate – Reassociate chains of associative/commutative ops.
+ *
+ * Combines: op t1, t0, imm1; op t2, t1, imm2 (t1 single-use)
+ * Into:     op t2, t0, (imm1 ⊕ imm2)
+ * For ADD, MUL, AND, OR, XOR.
+ */
+void opt_reassociate(IRProgram *ir);
+
+/* ═════════════════════════════════════════════════════════════
+ * opt_regpromote – Register promotion for innermost loops.
+ * Replaces in-loop load_var with MOV from a home register,
+ * keeping stores for correctness.
+ */
+void opt_regpromote(IRProgram *ir);
+
+/*
+ * opt_ivsr – Induction Variable Strength Reduction.
+ * Replaces MUL/ADD on loop induction variables with accumulated
+ * additions, eliminating expensive multiply instructions.
+ */
+void opt_ivsr(IRProgram *ir);
+
+/*
+ * opt_ive – Induction Variable Elimination.
+ * Eliminates IVs used only for the loop exit test by rewriting the
+ * test to use another IV with the same step and an adjusted bound.
+ */
+void opt_ive(IRProgram *ir);
 
 /* ═════════════════════════════════════════════════════════════
  * Register Allocation – Linear Scan
@@ -175,5 +299,14 @@ typedef struct {
  * The caller must free ra->temp_reg when done (or use the arena).
  */
 void opt_regalloc(RegAlloc *ra, const IRFunc *fn, Arena *arena);
+
+/* ── New GCC -O1 equivalent passes ────────────────────────── */
+void opt_fwdprop(IRProgram *ir);
+void opt_minmaxabs(IRProgram *ir);
+void opt_sink(IRProgram *ir);
+void opt_vrp(IRProgram *ir);
+void opt_tail_merge(IRProgram *ir);
+void opt_sra(IRProgram *ir);
+void opt_switch_lower(IRProgram *ir);
 
 #endif /* AXIS_OPT_H */

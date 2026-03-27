@@ -1,0 +1,10 @@
+mode script
+
+// copy: independent storage
+x: i32 = 42
+y: i32 = copy x
+y = 99
+write("x after copy+mutate: ")
+writeln(x)
+write("y after copy+mutate: ")
+writeln(y)

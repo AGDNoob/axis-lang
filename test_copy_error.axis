@@ -1,0 +1,4 @@
+mode script
+
+e: i16 = 100
+writeln(copy e as i32)

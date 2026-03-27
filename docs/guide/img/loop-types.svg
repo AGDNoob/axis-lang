@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 310" width="720" height="310" font-family="Arial, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6Z" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <!-- repeat column -->
+  <rect x="10" y="10" width="225" height="290" rx="8" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1"/>
+  <rect x="10" y="10" width="225" height="36" rx="8" fill="#059669"/>
+  <rect x="10" y="30" width="225" height="16" fill="#059669"/>
+  <text x="122" y="34" text-anchor="middle" fill="white" font-size="14" font-weight="bold">repeat</text>
+
+  <rect x="72" y="60" width="100" height="28" rx="14" fill="white" stroke="#059669" stroke-width="1.5"/>
+  <text x="122" y="79" text-anchor="middle" fill="#065F46" font-size="11">Start</text>
+
+  <line x1="122" y1="88" x2="122" y2="106" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="72" y="110" width="100" height="30" rx="4" fill="#D1FAE5" stroke="#059669" stroke-width="1.5"/>
+  <text x="122" y="130" text-anchor="middle" fill="#065F46" font-size="11" font-weight="bold">Body</text>
+
+  <line x1="122" y1="140" x2="122" y2="158" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <polygon points="122,162 170,186 122,210 74,186" fill="white" stroke="#059669" stroke-width="1.5"/>
+  <text x="122" y="190" text-anchor="middle" fill="#065F46" font-size="10">stop?</text>
+
+  <line x1="170" y1="186" x2="200" y2="186" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="193" y="179" fill="#059669" font-size="10">yes</text>
+  <rect x="204" y="174" width="24" height="24" rx="4" fill="#059669"/>
+  <text x="216" y="191" text-anchor="middle" fill="white" font-size="11" font-weight="bold">End</text>
+
+  <line x1="74" y1="186" x2="45" y2="186" stroke="#6B7280" stroke-width="1.5"/>
+  <text x="56" y="179" fill="#6B7280" font-size="10">no</text>
+  <line x1="45" y1="186" x2="45" y2="125" stroke="#6B7280" stroke-width="1.5"/>
+  <line x1="45" y1="125" x2="67" y2="125" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <text x="122" y="250" text-anchor="middle" fill="#374151" font-size="11">Infinite until stop</text>
+  <text x="122" y="268" text-anchor="middle" fill="#6B7280" font-size="10" font-style="italic">stop = break, skip = continue</text>
+
+  <!-- while column -->
+  <rect x="248" y="10" width="225" height="290" rx="8" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+  <rect x="248" y="10" width="225" height="36" rx="8" fill="#2563EB"/>
+  <rect x="248" y="30" width="225" height="16" fill="#2563EB"/>
+  <text x="360" y="34" text-anchor="middle" fill="white" font-size="14" font-weight="bold">while</text>
+
+  <rect x="310" y="60" width="100" height="28" rx="14" fill="white" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="360" y="79" text-anchor="middle" fill="#1E40AF" font-size="11">Start</text>
+
+  <line x1="360" y1="88" x2="360" y2="106" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <polygon points="360,110 408,138 360,166 312,138" fill="white" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="360" y="142" text-anchor="middle" fill="#1E40AF" font-size="10">cond?</text>
+
+  <line x1="360" y1="166" x2="360" y2="184" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="370" y="179" fill="#2563EB" font-size="10">true</text>
+
+  <rect x="310" y="188" width="100" height="30" rx="4" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="360" y="208" text-anchor="middle" fill="#1E40AF" font-size="11" font-weight="bold">Body</text>
+
+  <line x1="310" y1="203" x2="282" y2="203" stroke="#6B7280" stroke-width="1.5"/>
+  <line x1="282" y1="203" x2="282" y2="138" stroke="#6B7280" stroke-width="1.5"/>
+  <line x1="282" y1="138" x2="307" y2="138" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <line x1="408" y1="138" x2="438" y2="138" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="430" y="131" fill="#6B7280" font-size="10">false</text>
+  <rect x="442" y="126" width="24" height="24" rx="4" fill="#2563EB"/>
+  <text x="454" y="143" text-anchor="middle" fill="white" font-size="11" font-weight="bold">End</text>
+
+  <text x="360" y="250" text-anchor="middle" fill="#374151" font-size="11">Condition checked first</text>
+  <text x="360" y="268" text-anchor="middle" fill="#6B7280" font-size="10" font-style="italic">while cond:</text>
+
+  <!-- for column -->
+  <rect x="486" y="10" width="225" height="290" rx="8" fill="#FFFBEB" stroke="#FDE68A" stroke-width="1"/>
+  <rect x="486" y="10" width="225" height="36" rx="8" fill="#D97706"/>
+  <rect x="486" y="30" width="225" height="16" fill="#D97706"/>
+  <text x="598" y="34" text-anchor="middle" fill="white" font-size="14" font-weight="bold">for</text>
+
+  <rect x="548" y="60" width="100" height="28" rx="14" fill="white" stroke="#D97706" stroke-width="1.5"/>
+  <text x="598" y="79" text-anchor="middle" fill="#92400E" font-size="11">i = start</text>
+
+  <line x1="598" y1="88" x2="598" y2="106" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <polygon points="598,110 646,138 598,166 550,138" fill="white" stroke="#D97706" stroke-width="1.5"/>
+  <text x="598" y="142" text-anchor="middle" fill="#92400E" font-size="10">i &lt; end?</text>
+
+  <line x1="598" y1="166" x2="598" y2="184" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="608" y="179" fill="#D97706" font-size="10">true</text>
+
+  <rect x="548" y="188" width="100" height="30" rx="4" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+  <text x="598" y="208" text-anchor="middle" fill="#92400E" font-size="11" font-weight="bold">Body, i++</text>
+
+  <line x1="548" y1="203" x2="520" y2="203" stroke="#6B7280" stroke-width="1.5"/>
+  <line x1="520" y1="203" x2="520" y2="138" stroke="#6B7280" stroke-width="1.5"/>
+  <line x1="520" y1="138" x2="545" y2="138" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <line x1="646" y1="138" x2="676" y2="138" stroke="#6B7280" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="668" y="131" fill="#6B7280" font-size="10">false</text>
+  <rect x="680" y="126" width="24" height="24" rx="4" fill="#D97706"/>
+  <text x="692" y="143" text-anchor="middle" fill="white" font-size="11" font-weight="bold">End</text>
+
+  <text x="598" y="250" text-anchor="middle" fill="#374151" font-size="11">Range or array iteration</text>
+  <text x="598" y="268" text-anchor="middle" fill="#6B7280" font-size="10" font-style="italic">for i in range(start, end):</text>
+</svg>

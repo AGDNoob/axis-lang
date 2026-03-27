@@ -5,7 +5,7 @@
 AXIS supports three integer literal formats:
 
 | Format | Prefix | Example |
-|--------|--------|---------|
+| ------ | ------ | ------- |
 | Decimal | *(none)* | `42` |
 | Hexadecimal | `0x` / `0X` | `0xFF` |
 | Binary | `0b` / `0B` | `0b1010` |
@@ -23,12 +23,12 @@ Negative literals use the `-` prefix: `-100`, `-0xFF`.
 ## Arithmetic
 
 | Operator | Description |
-|----------|-------------|
-| `+`  | Addition |
-| `-`  | Subtraction |
-| `*`  | Multiplication |
-| `/`  | Division |
-| `%`  | Modulo |
+| -------- | ----------- |
+| `+` | Addition |
+| `-` | Subtraction |
+| `*` | Multiplication |
+| `/` | Division |
+| `%` | Modulo |
 
 ```axis
 a: i32 = 10
@@ -43,12 +43,12 @@ writeln(a % b)    # 1
 ## Comparison
 
 | Operator | Description |
-|----------|-------------|
+| -------- | ----------- |
 | `==` | Equal |
 | `!=` | Not equal |
-| `<`  | Less than |
+| `<` | Less than |
 | `<=` | Less or equal |
-| `>`  | Greater than |
+| `>` | Greater than |
 | `>=` | Greater or equal |
 
 Returns `bool`.
@@ -56,9 +56,9 @@ Returns `bool`.
 ## Logical
 
 | Operator | Description |
-|----------|-------------|
+| -------- | ----------- |
 | `and` | Logical AND (short-circuit) |
-| `or`  | Logical OR (short-circuit) |
+| `or` | Logical OR (short-circuit) |
 | `not` / `!` | Logical NOT |
 
 ```axis
@@ -70,10 +70,10 @@ when x > 0 and x < 10:
 ## Bitwise
 
 | Operator | Description |
-|----------|-------------|
-| `&`  | AND |
-| `\|`  | OR |
-| `^`  | XOR |
+| -------- | ----------- |
+| `&` | AND |
+| `\|` | OR |
+| `^` | XOR |
 | `<<` | Left shift |
 | `>>` | Right shift |
 
@@ -108,6 +108,22 @@ y >>= 2
 ```
 
 Compound assignment works on variables, array elements, and field members.
+
+## Type Casting
+
+Use `copy ... as` to produce a widened value, and `update ... as` to narrow a variable in place:
+
+```axis
+x: i32 = 1000
+wide: i64 = copy x as i64    # widening — sign-extended
+
+y: i32 = 300
+update y as i8               # narrows y in place — truncated; compiler warns
+```
+
+Widening (`copy ... as`) sign-extends signed types and zero-extends unsigned types. Narrowing (`update ... as`) truncates the value and emits a compiler warning.
+
+Casts between equal-size types are no-ops and are eliminated by the compiler. Casting between `bool` and any integer type is a compile error.
 
 ## Next
 

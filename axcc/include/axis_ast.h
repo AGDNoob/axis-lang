@@ -52,8 +52,10 @@ typedef enum {
     EXPR_ENUM_ACCESS,       /* Enum::Variant                */
     EXPR_ARRAY_LIT,         /* [1, 2, 3]                    */
     EXPR_COPY,              /* copy expr                    */
+    EXPR_COPY_CAST,         /* copy expr as type            */
     EXPR_RANGE,             /* start..end  (or with step)   */
-    EXPR_READ_FAILED,       /* read_failed                  */
+    EXPR_INPUT,             /* input(prompt?)               */
+    EXPR_INPUT_FAILED,      /* var_input_failed()           */
 } ExprKind;
 
 struct ASTExpr {
@@ -102,10 +104,22 @@ struct ASTExpr {
         /* EXPR_COPY  (compile_time: false = runtime, true = compile) */
         struct { ASTExpr *expr; bool compile_time; }            copy;
 
+        /* EXPR_COPY_CAST  (copy value + cast to target type) */
+        struct {
+            ASTExpr     *expr;
+            ASTTypeNode *target_type;
+            int          old_size, new_size;
+            bool         is_signed_src;
+        } copy_cast;
+
         /* EXPR_RANGE  (step may be NULL) */
         struct { ASTExpr *start; ASTExpr *end; ASTExpr *step; } range;
 
-        /* EXPR_READ_FAILED – no payload */
+        /* EXPR_INPUT  (prompt may be NULL) */
+        struct { ASTExpr *prompt; }                             input;
+
+        /* EXPR_INPUT_FAILED  (var_name = prefix before "_input_failed") */
+        struct { const char *var_name; int input_flag_offset; } input_failed;
     };
 };
 
@@ -121,23 +135,17 @@ typedef enum {
     STMT_COMPOUND_ASSIGN,   /* target op= value             */
     STMT_EXPR,              /* expression as statement      */
     STMT_WRITE,             /* write / writeln              */
-    STMT_READ,              /* read / readln / readchar     */
     STMT_IF,                /* when ... else ...            */
     STMT_WHILE,             /* while condition: body        */
     STMT_REPEAT,            /* repeat: body (infinite loop) */
     STMT_FOR,               /* for var in iter: body        */
     STMT_BREAK,             /* break / stop                 */
     STMT_CONTINUE,          /* continue / skip              */
-    STMT_RETURN,            /* give / return value          */
+    STMT_RETURN,            /* return value                 */
     STMT_MATCH,             /* match expr: arms...          */
     STMT_SYSCALL,           /* syscall(args...)             */
+    STMT_UPDATE_CAST,       /* update name as type          */
 } StmtKind;
-
-typedef enum {
-    READ_READ,
-    READ_READLN,
-    READ_READCHAR,
-} ReadKind;
 
 /* Match arm (used inside STMT_MATCH) */
 struct ASTMatchArm {
@@ -159,6 +167,8 @@ struct ASTStmt {
             ASTExpr     *value;         /* NULL if no initializer    */
             int          stack_offset;  /* filled by semantic pass   */
             int          total_size;    /* filled by semantic pass   */
+            int          input_flag_offset; /* stack offset for input flag (0 if not input) */
+            bool         is_const;      /* true if declared with const */
         } var_decl;
 
         /* STMT_ASSIGN */
@@ -199,12 +209,6 @@ struct ASTStmt {
             bool     newline;       /* true = writeln, false = write */
         } write;
 
-        /* STMT_READ */
-        struct {
-            const char *target;     /* variable name to read into */
-            ReadKind    read_kind;
-        } read;
-
         /* STMT_IF */
         struct {
             ASTExpr  *condition;
@@ -216,15 +220,17 @@ struct ASTStmt {
 
         /* STMT_WHILE */
         struct {
-            ASTExpr  *condition;
-            ASTStmt **body;
-            int       body_count;
+            ASTExpr    *condition;
+            ASTStmt   **body;
+            int         body_count;
+            const char *flag;       /* optional @flag name (NULL if none) */
         } while_loop;
 
         /* STMT_REPEAT */
         struct {
-            ASTStmt **body;
-            int       body_count;
+            ASTStmt   **body;
+            int         body_count;
+            const char *flag;       /* optional @flag name (NULL if none) */
         } repeat_loop;
 
         /* STMT_FOR */
@@ -236,6 +242,7 @@ struct ASTStmt {
             /* Populated by semantic pass for array iteration */
             int         array_elem_size;  /* element size in bytes  */
             int         array_count;      /* number of elements     */
+            const char *flag;       /* optional @flag name (NULL if none) */
         } for_loop;
 
         /* STMT_RETURN */
@@ -256,7 +263,26 @@ struct ASTStmt {
             int       arg_count;
         } syscall;
 
-        /* STMT_BREAK, STMT_CONTINUE – no payload */
+        /* STMT_BREAK */
+        struct {
+            const char *flag;   /* NULL = innermost loop */
+        } break_stmt;
+
+        /* STMT_CONTINUE */
+        struct {
+            const char *flag;   /* NULL = innermost loop */
+        } continue_stmt;
+
+        /* STMT_UPDATE_CAST */
+        struct {
+            const char  *var_name;
+            ASTTypeNode *target_type;
+            int          old_offset;    /* filled by semantic pass */
+            int          new_offset;    /* filled by semantic pass */
+            int          old_size;      /* filled by semantic pass */
+            int          new_size;      /* filled by semantic pass */
+            bool         is_signed_src; /* filled by semantic pass */
+        } update_cast;
     };
 };
 

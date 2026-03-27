@@ -6,6 +6,7 @@
  * string escapes, all operators, and keyword recognition.
  */
 #include "axis_lexer.h"
+#include "axis_error.h"
 #include <ctype.h>
 
 /* ── Keyword table ─────────────────────────────────────────── */
@@ -21,13 +22,15 @@ static const KWEntry kw_table[] = {
     {"continue", TOK_CONTINUE}, {"skip",      TOK_CONTINUE},
     {"match",    TOK_MATCH},
     /* functions */
-    {"func",     TOK_FUNC},     {"give",      TOK_GIVE},
+    {"func",     TOK_FUNC},
     {"return",   TOK_RETURN},
     /* declarations */
     {"mode",     TOK_MODE},     {"script",    TOK_SCRIPT},
     {"compile",  TOK_COMPILE},  {"field",     TOK_FIELD},
     {"enum",     TOK_ENUM},     {"update",    TOK_UPDATE},
     {"copy",     TOK_COPY},
+    {"const",    TOK_CONST},
+    {"as",       TOK_AS},
     /* types */
     {"i8",   TOK_I8},   {"i16",  TOK_I16},  {"i32",  TOK_I32},  {"i64",  TOK_I64},
     {"u8",   TOK_U8},   {"u16",  TOK_U16},  {"u32",  TOK_U32},  {"u64",  TOK_U64},
@@ -36,8 +39,7 @@ static const KWEntry kw_table[] = {
     {"True",  TOK_TRUE},  {"False", TOK_FALSE},
     /* I/O */
     {"write",    TOK_WRITE},    {"writeln",    TOK_WRITELN},
-    {"read",     TOK_READ},     {"readln",     TOK_READLN},
-    {"readchar", TOK_READCHAR}, {"read_failed",TOK_READ_FAILED},
+    {"input",    TOK_INPUT},
     /* logical */
     {"and", TOK_AND}, {"or", TOK_OR}, {"not", TOK_NOT},
     /* syscall */
@@ -66,14 +68,15 @@ static const char *_tok_names[] = {
     [TOK_WHILE] = "WHILE", [TOK_REPEAT] = "REPEAT",
     [TOK_FOR]   = "FOR",   [TOK_IN]     = "IN",
     [TOK_BREAK] = "BREAK", [TOK_CONTINUE] = "CONTINUE",
+    [TOK_FLAG]  = "FLAG",
     [TOK_MATCH] = "MATCH",
-    [TOK_FUNC]   = "FUNC",   [TOK_GIVE]   = "GIVE",  [TOK_RETURN] = "RETURN",
+    [TOK_FUNC]   = "FUNC",   [TOK_RETURN] = "RETURN",
     [TOK_MODE]   = "MODE",   [TOK_SCRIPT] = "SCRIPT", [TOK_COMPILE] = "COMPILE",
     [TOK_FIELD]  = "FIELD",  [TOK_ENUM]   = "ENUM",
-    [TOK_UPDATE] = "UPDATE", [TOK_COPY]   = "COPY",
+    [TOK_UPDATE] = "UPDATE", [TOK_COPY]   = "COPY", [TOK_CONST] = "CONST",
+    [TOK_AS]     = "AS",
     [TOK_WRITE]  = "WRITE",  [TOK_WRITELN] = "WRITELN",
-    [TOK_READ]   = "READ",   [TOK_READLN]  = "READLN",
-    [TOK_READCHAR] = "READCHAR", [TOK_READ_FAILED] = "READ_FAILED",
+    [TOK_INPUT]  = "INPUT",
     [TOK_SYSCALL]  = "SYSCALL",
     [TOK_PLUS]    = "+",  [TOK_MINUS]   = "-",  [TOK_STAR]    = "*",
     [TOK_SLASH]   = "/",  [TOK_PERCENT] = "%",
@@ -145,6 +148,20 @@ static inline Token mktok(TokenType t, int line, int col, const char *start, int
     tok.start   = start;
     tok.length  = len;
     return tok;
+}
+
+/*
+ * Report a lexer error through the centralized diagnostic system.
+ * Increments error_count and either exits or continues in check mode.
+ */
+static void lex_error(Lexer *lex, int line, int col, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    diag_reportv(DIAG_ERROR, lex->filename, lex->src, line, col, fmt, ap);
+    va_end(ap);
+    lex->error_count++;
+    if (!lex->check_mode) exit(1);
 }
 
 static void push_pending(Lexer *lex, Token t)
@@ -241,10 +258,7 @@ static bool handle_indent(Lexer *lex, Token *out)
     if (c == '#')                       { skip_comment(lex); return false; }
 
     if (has_tab && has_space) {
-        fprintf(stderr, "%s:%d: error: mixed tabs and spaces in indentation\n",
-                lex->filename, lex->line);
-        lex->error_count++;
-        if (!lex->check_mode) exit(1);
+        lex_error(lex, lex->line, 1, "mixed tabs and spaces in indentation");
     }
 
     int current = lex->indent_stack[lex->indent_top];
@@ -252,9 +266,8 @@ static bool handle_indent(Lexer *lex, Token *out)
     if (indent > current) {
         lex->indent_top++;
         if (lex->indent_top >= LEXER_MAX_INDENT_DEPTH) {
-            fprintf(stderr, "%s:%d: error: maximum indentation depth (%d) exceeded\n",
-                    lex->filename, lex->line, LEXER_MAX_INDENT_DEPTH);
-            exit(1);
+            lex_error(lex, lex->line, 1, "maximum indentation depth (%d) exceeded",
+                      LEXER_MAX_INDENT_DEPTH);
         }
         lex->indent_stack[lex->indent_top] = indent;
         *out = mktok(TOK_INDENT, lex->line, 1, lex->src + lex->pos, 0);
@@ -270,10 +283,8 @@ static bool handle_indent(Lexer *lex, Token *out)
             push_pending(lex, mktok(TOK_DEDENT, lex->line, 1, lex->src + lex->pos, 0));
         }
         if (lex->indent_stack[lex->indent_top] != indent) {
-            fprintf(stderr, "%s:%d: indentation error: level %d doesn't match any outer level\n",
-                    lex->filename, lex->line, indent);
-            lex->error_count++;
-            if (!lex->check_mode) exit(1);
+            lex_error(lex, lex->line, 1, "indentation level %d doesn't match any outer level",
+                      indent);
             /* recover: snap to nearest known level */
         }
         /* Return first DEDENT, rest go to pending */
@@ -348,19 +359,13 @@ static Token read_string(Lexer *lex)
     while (lex->pos < lex->src_len && cur(lex) != '"') {
         if (cur(lex) == '\\') { adv(lex); slen++; adv(lex); }
         else if (cur(lex) == '\n') {
-            fprintf(stderr, "%s:%d:%d: unterminated string literal\n",
-                    lex->filename, lex->line, lex->col);
-            lex->error_count++;
-            if (!lex->check_mode) exit(1);
+            lex_error(lex, lex->line, lex->col, "unterminated string literal");
             break;
         }
         else { slen++; adv(lex); }
     }
     if (lex->pos >= lex->src_len) {
-        fprintf(stderr, "%s:%d:%d: unterminated string literal\n",
-                lex->filename, sl, sc);
-        lex->error_count++;
-        if (!lex->check_mode) exit(1);
+        lex_error(lex, sl, sc, "unterminated string literal");
         return mktok(TOK_STRING_LIT, sl, sc, "", 0);
     }
 
@@ -376,10 +381,8 @@ static Token read_string(Lexer *lex)
             adv(lex);
             char esc = escape_char(cur(lex));
             if (esc == 0 && cur(lex) != '0') {
-                fprintf(stderr, "%s:%d:%d: unknown escape sequence: \\%c\n",
-                        lex->filename, lex->line, lex->col, cur(lex));
-                lex->error_count++;
-                if (!lex->check_mode) exit(1);
+                lex_error(lex, lex->line, lex->col, "unknown escape sequence: \\%c",
+                          cur(lex));
                 esc = cur(lex);  /* use literal char as fallback */
             }
             buf[bi++] = esc;
@@ -467,6 +470,25 @@ Token lexer_next(Lexer *lex)
         /* Identifier / keyword */
         if (isalpha((unsigned char)c) || c == '_')
             return read_ident(lex);
+
+        /* Loop flag: @name */
+        if (c == '@') {
+            adv(lex);
+            if (lex->pos < lex->src_len &&
+                (isalpha((unsigned char)cur(lex)) || cur(lex) == '_'))
+            {
+                const char *fstart = lex->src + lex->pos;
+                while (lex->pos < lex->src_len &&
+                       (isalnum((unsigned char)cur(lex)) || cur(lex) == '_'))
+                    adv(lex);
+                int flen = (int)(lex->src + lex->pos - fstart);
+                Token tok = mktok(TOK_FLAG, sl, sc, sp, flen + 1);
+                tok.str_val = arena_strndup(lex->arena, fstart, (size_t)flen);
+                return tok;
+            }
+            lex_error(lex, sl, sc, "'@' must be followed by an identifier");
+            continue;
+        }
 
         /* ── Multi-char operators ─────────────────────── */
 
@@ -560,10 +582,8 @@ Token lexer_next(Lexer *lex)
             }
         }
 
-        fprintf(stderr, "%s:%d:%d: unexpected character: '%c' (0x%02x)\n",
-                lex->filename, lex->line, lex->col, c, (unsigned char)c);
-        lex->error_count++;
-        if (!lex->check_mode) exit(1);
+        lex_error(lex, lex->line, lex->col, "unexpected character: '%c' (0x%02x)",
+                  c, (unsigned char)c);
         adv(lex);  /* skip bad character */
         continue;
     }

@@ -7,7 +7,7 @@ func double(update x: i32):
     x = x * 2
 
 func swap(update a: i32, update b: i32):
-    temp: i32 = a
+    temp: i32 = copy a
     a = b
     b = temp
 

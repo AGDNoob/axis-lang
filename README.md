@@ -1,8 +1,16 @@
-# AXIS
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="AXIS — Native x86-64 compiler" width="600">
+</p>
 
-A programming language with Python-like syntax that compiles to native x86-64 machine code.
+<p align="center">
+  A programming language with Python-like syntax that compiles to native x86-64 machine code.<br>
+  AXIS has two execution modes: <b>script mode</b> for quick scripting, and <b>compile mode</b> for native binaries.<br>
+  The compiler (AXCC) is written in C, has zero dependencies, and produces standalone Windows PE and Linux ELF64 executables.
+</p>
 
-AXIS has two execution modes: **script mode** for quick scripting, and **compile mode** for native binaries. The compiler (AXCC) is written in C, has zero dependencies, and produces standalone Windows PE and Linux ELF64 executables.
+<p align="center">
+  <img src="docs/assets/modes.svg" alt="AXIS execution modes — Script, Compile, Check" width="600">
+</p>
 
 ## Installation
 
@@ -10,9 +18,11 @@ AXIS has two execution modes: **script mode** for quick scripting, and **compile
 It installs `axis.exe` + `ax` alias and optionally adds AXIS to your PATH.
 
 **Linux / macOS** — one-liner:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AGDNoob/axis-lang/main/installer/install-linux.sh | bash
 ```
+
 This clones the repo, compiles AXCC from source (installs `gcc`/`make` if needed), and places the binary in `~/.local/bin/`.
 
 ### Building from Source
@@ -50,12 +60,12 @@ axis check program.axis --all       # + dead code + unused variable warnings
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
+| -------- | ----------- |
 | [Guide](docs/guide/) | Learn AXIS step by step |
-| [Examples](code/examples/) | 20 example programs |
+| [Examples](code/examples/) | 21 example programs |
 | [Technical](docs/technical/) | How AXCC works internally |
 | [Benchmarks](docs/Benchmarks.md) | Performance measurements |
-| [Release Notes](RELEASE_NOTES_v1.2.1.md) | v1.2.1 changes and design philosophy |
+| [Release Notes](RELEASE_NOTES_v1.3.0.md) | v1.3.0 changes and design philosophy |
 | [Changelog](docs/CHANGELOG.md) | Version history |
 
 ## License

@@ -34,6 +34,7 @@ enum {
 /* Linux syscall numbers */
 #define SYS_READ   0
 #define SYS_WRITE  1
+#define SYS_BRK    12
 #define SYS_EXIT   60
 
 /* ═════════════════════════════════════════════════════════════
@@ -155,10 +156,11 @@ typedef struct {
     int write_nl_off;
     int read_i64_off;
     int read_line_off;
-    int read_char_off;
     int read_failed_off;
     int memcpy_off;
     int div_zero_off;
+    int str_concat_off;
+    int str_eq_off;
 } StubOffsets;
 
 /* ═════════════════════════════════════════════════════════════
@@ -254,6 +256,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
      * ──────────────────────────────────────────────────────── */
     so.write_i64_off = base + sb->len;
 
+    sb_emit8(sb, 0x56);                                       /* push rsi (callee-save) */
+    sb_emit8(sb, 0x57);                                       /* push rdi (callee-save) */
     sb_emit_push_rbp(sb);                                     /* push rbp          */
     sb_emit_mov_rbp_rsp(sb);                                  /* mov rbp, rsp      */
     sb_emit_sub_rsp(sb, 48);                                  /* sub rsp, 48       */
@@ -298,6 +302,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0x48); sb_emit8(sb, 0x29); sb_emit8(sb, 0xF2); /* sub rdx, rsi   */
     sb_emit_syscall(sb);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* ────────────────────────────────────────────────────────
@@ -306,6 +312,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
      * ──────────────────────────────────────────────────────── */
     so.write_str_off = base + sb->len;
 
+    sb_emit8(sb, 0x56);                                       /* push rsi (callee-save) */
+    sb_emit8(sb, 0x57);                                       /* push rdi (callee-save) */
     sb_emit_push_rbp(sb);
     sb_emit_mov_rbp_rsp(sb);
     sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xCF); /* mov rdi, rcx   */
@@ -327,6 +335,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0xBF); sb_emit32(sb, 1);                       /* mov edi, 1     */
     sb_emit_syscall(sb);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* ────────────────────────────────────────────────────────
@@ -335,6 +345,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
      * ──────────────────────────────────────────────────────── */
     so.write_bool_off = base + sb->len;
 
+    sb_emit8(sb, 0x56);                                       /* push rsi (callee-save) */
+    sb_emit8(sb, 0x57);                                       /* push rdi (callee-save) */
     sb_emit_push_rbp(sb);
     sb_emit_mov_rbp_rsp(sb);
     sb_emit8(sb, 0x85); sb_emit8(sb, 0xC9);                     /* test ecx, ecx  */
@@ -359,6 +371,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0xBF); sb_emit32(sb, 1);                       /* mov edi, 1     */
     sb_emit_syscall(sb);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* ────────────────────────────────────────────────────────
@@ -367,6 +381,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
      * ──────────────────────────────────────────────────────── */
     so.write_char_off = base + sb->len;
 
+    sb_emit8(sb, 0x56);                                       /* push rsi (callee-save) */
+    sb_emit8(sb, 0x57);                                       /* push rdi (callee-save) */
     sb_emit_push_rbp(sb);
     sb_emit_mov_rbp_rsp(sb);
     sb_emit8(sb, 0x51);                                          /* push rcx       */
@@ -376,6 +392,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0xBF); sb_emit32(sb, 1);                       /* mov edi, 1     */
     sb_emit_syscall(sb);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* ────────────────────────────────────────────────────────
@@ -384,6 +402,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
      * ──────────────────────────────────────────────────────── */
     so.write_nl_off = base + sb->len;
 
+    sb_emit8(sb, 0x56);                                       /* push rsi (callee-save) */
+    sb_emit8(sb, 0x57);                                       /* push rdi (callee-save) */
     sb_emit_push_rbp(sb);
     sb_emit_mov_rbp_rsp(sb);
     sb_emit8(sb, 0x6A); sb_emit8(sb, 0x0A);                     /* push 0x0A      */
@@ -393,6 +413,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0xBF); sb_emit32(sb, 1);                       /* mov edi, 1     */
     sb_emit_syscall(sb);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* ────────────────────────────────────────────────────────
@@ -402,6 +424,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
      * ──────────────────────────────────────────────────────── */
     so.read_i64_off = base + sb->len;
 
+    sb_emit8(sb, 0x56);                                       /* push rsi (callee-save) */
+    sb_emit8(sb, 0x57);                                       /* push rdi (callee-save) */
     sb_emit_push_rbp(sb);
     sb_emit_mov_rbp_rsp(sb);
     sb_emit_sub_rsp(sb, 48);
@@ -458,6 +482,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     /* .ok: clear flag, return */
     sb_emit_mov_rip_byte(sb, 0, data_va, rt->flag_off, text_va, base);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* .error: set flag, return 0 */
@@ -465,6 +491,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0x31); sb_emit8(sb, 0xC0);                     /* xor eax, eax   */
     sb_emit_mov_rip_byte(sb, 1, data_va, rt->flag_off, text_va, base);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* ────────────────────────────────────────────────────────
@@ -475,6 +503,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
      * ──────────────────────────────────────────────────────── */
     so.read_line_off = base + sb->len;
 
+    sb_emit8(sb, 0x56);                                       /* push rsi (callee-save) */
+    sb_emit8(sb, 0x57);                                       /* push rdi (callee-save) */
     sb_emit_push_rbp(sb);
     sb_emit_mov_rbp_rsp(sb);
 
@@ -516,6 +546,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     /* Clear flag */
     sb_emit_mov_rip_byte(sb, 0, data_va, rt->flag_off, text_va, base);
     sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* .error: */
@@ -523,41 +555,8 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0x31); sb_emit8(sb, 0xC0);                     /* xor eax, eax   */
     sb_emit_mov_rip_byte(sb, 1, data_va, rt->flag_off, text_va, base);
     sb_emit_leave(sb);
-    sb_emit_ret(sb);
-
-    /* ────────────────────────────────────────────────────────
-     * __axis_read_char()
-     * Read 1 byte from stdin, return in RAX.
-     * ──────────────────────────────────────────────────────── */
-    so.read_char_off = base + sb->len;
-
-    sb_emit_push_rbp(sb);
-    sb_emit_mov_rbp_rsp(sb);
-    sb_emit_sub_rsp(sb, 16);
-
-    /* read(0, rbp-1, 1) */
-    sb_emit8(sb, 0x31); sb_emit8(sb, 0xC0);                     /* xor eax, eax   */
-    sb_emit8(sb, 0x31); sb_emit8(sb, 0xFF);                     /* xor edi, edi   */
-    sb_emit8(sb, 0x48); sb_emit8(sb, 0x8D); sb_emit8(sb, 0x75); /* lea rsi,[rbp-1]*/
-    sb_emit8(sb, 0xFF);
-    sb_emit8(sb, 0xBA); sb_emit32(sb, 1);                       /* mov edx, 1     */
-    sb_emit_syscall(sb);
-
-    sb_emit8(sb, 0x85); sb_emit8(sb, 0xC0);                     /* test eax, eax  */
-    int jle_patch_rc = sb->len;
-    sb_emit8(sb, 0x7E); sb_emit8(sb, 0x00);                     /* jle .error     */
-
-    sb_emit8(sb, 0x0F); sb_emit8(sb, 0xB6); sb_emit8(sb, 0x45); /* movzx eax,[rbp-1]*/
-    sb_emit8(sb, 0xFF);
-    sb_emit_mov_rip_byte(sb, 0, data_va, rt->flag_off, text_va, base);
-    sb_emit_leave(sb);
-    sb_emit_ret(sb);
-
-    /* .error: */
-    sb->data[jle_patch_rc + 1] = (uint8_t)(sb->len - (jle_patch_rc + 2));
-    sb_emit8(sb, 0x31); sb_emit8(sb, 0xC0);                     /* xor eax, eax   */
-    sb_emit_mov_rip_byte(sb, 1, data_va, rt->flag_off, text_va, base);
-    sb_emit_leave(sb);
+    sb_emit8(sb, 0x5F);                                       /* pop rdi  (callee-restore) */
+    sb_emit8(sb, 0x5E);                                       /* pop rsi  (callee-restore) */
     sb_emit_ret(sb);
 
     /* ────────────────────────────────────────────────────────
@@ -608,6 +607,121 @@ static StubOffsets gen_stubs(StubBuf *sb,
     /* mov eax, 60  (SYS_EXIT) */
     sb_emit8(sb, 0xB8); sb_emit32(sb, SYS_EXIT);
     sb_emit_syscall(sb);
+
+    /* ────────────────────────────────────────────────────────
+     * __axis_str_concat(str1=RCX, str2=RDX) → RAX
+     * Concatenate two null-terminated strings.
+     * Allocates memory via brk, copies both strings, returns
+     * pointer to new null-terminated result.
+     * ──────────────────────────────────────────────────────── */
+    so.str_concat_off = base + sb->len;
+
+    /* save callee-saved + rdi/rsi for rep movsb */
+    sb_emit8(sb, 0x53);                                          /* push rbx       */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x54);                     /* push r12       */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x55);                     /* push r13       */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x56);                     /* push r14       */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x57);                     /* push r15       */
+    sb_emit8(sb, 0x57);                                          /* push rdi       */
+    sb_emit8(sb, 0x56);                                          /* push rsi       */
+
+    /* save args: r12 = str1, r13 = str2 */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xCC); /* mov r12, rcx   */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xD5); /* mov r13, rdx   */
+
+    /* ── inline strlen(str1) → rbx ── */
+    sb_emit8(sb, 0x31); sb_emit8(sb, 0xC9);                     /* xor ecx, ecx   */
+    int len1_loop = sb->len;
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x80); sb_emit8(sb, 0x3C); /* cmp byte        */
+    sb_emit8(sb, 0x0C); sb_emit8(sb, 0x00);                     /*   [r12+rcx], 0  */
+    sb_emit8(sb, 0x74); sb_emit8(sb, 0x05);                     /* je .len1_done   */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0xFF); sb_emit8(sb, 0xC1); /* inc rcx         */
+    sb_emit8(sb, 0xEB);                                          /* jmp .len1_loop  */
+    sb_emit8(sb, (uint8_t)(len1_loop - (sb->len + 1)));
+    /* .len1_done: */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xCB); /* mov rbx, rcx    */
+
+    /* ── inline strlen(str2) → r14 ── */
+    sb_emit8(sb, 0x31); sb_emit8(sb, 0xC9);                     /* xor ecx, ecx   */
+    int len2_loop = sb->len;
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x80); sb_emit8(sb, 0x3C); /* cmp byte        */
+    sb_emit8(sb, 0x0D); sb_emit8(sb, 0x00);                     /*   [r13+rcx], 0  */
+    sb_emit8(sb, 0x74); sb_emit8(sb, 0x05);                     /* je .len2_done   */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0xFF); sb_emit8(sb, 0xC1); /* inc rcx         */
+    sb_emit8(sb, 0xEB);                                          /* jmp .len2_loop  */
+    sb_emit8(sb, (uint8_t)(len2_loop - (sb->len + 1)));
+    /* .len2_done: */
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xCE); /* mov r14, rcx    */
+
+    /* ── brk(0) → current break in r15 ── */
+    sb_emit8(sb, 0x31); sb_emit8(sb, 0xFF);                     /* xor edi, edi    */
+    sb_emit8(sb, 0xB8); sb_emit32(sb, SYS_BRK);                 /* mov eax, 12     */
+    sb_emit_syscall(sb);
+    sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xC7); /* mov r15, rax    */
+
+    /* ── brk(current + len1 + len2 + 1) ── */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xC7); /* mov rdi, rax    */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x01); sb_emit8(sb, 0xDF); /* add rdi, rbx    */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x01); sb_emit8(sb, 0xF7); /* add rdi, r14    */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0xFF); sb_emit8(sb, 0xC7); /* inc rdi         */
+    sb_emit8(sb, 0xB8); sb_emit32(sb, SYS_BRK);                 /* mov eax, 12     */
+    sb_emit_syscall(sb);
+
+    /* ── copy str1 (len1 bytes) via rep movsb ── */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xFF); /* mov rdi, r15    */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xE6); /* mov rsi, r12    */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xD9); /* mov rcx, rbx    */
+    sb_emit8(sb, 0xF3); sb_emit8(sb, 0xA4);                     /* rep movsb       */
+
+    /* ── copy str2 + null (len2+1 bytes), rdi already advanced ── */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xEE); /* mov rsi, r13    */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xF1); /* mov rcx, r14    */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0xFF); sb_emit8(sb, 0xC1); /* inc rcx         */
+    sb_emit8(sb, 0xF3); sb_emit8(sb, 0xA4);                     /* rep movsb       */
+
+    /* return buffer pointer */
+    sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xF8); /* mov rax, r15    */
+
+    /* restore */
+    sb_emit8(sb, 0x5E);                                          /* pop rsi        */
+    sb_emit8(sb, 0x5F);                                          /* pop rdi        */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5F);                     /* pop r15        */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5E);                     /* pop r14        */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5D);                     /* pop r13        */
+    sb_emit8(sb, 0x41); sb_emit8(sb, 0x5C);                     /* pop r12        */
+    sb_emit8(sb, 0x5B);                                          /* pop rbx        */
+    sb_emit_ret(sb);
+
+    /* ────────────────────────────────────────────────────────
+     * __axis_str_eq(str1=RCX, str2=RDX) → RAX
+     * Inline strcmp: returns 0 if equal, nonzero otherwise.
+     * ──────────────────────────────────────────────────────── */
+    so.str_eq_off = base + sb->len;
+
+    sb_emit8(sb, 0x57);                                          /* push rdi       */
+    sb_emit8(sb, 0x56);                                          /* push rsi       */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xCF); /* mov rdi, rcx   */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x89); sb_emit8(sb, 0xD6); /* mov rsi, rdx   */
+    sb_emit8(sb, 0x31); sb_emit8(sb, 0xC9);                     /* xor ecx, ecx   */
+
+    /* .cmp_loop: */
+    int eq_loop = sb->len;
+    sb_emit8(sb, 0x0F); sb_emit8(sb, 0xB6); sb_emit8(sb, 0x04); /* movzx eax,      */
+    sb_emit8(sb, 0x0F);                                          /*   byte[rdi+rcx] */
+    sb_emit8(sb, 0x0F); sb_emit8(sb, 0xB6); sb_emit8(sb, 0x14); /* movzx edx,      */
+    sb_emit8(sb, 0x0E);                                          /*   byte[rsi+rcx] */
+    sb_emit8(sb, 0x29); sb_emit8(sb, 0xD0);                     /* sub eax, edx    */
+    sb_emit8(sb, 0x75); sb_emit8(sb, 0x09);                     /* jne .done       */
+    sb_emit8(sb, 0x84); sb_emit8(sb, 0xD2);                     /* test dl, dl     */
+    sb_emit8(sb, 0x74); sb_emit8(sb, 0x05);                     /* je .done        */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0xFF); sb_emit8(sb, 0xC1); /* inc rcx         */
+    sb_emit8(sb, 0xEB);                                          /* jmp .cmp_loop   */
+    sb_emit8(sb, (uint8_t)(eq_loop - (sb->len + 1)));
+
+    /* .done: eax = difference (0 if equal) */
+    sb_emit8(sb, 0x5E);                                          /* pop rsi        */
+    sb_emit8(sb, 0x5F);                                          /* pop rdi        */
+    sb_emit_ret(sb);
 
     return so;
 }
@@ -708,10 +822,11 @@ static void patch_runtime_relocs(X64Ctx *x64_mut, const StubOffsets *so)
         else if (strcmp(r->target_sym, "__axis_write_nl") == 0)    target = so->write_nl_off;
         else if (strcmp(r->target_sym, "__axis_read_i64") == 0)    target = so->read_i64_off;
         else if (strcmp(r->target_sym, "__axis_read_line") == 0)   target = so->read_line_off;
-        else if (strcmp(r->target_sym, "__axis_read_char") == 0)   target = so->read_char_off;
         else if (strcmp(r->target_sym, "__axis_read_failed") == 0) target = so->read_failed_off;
         else if (strcmp(r->target_sym, "__axis_memcpy") == 0)      target = so->memcpy_off;
         else if (strcmp(r->target_sym, "__axis_div_zero") == 0)    target = so->div_zero_off;
+        else if (strcmp(r->target_sym, "__axis_str_concat") == 0) target = so->str_concat_off;
+        else if (strcmp(r->target_sym, "__axis_str_eq") == 0)     target = so->str_eq_off;
         else continue;  /* user function – already resolved */
 
         int from = r->offset + 4;

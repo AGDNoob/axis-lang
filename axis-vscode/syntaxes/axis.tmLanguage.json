@@ -325,6 +325,10 @@
           "match": "\\b(update|copy)\\b"
         },
         {
+          "name": "storage.modifier.const.axis",
+          "match": "\\bconst\\b"
+        },
+        {
           "name": "keyword.operator.logical.word.axis",
           "match": "\\b(and|or|not)\\b"
         },
@@ -410,7 +414,7 @@
       "patterns": [
         {
           "comment": "function_call( — but not keywords/builtins",
-          "match": "\\b(?!(?:when|else|while|loop|repeat|for|match|func|field|enum|mode|write|writeln|read|readln|readchar|read_failed|range|syscall|return|give|if|and|or|not|copy|update|break|stop|continue|skip|in)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "match": "\\b(?!(?:when|else|while|loop|repeat|for|match|func|field|enum|mode|write|writeln|read|readln|readchar|read_failed|range|syscall|return|give|if|and|or|not|copy|update|const|break|stop|continue|skip|in)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
           "captures": {
             "1": { "name": "entity.name.function.call.axis" }
           }

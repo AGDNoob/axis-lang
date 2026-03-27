@@ -1,6 +1,6 @@
 ﻿# SSA-Based IR Optimization Architecture
 
-AXCC v2.0 introduces a 6-tier SSA-based optimization pipeline. The goal: beat GCC `-O3` and LLVM `-O3` on every benchmark — with zero external dependencies.
+AXCC implements a 6-tier SSA-based optimization pipeline (`ssa.c` ~920 LOC, `ssa_opt.c` ~2280 LOC). All 32 passes are fully operational since v1.3.0. The goal: beat GCC `-O3` and LLVM `-O3` on every benchmark — with zero external dependencies.
 
 ## Why AXIS Wins
 
@@ -22,6 +22,8 @@ AXIS has **structural advantages** over C/C++ that no amount of analysis can rep
 ---
 
 ## Pipeline Overview
+
+![SSA optimization tiers — 6-tier pipeline from IR to binary](img/ssa-tiers.svg)
 
 ```text
 Source → AST → Semantic Analysis → IR Generation
@@ -59,20 +61,21 @@ Source → AST → Semantic Analysis → IR Generation
 
 **Purpose:** Transform the linear IR into Static Single Assignment form. Every variable is defined exactly once. Control-flow merges are resolved with φ-functions. This is the foundation — every subsequent tier operates on SSA.
 
-### Existing Passes
+**Implementation:** `ssa_construct()` in `ssa.c` (~920 LOC). Active at `-O1` and above.
 
-*None.* Current IR is linear three-address code without SSA properties.
+### Implemented Components
 
-### New Components
-
-| Component | Description | Why It Beats GCC/LLVM |
-| --- | --- | --- |
-| **Dominator Tree** | Compute immediate dominators for all basic blocks (Lengauer-Tarjan) | Same as GCC/LLVM — but AXIS CFGs are simpler (no computed goto, no longjmp) |
-| **Dominance Frontiers** | Identify φ-function insertion points | Standard SSA construction |
-| **φ-Function Insertion** | Place φ-functions at dominance frontiers (Cytron's algorithm) | Same algorithm, but fewer φ-functions because AXIS has no pointer-induced defs |
-| **SSA Renaming** | Rename all variable versions (def-use chains become trivial) | Standard — but AXIS aliases are resolved at parse time, no analysis needed |
-| **Alias Resolution** | `x = y` → x and y share the same SSA name. `x = copy y` → x gets a fresh SSA name | **Free — language semantics give perfect alias info. GCC/LLVM can never achieve this.** |
-| **Const Marking** | `const` variables tagged as SSA invariants — never redefined, globally propagable | `const` in AXIS is absolute. In C, `const` can be cast away — LLVM must verify. |
+| Component | Function | Description | Why It Beats GCC/LLVM |
+| --- | --- | --- | --- |
+| **Basic Block Construction** | `build_basic_blocks()` | Split linear IR into basic blocks at branch/label boundaries | Standard — AXIS CFGs are simpler (no computed goto, no longjmp) |
+| **CFG Construction** | `build_cfg()` | Build predecessor/successor edges between basic blocks | Standard CFG construction |
+| **Dominator Tree** | `compute_dominators()` | Compute immediate dominators (Cooper-Harvey-Kennedy iterative algorithm) | Same as GCC/LLVM — but AXIS CFGs are simpler |
+| **Dominance Frontiers** | `compute_dom_frontiers()` | Identify φ-function insertion points | Standard SSA construction |
+| **φ-Function Insertion** | `insert_phis()` | Place φ-functions at dominance frontiers (Cytron's algorithm) | Same algorithm, but fewer φ-functions because AXIS has no pointer-induced defs |
+| **SSA Renaming** | `ssa_rename()` | Rename all variable versions (def-use chains become trivial) | Standard — but AXIS aliases are resolved at parse time, no analysis needed |
+| **Loop Detection** | `detect_loops()` | Identify natural loops via back-edges for loop optimization passes | Required by Tier 3 loop optimizations |
+| **Alias Resolution** | Implicit | `x = y` → x and y share the same SSA name. `x = copy y` → x gets a fresh SSA name | **Free — language semantics give perfect alias info. GCC/LLVM can never achieve this.** |
+| **Const Propagation** | Implicit | `const` variables propagate as SSA invariants — never redefined | `const` in AXIS is absolute. In C, `const` can be cast away — LLVM must verify. |
 
 ### AXIS Advantage at Tier 1
 
@@ -88,28 +91,27 @@ AXIS generates **fewer φ-functions** and **smaller SSA graphs** than equivalent
 
 **Purpose:** High-level scalar transforms on the SSA IR. These are the "big wins" — they eliminate redundant computation, propagate constants, remove dead code, and inline functions.
 
-### Existing Passes (Upgraded to SSA)
+**Implementation:** All passes active at `-O1` and above. Inlining runs pre-SSA on flat IR.
 
-| Pass | Current Version | SSA Version | Improvement |
+### Implemented Passes
+
+| Pass | Function | Description | Minimum Level |
 | --- | --- | --- | --- |
-| **Constant Folding & Propagation** | Pattern-matching on IR triples | **Sparse Conditional Constant Propagation (SCCP)** — propagates constants through φ-functions AND resolves unreachable branches simultaneously | Folding + branch elimination in one pass instead of two |
-| **Copy Propagation** | Tracks `mov` chains in x64 output | **SSA Copy Propagation** — follows use-def chains directly, eliminates φ-copies | O(n) instead of O(n²), catches cross-block propagation |
-| **Dead Code Elimination** | Removes unreachable code after `return`/`stop` | **Aggressive DCE (ADCE)** — marks live instructions, deletes everything else. Works on SSA def-use | Catches dead computation, not just dead control flow |
-| **Function Inlining** | Small leaf functions only | **SSA-Aware Inlining** — cost model considers SSA graph size, inlines through φ-functions, re-runs SCCP after inlining | Cross-function constant propagation after inlining |
-
-### New Passes
-
-| Pass | Description | Why It Beats GCC/LLVM |
-| --- | --- | --- |
-| **Global Value Numbering (GVN)** | Assigns identical values the same SSA number — detects and eliminates redundant computations across basic blocks | Common Subexpression Elimination on steroids. In AXIS: no pointer aliasing → GVN is always correct. In C: GVN must prove non-aliasing first. |
-| **φ-Elimination** | Remove trivial φ-functions (φ(x, x) → x) and dead φ-nodes | Keeps SSA graph clean after other passes |
+| **SCCP** | `ssa_sccp()` | Sparse Conditional Constant Propagation — propagates constants through φ-functions AND resolves unreachable branches simultaneously | `-O1` |
+| **Copy Propagation** | `ssa_copyprop()` | Follows SSA use-def chains directly, eliminates φ-copies. O(n) instead of O(n²) | `-O1` |
+| **GVN** | `ssa_gvn()` | Global Value Numbering — assigns identical values the same number, eliminates redundant computations across basic blocks | `-O1` |
+| **φ-Elimination** | `ssa_phi_elim()` | Remove trivial φ-functions (φ(x, x) → x) and dead φ-nodes | `-O1` |
+| **ADCE** | `ssa_adce()` | Aggressive Dead Code Elimination — marks live instructions, deletes everything else. Works on SSA def-use | `-O1` |
+| **Function Inlining** | `ssa_inline()` | Pre-SSA inlining with cost model. 3 passes at `-O1`, 5 at `-O2`, 7 at `-O3` | `-O1` |
+| **Tail-Call Optimization** | `opt_tail_call()` | Converts self-recursive calls to loops before SSA construction | `-O1` |
 
 ### AXIS Advantage at Tier 2
 
 - **SCCP is maximally powerful:** No pointer-based control flow → all branches are analyzable. `const` variables propagate globally without proof obligations.
 - **GVN is always sound:** No aliasing uncertainty → two expressions with same operands ALWAYS produce the same value. GCC/LLVM must insert `may-alias` checks.
-- **Inlining cost model is exact:** Every call target is statically known. No indirect calls, no virtual dispatch. The compiler can make optimal inline decisions — GCC/LLVM must guess.
+- **Inlining is exact:** Every call target is statically known. No indirect calls, no virtual dispatch. The compiler makes optimal inline decisions — GCC/LLVM must guess.
 - **ADCE is more aggressive:** No side effects through pointers → more code is provably dead.
+- **Second cleanup pass:** After loop optimizations (Tier 3), copy propagation + φ-elimination + ADCE run again to clean up newly exposed opportunities.
 
 ---
 
@@ -117,20 +119,17 @@ AXIS generates **fewer φ-functions** and **smaller SSA graphs** than equivalent
 
 **Purpose:** Transform loops for maximum throughput. AXIS loops are simple (no pointer iteration, no aliased loop counters) — every loop optimization is safe by construction.
 
-### Tier 3 Existing Passes (Upgraded to SSA)
+**Implementation:** LICM, IV Simplification, Strength Reduction, and Rotation active at `-O1`+. Unrolling at `-O2`+ (disabled for `-Os`).
 
-| Pass | Current Version | SSA Version | Improvement |
+### Implemented Passes
+
+| Pass | Function | Description | Minimum Level |
 | --- | --- | --- | --- |
-| **LICM** | Pattern-matching for invariant IR ops | **SSA LICM** — checks if operand SSA defs dominate loop header. Trivially correct on SSA. | Catches more invariants (cross-block), no kill-set tracking needed |
-| **Loop Unrolling** | Small fixed-count loops | **SSA Unrolling** — unrolls with φ-function adjustment, enables cross-iteration SCCP | Constant propagation across unrolled iterations |
-
-### Tier 3 New Passes
-
-| Pass | Description | Why It Beats GCC/LLVM |
-| --- | --- | --- |
-| **Induction Variable Simplification** | Detect IVs (loop counters, derived values), canonicalize to `{base, step}` form | Enables strength reduction on IVs. AXIS for-loops have explicit IV — detection is trivial. |
-| **Loop Strength Reduction** | Replace IV-dependent multiplications with additions: `i * 4` → `iv += 4` each iteration | Classic loop optimization. In AXIS: IV is always the only loop variable — no pointer-arithmetic IVs to analyze. |
-| **Loop Rotation** | Convert `while` to `do-while` with guard — canonical form for all other loop opts | Ensures single back-edge, simplifies LICM and unrolling. AXIS already has `repeat` (do-while). |
+| **LICM** | `ssa_licm()` | Loop-Invariant Code Motion — checks if operand SSA defs dominate loop header. Trivially correct on SSA. | `-O1` |
+| **Induction Variable Simplification** | `ssa_iv_simplify()` | Detect IVs (loop counters, derived values), canonicalize to `{base, step}` form. AXIS for-loops have explicit IV — detection is trivial. | `-O1` |
+| **Loop Strength Reduction** | `ssa_loop_strength_reduce()` | Replace IV-dependent multiplications with additions: `i * 4` → `iv += 4` each iteration. No pointer-arithmetic IVs to analyze. | `-O1` |
+| **Loop Rotation** | `ssa_loop_rotate()` | Convert `while` to `do-while` with guard — canonical form for all other loop opts. Ensures single back-edge. | `-O1` |
+| **Loop Unrolling** | `ssa_unroll()` | Unrolls with φ-function adjustment, enables cross-iteration SCCP. | `-O2` (not `-Os`) |
 
 ### AXIS Advantage at Tier 3
 
@@ -144,22 +143,19 @@ AXIS generates **fewer φ-functions** and **smaller SSA graphs** than equivalent
 
 **Purpose:** Lower SSA IR to machine-level IR. Select x86-64 instructions, apply machine-specific strength reductions, and prepare for register allocation.
 
-### Existing Passes (Integrated into Lowering)
+**Implementation:** Flat-IR lowering passes active at `-O1`+. SSA-level address mode selection and instruction scheduling at `-O2`+.
 
-| Pass | Current Version | In Tier 4 | Notes |
+### Implemented Passes
+
+| Pass | Function | Description | Minimum Level |
 | --- | --- | --- | --- |
-| **Strength Reduction** | Replace `imul` with LEA/shift | **Machine Strength Reduction** — applied during instruction selection | LEA-multiply (`*3`, `*5`, `*9`), shift for powers-of-2 |
-| **CMP+Branch Fusion** | Fuse compare + conditional jump | **Flag-Aware Lowering** — CMP result feeds directly into Jcc, no boolean materialization | Eliminates ~5 instructions per branch |
-| **Register-Aware Instruction Selection** | Suppress redundant MOVs, swap commutative operands | **Instruction Selection** — integrated into lowering, uses SSA def-use to pick optimal forms | SSA makes this trivial — each value has exactly one def |
-| **Load-Store Elimination** | Track stack variable values, skip redundant loads | **SSA Load-Store Elimination** — stack slots are SSA-renamed, redundant loads impossible by construction | In SSA: loads and stores correspond to SSA defs/uses — elimination is structural |
-| **32-bit Native Arithmetic** | Use 32-bit x86 encoding for i32 ops | **Encoding Selection** — all i32 ops use shorter 32-bit encoding | 20% smaller binaries, faster decode |
-
-### Tier 4 New Passes
-
-| Pass | Description | Why It Beats GCC/LLVM |
-| --- | --- | --- |
-| **Instruction Scheduling** | Reorder independent instructions to avoid pipeline stalls and utilize execution ports | Same concept as GCC/LLVM, but AXIS has no memory-ordering constraints (no pointers → no fence/barrier concerns) |
-| **Address Mode Selection** | Choose optimal x86-64 addressing modes: `[base + index*scale + disp]` | AXIS array access patterns are simple and predictable — always `base + index*4` |
+| **Strength Reduction** | flat-IR pass | Replace `imul` with LEA/shift: LEA-multiply (`*3`, `*5`, `*9`), shift for powers-of-2. | `-O1` |
+| **CMP+Branch Fusion** | flat-IR pass | CMP result feeds directly into Jcc, no boolean materialization. Eliminates ~5 instructions per branch. | `-O1` |
+| **Register-Aware ISel** | flat-IR pass | Suppress redundant MOVs, swap commutative operands. SSA def-use makes this trivial. | `-O1` |
+| **Load-Store Elimination** | flat-IR pass | Stack slots are SSA-renamed — redundant loads impossible by construction. | `-O1` |
+| **32-bit Native Encoding** | flat-IR pass | All i32 ops use shorter 32-bit x86 encoding. 20% smaller binaries. | `-O1` |
+| **Address Mode Selection** | `ssa_addr_mode_select()` | Choose optimal x86-64 addressing modes: `[base + index*scale + disp]`. AXIS array patterns are predictable. | `-O2` |
+| **Instruction Scheduling** | `ssa_insn_schedule()` | Reorder independent instructions to avoid pipeline stalls. No memory-ordering constraints (no pointers). | `-O2` |
 
 ### AXIS Advantage at Tier 4
 
@@ -173,19 +169,16 @@ AXIS generates **fewer φ-functions** and **smaller SSA graphs** than equivalent
 
 **Purpose:** Map SSA values to physical x86-64 registers. AXIS uses all 16 general-purpose registers. Spills go to the stack with caching.
 
-### Existing Passes (Upgraded)
+**Implementation:** Linear scan and φ-deconstruction active at `-O1`+. Live range splitting at `-O2`+.
 
-| Pass | Current Version | SSA Version | Improvement |
+### Implemented Passes
+
+| Pass | Function | Description | Minimum Level |
 | --- | --- | --- | --- |
-| **Linear-Scan Register Allocation** | Live-range based, 16 GP registers | **SSA Linear Scan** — live ranges computed from SSA def-use chains (O(n)), φ-function copies inserted at block boundaries | Faster allocation, better spill decisions |
-| **Spill-Reload Cache** | Track spilled values in registers, skip redundant loads | **SSA Spill Optimization** — spilled SSA names are tracked; reloads reuse registers if the SSA name is still valid | Fewer memory accesses, more cache-friendly |
-
-### Tier 5 New Passes
-
-| Pass | Description | Why It Beats GCC/LLVM |
-| --- | --- | --- |
-| **Live Range Splitting** | Split long live ranges at strategic points (loop boundaries, call sites) to reduce spill pressure | AXIS has no callee-saved register conventions to worry about — all 16 registers available |
-| **φ-Function Deconstruction** | Convert φ-functions to parallel copies, coalesce where possible | Reduces copy overhead from SSA destruction |
+| **SSA Linear Scan** | regalloc in `x64.c` | Live ranges computed from SSA def-use chains (O(n)), φ-function copies inserted at block boundaries. | `-O1` |
+| **Spill-Reload Cache** | regalloc in `x64.c` | Spilled SSA names are tracked; reloads reuse registers if the SSA name is still valid. | `-O1` |
+| **φ-Function Deconstruction** | `ssa_destruct()` | Convert φ-functions to parallel copies, coalesce where possible. Part of SSA destruction. | `-O1` |
+| **Live Range Splitting** | `ssa_live_range_split()` | Split long live ranges at loop boundaries and call sites to reduce spill pressure. | `-O2` |
 
 ### Future: Graph Coloring
 
@@ -208,20 +201,16 @@ The SSA form enables **chordal graph coloring** — a polynomial-time optimal re
 
 **Purpose:** Final machine code polishing. Runs after register allocation on the physical instruction stream.
 
-### Existing Passes (Retained)
+**Implementation:** Post-peephole and branch relaxation active at `-O1`+. NOP alignment and post-RA scheduling at `-O2`+.
 
-| Pass | Description | Status |
-| --- | --- | --- |
-| **Peephole Optimization** | Eliminate `mov rax, rax`, `add rax, 0`, complementary op pairs | Retained — runs on final instruction stream |
-| **Redundant Instruction Elimination** | Remove instructions whose results are immediately overwritten or never used | Retained — final cleanup pass |
+### Implemented Passes
 
-### Tier 6 New Passes
-
-| Pass | Description | Why It Beats GCC/LLVM |
-| --- | --- | --- |
-| **Branch Relaxation** | Replace `jmp rel32` with `jmp rel8` where target is within ±127 bytes | Smaller binary, better I-cache utilization |
-| **NOP Alignment** | Pad loop headers and function entries to 16-byte boundaries | Matches CPU fetch-block alignment — same technique as GCC/LLVM |
-| **Post-RA Scheduling** | Final instruction reordering after physical register assignment, respecting true dependencies | Avoids pipeline stalls on the final instruction stream |
+| Pass | Function | Description | Minimum Level |
+| --- | --- | --- | --- |
+| **Post-Peephole** | `ssa_post_peephole()` | Eliminate `mov rax, rax`, `add rax, 0`, complementary op pairs on the final instruction stream. | `-O1` |
+| **Branch Relaxation** | `ssa_branch_relax()` | Replace `jmp rel32` with `jmp rel8` where target is within ±127 bytes. Smaller binary. | `-O1` |
+| **NOP Alignment** | `ssa_nop_align()` | Pad loop headers and function entries to 16-byte boundaries. Matches CPU fetch-block alignment. | `-O2` |
+| **Post-RA Scheduling** | `ssa_post_schedule()` | Final instruction reordering after physical register assignment, respecting true dependencies. | `-O2` |
 
 ### AXIS Advantage at Tier 6
 
@@ -232,56 +221,60 @@ The SSA form enables **chordal graph coloring** — a polynomial-time optimal re
 
 ## Complete Pass Mapping
 
-### Existing 14 Passes → Tier Assignment
+All 32 passes are implemented across 6 tiers. The table below shows each pass, its implementation, and the minimum optimization level at which it activates.
 
-| # | Pass | Origin | Target Tier | SSA Upgrade |
+| # | Tier | Pass | Implementation | Min Level |
 | --- | --- | --- | --- | --- |
-| 1 | Dead Code Elimination | v1.2.0 | **Tier 2** | → Aggressive DCE (ADCE) |
-| 2 | Constant Folding & Propagation | v1.2.0 | **Tier 2** | → Sparse Conditional Constant Propagation (SCCP) |
-| 3 | Copy Propagation | v1.2.1 | **Tier 2** | → SSA Copy Propagation (use-def chains) |
-| 4 | Function Inlining | v1.2.1 | **Tier 2** | → SSA-Aware Inlining + cost model |
-| 5 | LICM | v1.2.1 | **Tier 3** | → SSA LICM (dominator-based) |
-| 6 | Loop Unrolling | v1.2.1 | **Tier 3** | → SSA Unrolling + cross-iteration opt |
-| 7 | Load-Store Elimination | v1.2.0 | **Tier 4** | → Structural SSA elimination |
-| 8 | Strength Reduction | v1.2.0 | **Tier 4** | → Machine Strength Reduction |
-| 9 | Register-Aware Instruction Selection | v1.2.0 | **Tier 4** | → Integrated Instruction Selection |
-| 10 | CMP+Branch Fusion | v1.2.0 | **Tier 4** | → Flag-Aware Lowering |
-| 11 | 32-bit Native Arithmetic | v1.2.1 | **Tier 4** | → Encoding Selection |
-| 12 | Linear-Scan Register Allocation | v1.2.0 | **Tier 5** | → SSA Linear Scan (→ Graph Coloring) |
-| 13 | Spill-Reload Cache | v1.2.0 | **Tier 5** | → SSA Spill Optimization |
-| 14 | Peephole Optimization | v1.2.1 | **Tier 6** | Retained |
-| 15 | Redundant Instruction Elimination | v1.2.1 | **Tier 6** | Retained |
+| 1 | 1 | Basic Block Construction | `build_basic_blocks()` | `-O1` |
+| 2 | 1 | CFG Construction | `build_cfg()` | `-O1` |
+| 3 | 1 | Dominator Tree | `compute_dominators()` | `-O1` |
+| 4 | 1 | Dominance Frontiers | `compute_dom_frontiers()` | `-O1` |
+| 5 | 1 | φ-Insertion | `insert_phis()` | `-O1` |
+| 6 | 1 | SSA Renaming | `ssa_rename()` | `-O1` |
+| 7 | 1 | Loop Detection | `detect_loops()` | `-O1` |
+| 8 | 2 | SCCP | `ssa_sccp()` | `-O1` |
+| 9 | 2 | Copy Propagation | `ssa_copyprop()` | `-O1` |
+| 10 | 2 | GVN | `ssa_gvn()` | `-O1` |
+| 11 | 2 | φ-Elimination | `ssa_phi_elim()` | `-O1` |
+| 12 | 2 | ADCE | `ssa_adce()` | `-O1` |
+| 13 | 2 | Function Inlining | `ssa_inline()` | `-O1` (3×), `-O2` (5×), `-O3` (7×) |
+| 14 | 2 | Tail-Call Optimization | `opt_tail_call()` | `-O1` |
+| 15 | 3 | LICM | `ssa_licm()` | `-O1` |
+| 16 | 3 | IV Simplification | `ssa_iv_simplify()` | `-O1` |
+| 17 | 3 | Loop Strength Reduction | `ssa_loop_strength_reduce()` | `-O1` |
+| 18 | 3 | Loop Rotation | `ssa_loop_rotate()` | `-O1` |
+| 19 | 3 | Loop Unrolling | `ssa_unroll()` | `-O2` (not `-Os`) |
+| 20 | 4 | Strength Reduction | flat-IR pass | `-O1` |
+| 21 | 4 | CMP+Branch Fusion | flat-IR pass | `-O1` |
+| 22 | 4 | Register-Aware ISel | flat-IR pass | `-O1` |
+| 23 | 4 | Load-Store Elimination | flat-IR pass | `-O1` |
+| 24 | 4 | 32-bit Encoding | flat-IR pass | `-O1` |
+| 25 | 4 | Address Mode Selection | `ssa_addr_mode_select()` | `-O2` |
+| 26 | 4 | Instruction Scheduling | `ssa_insn_schedule()` | `-O2` |
+| 27 | 5 | SSA Linear Scan | regalloc in `x64.c` | `-O1` |
+| 28 | 5 | Spill-Reload Cache | regalloc in `x64.c` | `-O1` |
+| 29 | 5 | φ-Deconstruction | `ssa_destruct()` | `-O1` |
+| 30 | 5 | Live Range Splitting | `ssa_live_range_split()` | `-O2` |
+| 31 | 6 | Post-Peephole | `ssa_post_peephole()` | `-O1` |
+| 32 | 6 | Branch Relaxation | `ssa_branch_relax()` | `-O1` |
+| 33 | 6 | NOP Alignment | `ssa_nop_align()` | `-O2` |
+| 34 | 6 | Post-RA Scheduling | `ssa_post_schedule()` | `-O2` |
 
-### New Passes per Tier
+> **Note:** In addition to these SSA-pipeline passes, `-O1` and above also runs 25+ post-SSA flat-IR passes including reassociate, forward propagation, SRA, load-store elimination, copy propagation, switch lowering, jump threading, CFG simplification, tail merging, if-conversion, min/max/abs detection, DCE, VRP, LICM, register promotion, IV strength reduction, IV elimination, loop inversion, redundant instruction elimination, dead store elimination, and code sinking.
 
-| Tier | New Passes | Total |
-| --- | --- | --- |
-| **Tier 1** | Dominator Tree, Dominance Frontiers, φ-Insertion, SSA Renaming, Alias Resolution, Const Marking | 6 new |
-| **Tier 2** | Global Value Numbering (GVN), φ-Elimination | 2 new + 4 upgraded |
-| **Tier 3** | Induction Variable Simplification, Loop Strength Reduction, Loop Rotation | 3 new + 2 upgraded |
-| **Tier 4** | Instruction Scheduling, Address Mode Selection | 2 new + 5 integrated |
-| **Tier 5** | Live Range Splitting, φ-Deconstruction | 2 new + 2 upgraded |
-| **Tier 6** | Branch Relaxation, NOP Alignment, Post-RA Scheduling | 3 new + 2 retained |
-
-**Total: 14 existing (all retained/upgraded) + 18 new = 32 passes across 6 tiers.**
+**Total: 34 passes in the SSA pipeline + 25+ flat-IR passes.**
 
 ---
 
 ## Optimization Levels
 
-AXCC exposes 5 optimization levels via CLI flags. Each level enables a progressively larger subset of the 32-pass pipeline.
+AXCC exposes 5 optimization levels via CLI flags. Each level enables a progressively larger subset of the pipeline. The assignments below match the actual `ssa_optimize()` implementation.
 
 ### `-O0` — Debug (No Optimization)
 
-**Tiers active:** None (linear IR → direct codegen)
+**Tiers active:** None (flat IR only)
 
-No SSA construction. IR is lowered directly to x64 with naive register usage (spill-everything). Maximum compile speed, maximum debuggability, worst runtime performance.
-
-| What Runs | What Doesn't |
-| --- | --- |
-| IR generation | SSA construction |
-| Direct x64 emission | All 32 optimization passes |
-| 32-bit native encoding | Register allocation (spill-all) |
+No SSA construction. Only constant folding (`opt_constfold`) and basic dead code elimination (`opt_dce`) run on flat IR. Maximum compile speed, maximum debuggability.
 
 **Use case:** Development, debugging, rapid iteration.
 
@@ -289,80 +282,66 @@ No SSA construction. IR is lowered directly to x64 with naive register usage (sp
 
 ### `-O1` — Fast Compile, Good Code
 
-**Tiers active:** 1, 2, 4 (partial), 5, 6 (partial)
+**Tiers active:** 1–6 (partial)
 
-SSA is built, scalar optimizations run, basic lowering + register allocation. No loop optimizations, no instruction scheduling. Compile time stays low — code quality already beats unoptimized GCC.
+Full SSA construction. All scalar optimizations including GVN. All loop optimizations except unrolling. Pre-SSA inlining (3 passes) + tail-call optimization. After loop opts, a second cleanup pass (copyprop + φ-elimination + ADCE) catches newly exposed opportunities. SSA destruction, then 25+ flat-IR passes (reassociate, fwdprop, SRA, load-store elim, copyprop, switch lowering, jump threading, CFG simplification, tail merge, if-convert, min/max/abs, DCE, VRP, LICM, register promotion, IV strength reduction, IV elimination, loop inversion, redundant instruction elim, dead store elim, code sinking). Post-peephole + branch relaxation.
 
 | Tier | Passes Enabled |
 | --- | --- |
-| **Tier 1** | Dominator Tree, Dominance Frontiers, φ-Insertion, SSA Renaming, Alias Resolution, Const Marking |
-| **Tier 2** | SCCP, SSA Copy Propagation, ADCE, φ-Elimination |
-| **Tier 3** | — |
-| **Tier 4** | Load-Store Elimination, Strength Reduction, CMP+Branch Fusion, Register-Aware ISel, 32-bit Encoding |
-| **Tier 5** | SSA Linear Scan RegAlloc, Spill-Reload Cache |
-| **Tier 6** | Peephole, Redundant Instruction Elimination |
+| **Tier 1** | Full SSA construction (BB, CFG, dominators, dom frontiers, φ-insertion, renaming, loop detection) |
+| **Tier 2** | SCCP, Copy Propagation, GVN, φ-Elimination, ADCE, Inlining (3×), Tail-Call Opt |
+| **Tier 3** | LICM, IV Simplification, Loop Strength Reduction, Loop Rotation |
+| **Tier 4** | Strength Reduction, CMP Fusion, Reg-Aware ISel, Load-Store Elim, 32-bit Encoding |
+| **Tier 5** | SSA Linear Scan, Spill-Reload Cache, φ-Deconstruction |
+| **Tier 6** | Post-Peephole, Branch Relaxation |
 
-**Inactive:** GVN, Inlining, all loop passes, Instruction Scheduling, Address Mode Selection, Live Range Splitting, Branch Relaxation, NOP Alignment, Post-RA Scheduling.
+**Inactive:** Loop Unrolling, Address Mode Selection, Instruction Scheduling, Live Range Splitting, NOP Alignment, Post-RA Scheduling.
 
-**Rationale:** SCCP + ADCE + Copy Prop alone already eliminate a large amount of dead code. Without inlining and loop opts, compile time stays low. Strength Reduction + CMP-Fusion come for free during lowering.
-
-**Goal: GCC `-O0` parity or better.**
+**Goal: Beat GCC `-O1`.**
 
 ---
 
 ### `-O2` — Standard Optimization (Default)
 
-**Tiers active:** 1, 2, 3, 4, 5, 6 (partial)
+**Tiers active:** 1–6 complete
 
-Full scalar and loop optimizations. Instruction selection with address modes. No aggressive unrolling, no post-RA scheduling, no NOP alignment.
+Everything from `-O1`, plus loop unrolling, address mode selection, instruction scheduling, live range splitting, NOP alignment, and post-RA scheduling. Inlining increases from 3 to 5 passes.
 
-| Tier | Passes Enabled (in addition to `-O1`) |
+| Tier | Passes Added (over `-O1`) |
 | --- | --- |
-| **Tier 2** | + GVN, + SSA-Aware Inlining (conservative cost model) |
-| **Tier 3** | + SSA LICM, + Loop Rotation, + Induction Variable Simplification, + Loop Strength Reduction |
-| **Tier 4** | + Address Mode Selection |
-| **Tier 5** | + Live Range Splitting, + φ-Deconstruction |
-| **Tier 6** | + Branch Relaxation |
+| **Tier 2** | Inlining: 5 passes (up from 3) |
+| **Tier 3** | + Loop Unrolling |
+| **Tier 4** | + Address Mode Selection, + Instruction Scheduling |
+| **Tier 5** | + Live Range Splitting |
+| **Tier 6** | + NOP Alignment, + Post-RA Scheduling |
 
-**Inactive:** Loop Unrolling (code size), NOP Alignment, Post-RA Scheduling, aggressive Inlining.
-
-**Rationale:** GVN eliminates redundant computations across block boundaries. Inlining opens SCCP for cross-function propagation. LICM + IV Simplification + Loop Strength Reduction transform loops without code explosion. Live Range Splitting reduces spill pressure.
-
-**Goal: beat GCC `-O2`.**
+**Goal: Beat GCC `-O2`.**
 
 ---
 
 ### `-O3` — Maximum Performance
 
-**Tiers active:** 1–6 complete — all 32 passes
+**Tiers active:** 1–6 complete — all passes
 
-Everything enabled. Aggressive inlining, loop unrolling, instruction scheduling, NOP alignment. Compile time and binary size are secondary — only performance matters.
+Everything from `-O2`, with more aggressive inlining (7 passes). Compile time and binary size are secondary — only performance matters.
 
-| Tier | Passes Enabled (in addition to `-O2`) |
+| Tier | Difference from `-O2` |
 | --- | --- |
-| **Tier 2** | Inlining: aggressive cost model (larger functions, deeper call chains) |
-| **Tier 3** | + SSA Loop Unrolling (mit cross-iteration SCCP) |
-| **Tier 6** | + NOP Alignment (16-Byte Loop/Function Heads), + Post-RA Scheduling |
+| **Tier 2** | Inlining: 7 passes (up from 5) — larger functions, deeper call chains |
 
-**Rationale:** Loop Unrolling eliminates branch overhead and enables cross-iteration constant propagation. NOP Alignment exploits CPU fetch-block sizes. Post-RA Scheduling avoids pipeline stalls. Aggressive inlining handles the rest.
-
-**Goal: beat GCC `-O3` AND LLVM `-O3`.**
+**Goal: Beat GCC `-O3` AND LLVM `-O3`.**
 
 ---
 
 ### `-Os` — Size Optimization
 
-**Tiers active:** 1, 2, 3 (partial), 4, 5, 6 (partial)
+**Tiers active:** 1–6 (partial)
 
-Like `-O2`, but everything that bloats code is disabled. Minimal binary size at good performance.
+Like `-O2`, but loop unrolling is disabled. All other passes remain active. Minimal binary size at good performance.
 
 | Tier | Difference from `-O2` |
 | --- | --- |
-| **Tier 2** | Inlining: only functions ≤ 3 IR ops (tiny leaf only) |
-| **Tier 3** | Loop Unrolling: **off**, LICM/IV/Rotation: **on** |
-| **Tier 6** | NOP Alignment: **off**, Branch Relaxation: **on** (saves bytes) |
-
-**Rationale:** LICM and IV Simplification improve performance without code growth. Inlining tiny leaf functions saves call overhead without significant size cost. No unrolling, no NOP padding.
+| **Tier 3** | Loop Unrolling: **off** |
 
 **Goal: Smallest binaries at >90% of `-O2` performance.**
 
@@ -373,58 +352,56 @@ Like `-O2`, but everything that bloats code is disabled. Minimal binary size at 
 | Pass | `-O0` | `-O1` | `-O2` | `-O3` | `-Os` |
 | --- | :---: | :---: | :---: | :---: | :---: |
 | **Tier 1: SSA Construction** | | | | | |
-| Dominator Tree | — | ✓ | ✓ | ✓ | ✓ |
-| Dominance Frontiers | — | ✓ | ✓ | ✓ | ✓ |
-| φ-Insertion | — | ✓ | ✓ | ✓ | ✓ |
-| SSA Renaming | — | ✓ | ✓ | ✓ | ✓ |
-| Alias Resolution | — | ✓ | ✓ | ✓ | ✓ |
-| Const Marking | — | ✓ | ✓ | ✓ | ✓ |
+| Basic Blocks / CFG / Dominators | — | ✓ | ✓ | ✓ | ✓ |
+| φ-Insertion / SSA Renaming | — | ✓ | ✓ | ✓ | ✓ |
+| Loop Detection | — | ✓ | ✓ | ✓ | ✓ |
 | **Tier 2: Scalar Optimizations** | | | | | |
 | SCCP | — | ✓ | ✓ | ✓ | ✓ |
-| SSA Copy Propagation | — | ✓ | ✓ | ✓ | ✓ |
-| ADCE | — | ✓ | ✓ | ✓ | ✓ |
+| Copy Propagation | — | ✓ | ✓ | ✓ | ✓ |
+| GVN | — | ✓ | ✓ | ✓ | ✓ |
 | φ-Elimination | — | ✓ | ✓ | ✓ | ✓ |
-| GVN | — | — | ✓ | ✓ | ✓ |
-| Function Inlining | — | — | conserv. | aggressive | tiny leaf |
+| ADCE | — | ✓ | ✓ | ✓ | ✓ |
+| Function Inlining | — | 3× | 5× | 7× | 5× |
+| Tail-Call Optimization | — | ✓ | ✓ | ✓ | ✓ |
 | **Tier 3: Loop Optimizations** | | | | | |
-| SSA LICM | — | — | ✓ | ✓ | ✓ |
-| Loop Rotation | — | — | ✓ | ✓ | ✓ |
-| IV Simplification | — | — | ✓ | ✓ | ✓ |
-| Loop Strength Reduction | — | — | ✓ | ✓ | ✓ |
-| Loop Unrolling | — | — | — | ✓ | — |
+| LICM | — | ✓ | ✓ | ✓ | ✓ |
+| IV Simplification | — | ✓ | ✓ | ✓ | ✓ |
+| Loop Strength Reduction | — | ✓ | ✓ | ✓ | ✓ |
+| Loop Rotation | — | ✓ | ✓ | ✓ | ✓ |
+| Loop Unrolling | — | — | ✓ | ✓ | — |
 | **Tier 4: Lowering** | | | | | |
-| Load-Store Elimination | — | ✓ | ✓ | ✓ | ✓ |
-| Strength Reduction | — | ✓ | ✓ | ✓ | ✓ |
+| Strength Reduction (flat-IR) | — | ✓ | ✓ | ✓ | ✓ |
 | CMP+Branch Fusion | — | ✓ | ✓ | ✓ | ✓ |
 | Register-Aware ISel | — | ✓ | ✓ | ✓ | ✓ |
+| Load-Store Elimination | — | ✓ | ✓ | ✓ | ✓ |
 | 32-bit Encoding | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Address Mode Selection | — | — | ✓ | ✓ | ✓ |
-| Instruction Scheduling | — | — | — | ✓ | — |
+| Instruction Scheduling | — | — | ✓ | ✓ | ✓ |
 | **Tier 5: Register Allocation** | | | | | |
 | SSA Linear Scan | — | ✓ | ✓ | ✓ | ✓ |
 | Spill-Reload Cache | — | ✓ | ✓ | ✓ | ✓ |
+| φ-Deconstruction | — | ✓ | ✓ | ✓ | ✓ |
 | Live Range Splitting | — | — | ✓ | ✓ | ✓ |
-| φ-Deconstruction | — | — | ✓ | ✓ | ✓ |
-| **Tier 6: Emission** | | | | | |
-| Peephole | — | ✓ | ✓ | ✓ | ✓ |
-| Redundant Instruction Elim. | — | ✓ | ✓ | ✓ | ✓ |
-| Branch Relaxation | — | — | ✓ | ✓ | ✓ |
-| NOP Alignment | — | — | — | ✓ | — |
-| Post-RA Scheduling | — | — | — | ✓ | — |
-| **Active Passes** | **1** | **16** | **26** | **32** | **24** |
+| **Tier 6: Post-RA Finalization** | | | | | |
+| Post-Peephole | — | ✓ | ✓ | ✓ | ✓ |
+| Branch Relaxation | — | ✓ | ✓ | ✓ | ✓ |
+| NOP Alignment | — | — | ✓ | ✓ | ✓ |
+| Post-RA Scheduling | — | — | ✓ | ✓ | ✓ |
+| **Active SSA Passes** | **0** | **26** | **34** | **34** | **33** |
+| **+ Flat-IR Passes** | **2** | **25+** | **25+** | **25+** | **25+** |
 
 ### Comparison with GCC/LLVM
 
 | AXCC Level | GCC Equivalent | LLVM Equivalent | AXIS Advantage |
 | --- | --- | --- | --- |
 | `-O0` | `-O0` | `-O0` | Faster compilation (no optimizer overhead) |
-| `-O1` | `-O1` (≈50 Passes) | `-O1` (≈70 Passes) | 16 passes achieve the same — AXIS semantics replace analysis |
-| `-O2` | `-O2` (≈90 Passes) | `-O2` (≈120 Passes) | 26 passes vs 90–120. Perfect alias info = every pass is more aggressive |
-| `-O3` | `-O3` (≈100 Passes) | `-O3` (≈140 Passes) | 32 passes vs 100–140. Optimal RegAlloc + no UB dependency |
-| `-Os` | `-Os` | `-Oz` | Fewer trade-offs — AXIS opts grow code less |
+| `-O1` | `-O1` (≈50 Passes) | `-O1` (≈70 Passes) | 26 SSA + 25 flat-IR passes. AXIS semantics replace analysis. |
+| `-O2` | `-O2` (≈90 Passes) | `-O2` (≈120 Passes) | 34 SSA + 25 flat-IR. Perfect alias info = every pass is more aggressive. |
+| `-O3` | `-O3` (≈100 Passes) | `-O3` (≈140 Passes) | Same passes as O2 but more aggressive inlining (7×). |
+| `-Os` | `-Os` | `-Oz` | Like O2 minus unrolling — fewer code-size trade-offs. |
 
 > **GCC needs 100+ passes because the language is unsafe.**
-> **AXIS needs 32 passes because the language is safe.**
+> **AXIS needs ~60 passes because the language is safe.**
 > **Fewer passes, better results.**
 
 ---
@@ -434,7 +411,7 @@ Like `-O2`, but everything that bloats code is disabled. Minimal binary size at 
 ### GCC `-O3` Weaknesses AXIS Exploits
 
 1. **Alias analysis is imprecise.** GCC's alias oracle (`alias.c`, ~5000 LOC) still produces may-alias results that block optimizations. AXIS has zero aliasing ambiguity.
-2. **Register allocation is heuristic.** GCC uses IRA (Integrated Register Allocator) on non-SSA IR — NP-hard graph coloring with heuristics. AXIS on SSA → optimal chordal coloring.
+2. **Register allocation is heuristic.** GCC uses IRA (Integrated Register Allocator) on non-SSA IR — NP-hard graph coloring with heuristics. AXIS uses SSA-aware linear scan with live-range splitting.
 3. **Inlining is speculative.** GCC's inliner uses size heuristics and profile data. AXIS knows every call target statically — inlining decisions are exact.
 4. **Loop analysis fights pointer arithmetic.** GCC must untangle `*p++` patterns into induction variables. AXIS has explicit `for i in range()`.
 
@@ -442,7 +419,7 @@ Like `-O2`, but everything that bloats code is disabled. Minimal binary size at 
 
 1. **LLVM IR is too general.** LLVM must handle any language (C, C++, Rust, Swift) — its passes are conservative. AXIS has ONE language with simple semantics.
 2. **Memory SSA is expensive.** LLVM uses MemorySSA to track memory state — heavyweight for alias analysis. AXIS doesn't need MemorySSA because there are no pointers.
-3. **Register allocation is greedy, not optimal.** LLVM's regalloc is greedy graph coloring — fast but suboptimal. AXIS on chordal SSA → provably optimal.
+3. **Register allocation is SSA-aware.** LLVM's regalloc is greedy graph coloring on destructed SSA. AXIS performs register allocation directly on SSA form with live-range splitting at `-O2+`.
 4. **Phase ordering problem.** LLVM runs passes in a fixed order, missing cross-pass opportunities. AXIS's 6-tier pipeline is designed for AXIS-specific pass interactions.
 
 ### The Fundamental Argument
@@ -453,3 +430,9 @@ Like `-O2`, but everything that bloats code is disabled. Minimal binary size at 
 > Every conservative assumption LLVM makes, AXIS makes the aggressive (correct) decision.
 >
 > The language IS the optimizer.
+
+---
+
+## Navigation
+
+← [Optimizations](08-optimizations.md)

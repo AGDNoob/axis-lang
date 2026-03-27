@@ -12,6 +12,8 @@ The analyzer runs five passes over the AST:
 4. **Pass 2 — Analyze function bodies**: Full type checking for statements and expressions inside functions.
 5. **Pass 3 — Analyze top-level statements** (script mode only): Type checks the top-level code outside of functions.
 
+![Semantic analysis passes — Registration → Analysis](img/semantic-passes.svg)
+
 ## Type System
 
 Defined in `axis_common.h`:

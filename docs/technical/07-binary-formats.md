@@ -2,6 +2,8 @@
 
 AXCC produces standalone executables in two formats: Windows PE32+ and Linux ELF64. Both are generated directly from the `X64Ctx` output of the code generator — no external linker or assembler is involved.
 
+![PE32+ vs ELF64 binary layout comparison](img/pe-elf-layout.svg)
+
 ## PE32+ (Windows)
 
 Written by `pe.c`. The output is a valid Windows executable (`.exe`).
