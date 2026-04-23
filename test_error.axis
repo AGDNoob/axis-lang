@@ -1,3 +1,0 @@
-mode script
-x: i32 = 10
-writeln(42)

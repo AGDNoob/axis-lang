@@ -1,7 +1,0 @@
-mode script
-
-DonkeyKong: field:
-    name: str = "default"
-
-dk: DonkeyKong
-writeln(dk.DiddyKong)
