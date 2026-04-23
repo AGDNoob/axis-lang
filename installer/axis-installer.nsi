@@ -22,6 +22,7 @@ SetCompressor /SOLID lzma
 VIProductVersion "1.3.0.0"
 VIAddVersionKey "ProductName" "AXIS Language"
 VIAddVersionKey "ProductVersion" "1.3.0"
+VIAddVersionKey "FileVersion" "1.3.0.0"
 VIAddVersionKey "FileDescription" "AXIS Language Installer"
 VIAddVersionKey "LegalCopyright" "MIT License"
 
