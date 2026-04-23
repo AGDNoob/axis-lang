@@ -63,7 +63,6 @@ RELEASE_CHECKLIST*.md
 
 # Benchmark binaries
 *_bench
-RELEASE_NOTES_v1.3.0.md
 COMMIT_HISTORY.md
 GITHUB_RELEASE_*.md
 docs/GitHub/
