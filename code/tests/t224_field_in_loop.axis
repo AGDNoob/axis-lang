@@ -1,0 +1,11 @@
+// EXPECT: 100
+mode compile
+Acc: field:
+    total: i32 = 0
+func main() i32:
+    a: Acc
+    i: i32 = 0
+    while i < 10:
+        a.total = a.total + 10
+        i = i + 1
+    return a.total

@@ -1,0 +1,7 @@
+// EXPECT: 10
+mode compile
+func main() i32:
+    i: i32 = 0
+    while i < 10:
+        i = i + 1
+    return i

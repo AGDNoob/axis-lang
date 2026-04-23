@@ -1,0 +1,9 @@
+// EXPECT: 10
+mode compile
+func main() i32:
+    a: i32 = 0
+    b: i32 = 100
+    while a < 20 and b > 50:
+        a = a + 1
+        b = b - 5
+    return a

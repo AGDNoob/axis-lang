@@ -1,0 +1,9 @@
+// EXPECT: 5
+mode compile
+func main() i32:
+    i: i32 = 0
+    while True:
+        i = i + 1
+        when i == 5:
+            stop
+    return i

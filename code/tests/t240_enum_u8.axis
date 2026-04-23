@@ -1,0 +1,11 @@
+// EXPECT: 2
+mode compile
+Small: enum u8:
+    A
+    B
+    C
+func main() i32:
+    s: Small = Small.C
+    when s == Small.C:
+        return 2
+    return 0

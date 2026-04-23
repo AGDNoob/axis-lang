@@ -1,0 +1,20 @@
+// EXPECT: 1
+mode compile
+func main() i32:
+    arr: (i32; 5) = [40, 10, 30, 50, 20]
+    i: i32 = 0
+    while i < 4:
+        mn: i32 = i
+        j: i32 = i + 1
+        while j < 5:
+            when arr[j] < arr[mn]:
+                mn = j
+            j = j + 1
+        t: i32 = copy arr[i]
+        arr[i] = copy arr[mn]
+        arr[mn] = t
+        i = i + 1
+    when arr[0] == 10:
+        when arr[4] == 50:
+            return 1
+    return 0

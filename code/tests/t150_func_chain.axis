@@ -1,0 +1,10 @@
+// EXPECT: 30
+mode compile
+func a(x: i32) i32:
+    return x + 10
+func b(x: i32) i32:
+    return a(x) + 10
+func c(x: i32) i32:
+    return b(x) + 5
+func main() i32:
+    return c(5)

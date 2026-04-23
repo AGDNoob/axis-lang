@@ -1,0 +1,11 @@
+// EXPECT: 0
+mode compile
+Color: enum:
+    Red
+    Green
+    Blue
+func main() i32:
+    c: Color = Color.Red
+    when c == Color.Red:
+        return 0
+    return 1

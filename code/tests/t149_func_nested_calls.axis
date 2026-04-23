@@ -1,0 +1,8 @@
+// EXPECT: 42
+mode compile
+func f(x: i32) i32:
+    return x + 2
+func g(x: i32) i32:
+    return x * 2
+func main() i32:
+    return f(g(20))

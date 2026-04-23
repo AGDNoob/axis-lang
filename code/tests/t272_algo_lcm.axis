@@ -1,0 +1,15 @@
+// EXPECT: 60
+mode compile
+func gcd(a_in: i32, b_in: i32) i32:
+    a: i32 = a_in
+    b: i32 = b_in
+    while b != 0:
+        t: i32 = b
+        b = a % b
+        a = t
+    return a
+func main() i32:
+    a: i32 = 12
+    b: i32 = 20
+    g: i32 = gcd(a, b)
+    return a / g * b

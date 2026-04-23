@@ -1,0 +1,11 @@
+// EXPECT: 15
+mode compile
+func sum_digits(n: i32) i32:
+    s: i32 = 0
+    x: i32 = n
+    while x > 0:
+        s = s + x % 10
+        x = x / 10
+    return s
+func main() i32:
+    return sum_digits(12345)

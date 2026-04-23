@@ -1,0 +1,15 @@
+// EXPECT: 42
+mode compile
+func main() i32:
+    x: i32 = 3
+    y: i32 = 0
+    match x:
+        1:
+            y = 10
+        2:
+            y = 20
+        3:
+            y = 42
+        _:
+            y = 0
+    return y

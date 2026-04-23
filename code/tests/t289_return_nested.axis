@@ -1,0 +1,15 @@
+// EXPECT: 42
+mode compile
+func classify(a: i32, b: i32) i32:
+    when a > 0:
+        when b > 0:
+            return 42
+        else:
+            return 10
+    else:
+        when b > 0:
+            return 20
+        else:
+            return 0
+func main() i32:
+    return classify(1, 1)

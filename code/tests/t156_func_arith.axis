@@ -1,0 +1,6 @@
+// EXPECT: 39
+mode compile
+func calc(a: i32, b: i32, c: i32) i32:
+    return (a + b) * c - a
+func main() i32:
+    return calc(3, 4, 7) - 7

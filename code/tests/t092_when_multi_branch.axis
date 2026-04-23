@@ -1,0 +1,14 @@
+// EXPECT: 42
+mode compile
+func main() i32:
+    x: i32 = 3
+    r: i32 = 0
+    when x == 1:
+        r = 10
+    else when x == 2:
+        r = 20
+    else when x == 3:
+        r = 42
+    else:
+        r = 99
+    return r

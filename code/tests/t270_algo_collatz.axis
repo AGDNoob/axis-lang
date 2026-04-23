@@ -1,0 +1,14 @@
+// EXPECT: 8
+mode compile
+func collatz_steps(n: i32) i32:
+    s: i32 = 0
+    x: i32 = n
+    while x != 1:
+        when x % 2 == 0:
+            x = x / 2
+        else:
+            x = x * 3 + 1
+        s = s + 1
+    return s
+func main() i32:
+    return collatz_steps(6)

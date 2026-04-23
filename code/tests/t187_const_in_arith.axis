@@ -1,0 +1,6 @@
+// EXPECT: 50
+mode compile
+func main() i32:
+    const BASE: i32 = 40
+    x: i32 = BASE + 10
+    return x

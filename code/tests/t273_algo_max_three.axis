@@ -1,0 +1,8 @@
+// EXPECT: 30
+mode compile
+func max2(a: i32, b: i32) i32:
+    when a > b:
+        return a
+    return b
+func main() i32:
+    return max2(max2(10, 30), 20)

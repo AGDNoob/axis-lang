@@ -1,0 +1,8 @@
+// EXPECT: 1
+mode compile
+func deep(n: i32) i32:
+    when n == 0:
+        return 1
+    return deep(n - 1)
+func main() i32:
+    return deep(100)

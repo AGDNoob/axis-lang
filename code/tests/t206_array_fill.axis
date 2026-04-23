@@ -1,0 +1,14 @@
+// EXPECT: 45
+mode compile
+func main() i32:
+    arr: (i32; 10) = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    i: i32 = 0
+    while i < 10:
+        arr[i] = i
+        i = i + 1
+    s: i32 = 0
+    i = 0
+    while i < 10:
+        s = s + arr[i]
+        i = i + 1
+    return s

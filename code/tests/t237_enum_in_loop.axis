@@ -1,0 +1,13 @@
+// EXPECT: 3
+mode compile
+Signal: enum:
+    Go
+    Stop
+func main() i32:
+    c: i32 = 0
+    s: Signal = Signal.Go
+    while s == Signal.Go:
+        c = c + 1
+        when c >= 3:
+            s = Signal.Stop
+    return c

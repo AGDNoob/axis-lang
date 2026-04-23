@@ -1,0 +1,10 @@
+// EXPECT: 1
+mode compile
+func main() i32:
+    r: i32 = 0
+    @a while True:
+        @b while True:
+            @c while True:
+                r = 1
+                stop @a
+    return r

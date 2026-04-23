@@ -1,0 +1,12 @@
+// EXPECT: 60
+mode compile
+Vec3: field:
+    x: i32 = 0
+    y: i32 = 0
+    z: i32 = 0
+func main() i32:
+    v: Vec3
+    v.x = 10
+    v.y = 20
+    v.z = 30
+    return v.x + v.y + v.z

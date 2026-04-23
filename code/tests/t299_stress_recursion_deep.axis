@@ -1,0 +1,8 @@
+// EXPECT: 0
+mode compile
+func countdown(n: i32) i32:
+    when n == 0:
+        return 0
+    return countdown(n - 1)
+func main() i32:
+    return countdown(500)

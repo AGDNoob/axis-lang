@@ -1,0 +1,6 @@
+// EXPECT: 25
+mode compile
+func main() i32:
+    x: i32 = 100
+    x /= 4
+    return x

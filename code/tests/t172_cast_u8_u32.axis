@@ -1,0 +1,7 @@
+// EXPECT: 255
+mode compile
+func main() i32:
+    x: u8 = 255
+    r: u32 = copy x as u32
+    y: i32 = copy r as i32
+    return y

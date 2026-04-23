@@ -1,0 +1,13 @@
+// EXPECT: 5
+mode compile
+func main() i32:
+    c: i32 = 0
+    s: i32 = 0
+    repeat:
+        c = c + 1
+        when c > 10:
+            stop
+        when c % 2 == 0:
+            skip
+        s = s + 1
+    return s

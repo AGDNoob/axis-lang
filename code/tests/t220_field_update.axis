@@ -1,0 +1,11 @@
+// EXPECT: 100
+mode compile
+Counter: field:
+    val: i32 = 0
+func inc_by(update c: Counter, n: i32):
+    c.val = c.val + n
+func main() i32:
+    c: Counter
+    inc_by(c, 40)
+    inc_by(c, 60)
+    return c.val

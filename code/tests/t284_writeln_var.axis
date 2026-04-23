@@ -1,0 +1,6 @@
+// EXPECT: 0
+mode compile
+func main() i32:
+    x: i32 = 99
+    writeln(x)
+    return 0

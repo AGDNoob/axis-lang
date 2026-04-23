@@ -1,0 +1,13 @@
+// EXPECT: 120
+mode compile
+Stats: field:
+    min: i32 = 0
+    max: i32 = 0
+    sum: i32 = 0
+func main() i32:
+    s: Stats
+    s.min = 10
+    s.max = 50
+    s.sum = s.min + s.max
+    s.sum = s.sum * 2
+    return s.sum

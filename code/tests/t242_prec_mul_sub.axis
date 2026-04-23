@@ -1,0 +1,4 @@
+// EXPECT: 10
+mode compile
+func main() i32:
+    return 3 * 4 - 2

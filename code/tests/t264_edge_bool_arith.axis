@@ -1,0 +1,11 @@
+// EXPECT: 2
+mode compile
+func main() i32:
+    r: i32 = 0
+    when True:
+        r = r + 1
+    when True:
+        r = r + 1
+    when False:
+        r = r + 1
+    return r

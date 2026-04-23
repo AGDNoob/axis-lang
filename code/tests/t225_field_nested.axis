@@ -1,0 +1,12 @@
+// EXPECT: 30
+mode compile
+Inner: field:
+    val: i32 = 0
+Outer: field:
+    data: Inner
+    extra: i32 = 0
+func main() i32:
+    o: Outer
+    o.data.val = 20
+    o.extra = 10
+    return o.data.val + o.extra

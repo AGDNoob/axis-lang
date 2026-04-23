@@ -1,0 +1,6 @@
+// EXPECT: 10
+mode compile
+func double(x: i32) i32:
+    return x * 2
+func main() i32:
+    return double(5)

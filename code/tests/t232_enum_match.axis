@@ -1,0 +1,20 @@
+// EXPECT: 20
+mode compile
+Grade: enum:
+    A
+    B
+    C
+    F
+func main() i32:
+    g: Grade = Grade.B
+    r: i32 = 0
+    match g:
+        Grade.A:
+            r = 10
+        Grade.B:
+            r = 20
+        Grade.C:
+            r = 30
+        _:
+            r = 0
+    return r

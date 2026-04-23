@@ -1,0 +1,6 @@
+// EXPECT: 100
+mode compile
+func get_val() i32:
+    return 100
+func main() i32:
+    return get_val()

@@ -1,0 +1,8 @@
+// EXPECT: 8
+mode compile
+func main() i32:
+    x: i32 = 1
+    x = x * 2
+    x = x * 2
+    x = x * 2
+    return x

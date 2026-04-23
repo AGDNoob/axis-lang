@@ -1,0 +1,7 @@
+// EXPECT: 0
+mode compile
+func main() i32:
+    write("A")
+    write("B")
+    writeln("C")
+    return 0

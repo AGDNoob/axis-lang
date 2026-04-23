@@ -1,0 +1,8 @@
+// EXPECT: 60
+mode compile
+func main() i32:
+    arr: (i8; 3) = [10, 20, 30]
+    a: i32 = copy arr[0] as i32
+    b: i32 = copy arr[1] as i32
+    c: i32 = copy arr[2] as i32
+    return a + b + c

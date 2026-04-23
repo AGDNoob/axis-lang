@@ -1,0 +1,13 @@
+// EXPECT: 100
+mode compile
+Point: field:
+    x: i32 = 0
+    y: i32 = 0
+func main() i32:
+    p: Point
+    i: i32 = 0
+    while i < 10:
+        p.x = p.x + 5
+        p.y = p.y + 5
+        i = i + 1
+    return p.x + p.y

@@ -1,0 +1,11 @@
+// EXPECT: 50
+mode compile
+func inc(x: i32) i32:
+    return x + 1
+func main() i32:
+    x: i32 = 0
+    i: i32 = 0
+    while i < 50:
+        x = inc(x)
+        i = i + 1
+    return x

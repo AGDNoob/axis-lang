@@ -1,0 +1,8 @@
+// EXPECT: 7
+mode compile
+Defaults: field:
+    a: i32 = 3
+    b: i32 = 4
+func main() i32:
+    d: Defaults
+    return d.a + d.b

@@ -1,0 +1,8 @@
+// EXPECT: 0
+mode compile
+Point: field:
+    x: i32 = 0
+    y: i32 = 0
+func main() i32:
+    p: Point
+    return p.x

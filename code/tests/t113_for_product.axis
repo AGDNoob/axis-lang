@@ -1,0 +1,7 @@
+// EXPECT: 120
+mode compile
+func main() i32:
+    p: i32 = 1
+    for i in range(1, 6):
+        p = p * i
+    return p

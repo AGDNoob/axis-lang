@@ -1,0 +1,7 @@
+// EXPECT: 25
+mode compile
+func main() i32:
+    s: i32 = 0
+    for i in range(1, 10, 2):
+        s = s + i
+    return s

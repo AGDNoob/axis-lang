@@ -1,0 +1,9 @@
+// EXPECT: 10
+mode compile
+Vec2: field:
+    x: i32 = 0
+    y: i32 = 0
+func main() i32:
+    v: Vec2
+    v.x = 10
+    return v.x

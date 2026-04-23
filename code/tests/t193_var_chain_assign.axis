@@ -1,0 +1,9 @@
+// EXPECT: 5
+mode compile
+func main() i32:
+    a: i32 = 1
+    b: i32 = a + 1
+    c: i32 = b + 1
+    d: i32 = c + 1
+    e: i32 = d + 1
+    return e

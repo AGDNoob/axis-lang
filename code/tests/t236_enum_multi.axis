@@ -1,0 +1,27 @@
+// EXPECT: 4
+mode compile
+Day: enum:
+    Mon
+    Tue
+    Wed
+    Thu
+    Fri
+    Sat
+    Sun
+func main() i32:
+    d: Day = Day.Fri
+    r: i32 = 0
+    match d:
+        Day.Mon:
+            r = 0
+        Day.Tue:
+            r = 1
+        Day.Wed:
+            r = 2
+        Day.Thu:
+            r = 3
+        Day.Fri:
+            r = 4
+        _:
+            r = 99
+    return r

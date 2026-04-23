@@ -1,0 +1,7 @@
+// EXPECT: 42
+mode compile
+func main() i32:
+    const A: i32 = 10
+    const B: i32 = 20
+    const C: i32 = 12
+    return A + B + C

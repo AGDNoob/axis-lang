@@ -1,0 +1,8 @@
+// EXPECT: 100
+mode compile
+func abs_val(x: i32) i32:
+    when x < 0:
+        return 0 - x
+    return x
+func main() i32:
+    return abs_val(0 - 100)

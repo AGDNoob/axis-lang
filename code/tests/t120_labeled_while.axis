@@ -1,0 +1,9 @@
+// EXPECT: 42
+mode compile
+func main() i32:
+    r: i32 = 0
+    @loop while True:
+        r = r + 1
+        when r == 42:
+            stop @loop
+    return r

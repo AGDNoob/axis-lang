@@ -1,0 +1,8 @@
+// EXPECT: 1
+mode compile
+func is_positive(x: i32) i32:
+    when x > 0:
+        return 1
+    return 0
+func main() i32:
+    return is_positive(42)

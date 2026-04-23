@@ -1,0 +1,9 @@
+// EXPECT: 1
+mode compile
+func main() i32:
+    c: i32 = 0
+    done: bool = False
+    while not done:
+        c = c + 1
+        done = True
+    return c

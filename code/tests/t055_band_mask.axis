@@ -1,0 +1,4 @@
+// EXPECT: 11
+mode compile
+func main() i32:
+    return 0xAB & 0x0F

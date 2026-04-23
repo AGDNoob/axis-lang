@@ -1,0 +1,6 @@
+// EXPECT: 100
+mode compile
+func main() i32:
+    const A: i32 = 10
+    const B: i32 = 10
+    return A * B

@@ -1,0 +1,5 @@
+// EXPECT: 42
+mode compile
+func main() i32:
+    const K: i32 = 42
+    return K

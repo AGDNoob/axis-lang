@@ -1,0 +1,6 @@
+// EXPECT: 15
+mode compile
+func main() i32:
+    x: i32 = 0xFF
+    x ^= 0xF0
+    return x

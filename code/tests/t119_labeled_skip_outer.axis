@@ -1,0 +1,11 @@
+// EXPECT: 15
+mode compile
+func main() i32:
+    c: i32 = 0
+    s: i32 = 0
+    @outer while c < 10:
+        c = c + 1
+        when c % 2 == 0:
+            skip @outer
+        s = s + 1
+    return s + c

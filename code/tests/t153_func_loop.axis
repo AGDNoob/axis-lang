@@ -1,0 +1,11 @@
+// EXPECT: 55
+mode compile
+func sum_to(n: i32) i32:
+    s: i32 = 0
+    i: i32 = 1
+    while i <= n:
+        s = s + i
+        i = i + 1
+    return s
+func main() i32:
+    return sum_to(10)

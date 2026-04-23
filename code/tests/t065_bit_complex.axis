@@ -1,0 +1,6 @@
+// EXPECT: 203
+mode compile
+func main() i32:
+    a: i32 = 0xAB
+    b: i32 = 0xCD
+    return (a & 0x0F) | (b & 0xF0)

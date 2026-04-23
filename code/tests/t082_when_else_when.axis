@@ -1,0 +1,10 @@
+// EXPECT: 2
+mode compile
+func main() i32:
+    x: i32 = 5
+    when x == 1:
+        return 1
+    else when x == 5:
+        return 2
+    else:
+        return 3

@@ -1,0 +1,13 @@
+// EXPECT: 1
+mode compile
+func is_prime(n: i32) i32:
+    when n < 2:
+        return 0
+    d: i32 = 2
+    while d * d <= n:
+        when n % d == 0:
+            return 0
+        d = d + 1
+    return 1
+func main() i32:
+    return is_prime(97)

@@ -1,0 +1,7 @@
+// EXPECT: 100
+mode compile
+func main() i32:
+    arr: (u32; 3) = [10, 40, 50]
+    s: u32 = arr[0] + arr[1] + arr[2]
+    r: i32 = copy s as i32
+    return r

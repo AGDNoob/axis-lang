@@ -1,0 +1,8 @@
+// EXPECT: 15
+mode compile
+Config: field:
+    width: i32 = 5
+    height: i32 = 10
+func main() i32:
+    c: Config
+    return c.width + c.height

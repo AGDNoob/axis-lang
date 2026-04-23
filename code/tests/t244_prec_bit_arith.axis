@@ -1,0 +1,6 @@
+// EXPECT: 7
+mode compile
+func main() i32:
+    a: i32 = 100
+    b: i32 = 163
+    return (a + b) & 0xFF

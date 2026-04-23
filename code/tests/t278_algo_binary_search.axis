@@ -1,0 +1,18 @@
+// EXPECT: 1
+mode compile
+func main() i32:
+    arr: (i32; 8) = [2, 5, 8, 12, 16, 23, 38, 56]
+    target: i32 = 23
+    lo: i32 = 0
+    hi: i32 = 7
+    found: i32 = 0
+    while lo <= hi:
+        mid: i32 = (lo + hi) / 2
+        when arr[mid] == target:
+            found = 1
+            stop
+        else when arr[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return found

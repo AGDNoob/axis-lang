@@ -1,0 +1,7 @@
+// EXPECT: 10
+mode compile
+func main() i32:
+    x: i8 = 10
+    update x as i16
+    update x as i32
+    return x

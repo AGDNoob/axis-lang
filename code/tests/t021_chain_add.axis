@@ -1,0 +1,4 @@
+// EXPECT: 15
+mode compile
+func main() i32:
+    return 1 + 2 + 3 + 4 + 5

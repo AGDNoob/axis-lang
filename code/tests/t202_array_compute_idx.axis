@@ -1,0 +1,6 @@
+// EXPECT: 30
+mode compile
+func main() i32:
+    arr: (i32; 5) = [10, 20, 30, 40, 50]
+    idx: i32 = 1 + 1
+    return arr[idx]

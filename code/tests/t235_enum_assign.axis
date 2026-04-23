@@ -1,0 +1,12 @@
+// EXPECT: 1
+mode compile
+State: enum:
+    Idle
+    Running
+    Done
+func main() i32:
+    s: State = State.Idle
+    s = State.Running
+    when s == State.Running:
+        return 1
+    return 0

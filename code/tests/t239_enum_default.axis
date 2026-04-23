@@ -1,0 +1,11 @@
+// EXPECT: 0
+mode compile
+Level: enum:
+    Low
+    Med
+    High
+func main() i32:
+    l: Level = Level.Low
+    when l == Level.Low:
+        return 0
+    return 1

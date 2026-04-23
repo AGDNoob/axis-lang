@@ -1,0 +1,10 @@
+// EXPECT: 10
+mode compile
+func main() i32:
+    s: i32 = 0
+    for i in range(0, 10):
+        @inner for j in range(0, 10):
+            when j >= 1:
+                skip @inner
+            s = s + 1
+    return s

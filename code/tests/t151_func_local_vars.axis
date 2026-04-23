@@ -1,0 +1,9 @@
+// EXPECT: 30
+mode compile
+func compute(x: i32) i32:
+    a: i32 = x * 2
+    b: i32 = a + 10
+    c: i32 = b - x
+    return c
+func main() i32:
+    return compute(20)

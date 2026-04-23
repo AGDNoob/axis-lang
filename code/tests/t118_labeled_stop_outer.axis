@@ -1,0 +1,12 @@
+// EXPECT: 3
+mode compile
+func main() i32:
+    c: i32 = 0
+    @outer while True:
+        i: i32 = 0
+        while i < 10:
+            c = c + 1
+            when c == 3:
+                stop @outer
+            i = i + 1
+    return c

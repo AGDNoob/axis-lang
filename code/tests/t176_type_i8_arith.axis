@@ -1,0 +1,8 @@
+// EXPECT: 30
+mode compile
+func main() i32:
+    a: i8 = 10
+    b: i8 = 20
+    c: i8 = a + b
+    r: i32 = copy c as i32
+    return r

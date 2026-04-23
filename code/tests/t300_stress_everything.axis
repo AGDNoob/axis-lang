@@ -1,0 +1,24 @@
+// EXPECT: 42
+mode compile
+Pair: field:
+    a: i32 = 0
+    b: i32 = 0
+func compute(x: i32, y: i32) i32:
+    when x > y:
+        return x - y
+    return y - x
+func main() i32:
+    arr: (i32; 5) = [10, 20, 30, 40, 50]
+    p: Pair
+    s: i32 = 0
+    for val in arr:
+        s = s + val
+    p.a = s
+    p.b = compute(p.a, 100)
+    r: i32 = 0
+    match p.b:
+        50:
+            r = 42
+        _:
+            r = 0
+    return r

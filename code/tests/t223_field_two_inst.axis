@@ -1,0 +1,11 @@
+// EXPECT: 30
+mode compile
+Point: field:
+    x: i32 = 0
+    y: i32 = 0
+func main() i32:
+    a: Point
+    b: Point
+    a.x = 10
+    b.x = 20
+    return a.x + b.x

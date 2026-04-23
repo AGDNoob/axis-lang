@@ -1,0 +1,4 @@
+// EXPECT: 100
+mode compile
+func main() i32:
+    return 100 / 7 * 7 + 100 % 7

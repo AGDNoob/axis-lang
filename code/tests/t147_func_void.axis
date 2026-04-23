@@ -1,0 +1,7 @@
+// EXPECT: 42
+mode compile
+func do_nothing():
+    return
+func main() i32:
+    do_nothing()
+    return 42

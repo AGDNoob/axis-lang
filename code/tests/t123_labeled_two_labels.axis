@@ -1,0 +1,12 @@
+// EXPECT: 15
+mode compile
+func main() i32:
+    s: i32 = 0
+    @outer for i in range(0, 10):
+        @inner for j in range(0, 10):
+            s = s + 1
+            when j == 4:
+                stop @inner
+        when i == 2:
+            stop @outer
+    return s

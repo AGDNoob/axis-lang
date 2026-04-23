@@ -1,0 +1,17 @@
+// EXPECT: 6
+mode compile
+func main() i32:
+    s: i32 = 0
+    i: i32 = 0
+    while i < 4:
+        match i:
+            0:
+                s = s + 0
+            1:
+                s = s + 1
+            2:
+                s = s + 2
+            _:
+                s = s + 3
+        i = i + 1
+    return s

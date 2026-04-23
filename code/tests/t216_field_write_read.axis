@@ -1,0 +1,8 @@
+// EXPECT: 42
+mode compile
+Data: field:
+    val: i32 = 0
+func main() i32:
+    d: Data
+    d.val = 42
+    return d.val

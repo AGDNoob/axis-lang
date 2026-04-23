@@ -1,0 +1,10 @@
+// EXPECT: 42
+mode compile
+Code: enum:
+    Ok = 42
+    Err = 1
+func main() i32:
+    c: Code = Code.Ok
+    when c == Code.Ok:
+        return 42
+    return 0

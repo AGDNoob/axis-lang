@@ -1,0 +1,5 @@
+// EXPECT: 0
+mode compile
+func main() i32:
+    writeln("Hello AXIS")
+    return 0

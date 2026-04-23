@@ -1,0 +1,9 @@
+// EXPECT: 2
+mode compile
+func pick(x: i32) i32:
+    when x > 0:
+        return 1
+    else:
+        return 2
+func main() i32:
+    return pick(0 - 5)

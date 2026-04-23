@@ -1,0 +1,10 @@
+// EXPECT: 10
+mode compile
+Box: field:
+    val: i32 = 0
+func main() i32:
+    a: Box
+    a.val = 10
+    b: Box = copy a
+    b.val = 99
+    return a.val

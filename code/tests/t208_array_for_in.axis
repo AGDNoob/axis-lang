@@ -1,0 +1,8 @@
+// EXPECT: 15
+mode compile
+func main() i32:
+    arr: (i32; 5) = [1, 2, 3, 4, 5]
+    s: i32 = 0
+    for x in arr:
+        s = s + x
+    return s

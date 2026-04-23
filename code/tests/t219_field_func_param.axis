@@ -1,0 +1,12 @@
+// EXPECT: 30
+mode compile
+Pair: field:
+    a: i32 = 0
+    b: i32 = 0
+func sum_pair(p: Pair) i32:
+    return p.a + p.b
+func main() i32:
+    p: Pair
+    p.a = 10
+    p.b = 20
+    return sum_pair(p)

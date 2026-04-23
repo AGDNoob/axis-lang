@@ -1,0 +1,6 @@
+// EXPECT: 30
+mode compile
+func sum3(a: i32, b: i32, c: i32) i32:
+    return a + b + c
+func main() i32:
+    return sum3(5, 10, 15)

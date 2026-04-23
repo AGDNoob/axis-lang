@@ -1,0 +1,7 @@
+// EXPECT: 99
+mode compile
+func main() i32:
+    x: i32 = 99
+    while False:
+        x = 0
+    return x

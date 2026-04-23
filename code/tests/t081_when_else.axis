@@ -1,0 +1,7 @@
+// EXPECT: 2
+mode compile
+func main() i32:
+    when False:
+        return 1
+    else:
+        return 2

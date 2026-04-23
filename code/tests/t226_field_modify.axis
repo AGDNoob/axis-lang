@@ -1,0 +1,9 @@
+// EXPECT: 42
+mode compile
+Item: field:
+    value: i32 = 0
+func main() i32:
+    it: Item
+    it.value = 10
+    it.value = it.value + 32
+    return it.value

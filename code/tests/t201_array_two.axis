@@ -1,0 +1,6 @@
+// EXPECT: 31
+mode compile
+func main() i32:
+    a: (i32; 3) = [1, 2, 3]
+    b: (i32; 3) = [10, 20, 30]
+    return a[0] + b[2]

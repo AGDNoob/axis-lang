@@ -1,0 +1,11 @@
+// EXPECT: 10
+mode compile
+Status: enum:
+    Off
+    On
+    Error
+func main() i32:
+    s: Status = Status.On
+    when s == Status.On:
+        return 10
+    return 0

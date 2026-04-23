@@ -1,0 +1,5 @@
+// EXPECT: 42
+mode compile
+func main() i32:
+    x: i32 = 42
+    return x
