@@ -90,3 +90,9 @@ axcc/compile_commands.json
 
 # VS Code Extension build artifacts
 axis-vscode/out/
+
+# Local dev tool configs (not for GitHub)
+.clangd
+**/.clangd
+.markdownlint.json
+.markdownlintignore
