@@ -63,7 +63,8 @@ static bool ssa_has_side_effect(IROpcode op)
 static bool instr_dest_is_use(IROpcode op)
 {
     return op == IR_FIELD_STORE || op == IR_INDEX_STORE ||
-           op == IR_STORE_IND  || op == IR_MEMCPY;
+           op == IR_STORE_IND  || op == IR_MEMCPY ||
+           op == IR_CMOV;
 }
 
 /* Check if an operand uses a given temp */
@@ -80,7 +81,7 @@ static void oper_replace_temp(IROper *op, int old_temp, int new_temp)
 }
 
 /* Evaluate a binary op on two constants. Returns false if not foldable. */
-static bool eval_binop(IROpcode op, int64_t a, int64_t b, int64_t *result)
+static bool eval_binop(IROpcode op, int64_t a, int64_t b, int64_t *result, int extra)
 {
     switch (op) {
     case IR_ADD:     *result = a + b; return true;
@@ -92,13 +93,13 @@ static bool eval_binop(IROpcode op, int64_t a, int64_t b, int64_t *result)
     case IR_BIT_OR:  *result = a | b; return true;
     case IR_BIT_XOR: *result = a ^ b; return true;
     case IR_SHL:     *result = (int64_t)((uint64_t)a << (b & 63)); return true;
-    case IR_SHR:     *result = a >> (b & 63); return true;
+    case IR_SHR:     *result = extra ? (int64_t)((uint64_t)a >> (b & 63)) : (a >> (b & 63)); return true;
     case IR_CMP_EQ:  *result = (a == b) ? 1 : 0; return true;
     case IR_CMP_NE:  *result = (a != b) ? 1 : 0; return true;
-    case IR_CMP_LT:  *result = (a <  b) ? 1 : 0; return true;
-    case IR_CMP_LE:  *result = (a <= b) ? 1 : 0; return true;
-    case IR_CMP_GT:  *result = (a >  b) ? 1 : 0; return true;
-    case IR_CMP_GE:  *result = (a >= b) ? 1 : 0; return true;
+    case IR_CMP_LT:  *result = extra ? ((uint64_t)a <  (uint64_t)b) : (a <  b) ? 1 : 0; return true;
+    case IR_CMP_LE:  *result = extra ? ((uint64_t)a <= (uint64_t)b) : (a <= b) ? 1 : 0; return true;
+    case IR_CMP_GT:  *result = extra ? ((uint64_t)a >  (uint64_t)b) : (a >  b) ? 1 : 0; return true;
+    case IR_CMP_GE:  *result = extra ? ((uint64_t)a >= (uint64_t)b) : (a >= b) ? 1 : 0; return true;
     default: return false;
     }
 }
@@ -166,21 +167,21 @@ void ssa_sccp(SSAFunc *sf)
     if (tc <= 0 || sf->block_count == 0) return;
 
     /* Lattice: all start at TOP */
-    LatticeVal *lat = (LatticeVal *)calloc((size_t)tc, sizeof(LatticeVal));
+    LatticeVal *lat = (LatticeVal *)xcalloc((size_t)tc, sizeof(LatticeVal));
     for (int i = 0; i < tc; i++) lat[i].kind = LATTICE_TOP;
 
     /* Block reachability */
-    bool *reachable = (bool *)calloc((size_t)sf->block_count, sizeof(bool));
+    bool *reachable = (bool *)xcalloc((size_t)sf->block_count, sizeof(bool));
     reachable[0] = true;
 
     /* SSA worklist: temps whose lattice value changed */
-    int *ssa_wl = (int *)malloc((size_t)tc * sizeof(int));
-    bool *in_ssa_wl = (bool *)calloc((size_t)tc, sizeof(bool));
+    int *ssa_wl = (int *)xmalloc((size_t)tc * sizeof(int));
+    bool *in_ssa_wl = (bool *)xcalloc((size_t)tc, sizeof(bool));
     int ssa_wl_count = 0;
 
     /* CFG worklist: blocks to process */
-    int *cfg_wl = (int *)malloc((size_t)sf->block_count * sizeof(int));
-    bool *in_cfg_wl = (bool *)calloc((size_t)sf->block_count, sizeof(bool));
+    int *cfg_wl = (int *)xmalloc((size_t)sf->block_count * sizeof(int));
+    bool *in_cfg_wl = (bool *)xcalloc((size_t)sf->block_count, sizeof(bool));
     int cfg_wl_count = 0;
 
     cfg_wl[cfg_wl_count++] = 0;
@@ -208,21 +209,21 @@ void ssa_sccp(SSAFunc *sf)
                 new_val.kind = LATTICE_TOP;                                   \
             else if (lv.kind == LATTICE_CONST && rv.kind == LATTICE_CONST) {  \
                 int64_t r;                                                    \
-                if (eval_binop((ins)->op, lv.value, rv.value, &r))            \
+                if (eval_binop((ins)->op, lv.value, rv.value, &r, (ins)->extra))            \
                     new_val = lattice_const(r);                               \
             }                                                                 \
         }                                                                     \
         if ((ins)->dest.kind == OPER_TEMP) {                                  \
-            int tid = (ins)->dest.temp_id;                                    \
-            if (tid >= 0 && tid < tc) {                                       \
-                LatticeVal old = lat[tid];                                    \
-                lat[tid] = lattice_meet(old, new_val);                        \
-                if (lat[tid].kind != old.kind ||                              \
-                    (lat[tid].kind == LATTICE_CONST &&                        \
-                     lat[tid].value != old.value)) {                          \
-                    if (!in_ssa_wl[tid]) {                                    \
-                        ssa_wl[ssa_wl_count++] = tid;                         \
-                        in_ssa_wl[tid] = true;                                \
+            int _tid = (ins)->dest.temp_id;                                   \
+            if (_tid >= 0 && _tid < tc) {                                     \
+                LatticeVal old = lat[_tid];                                   \
+                lat[_tid] = lattice_meet(old, new_val);                       \
+                if (lat[_tid].kind != old.kind ||                             \
+                    (lat[_tid].kind == LATTICE_CONST &&                       \
+                     lat[_tid].value != old.value)) {                         \
+                    if (!in_ssa_wl[_tid]) {                                   \
+                        ssa_wl[ssa_wl_count++] = _tid;                        \
+                        in_ssa_wl[_tid] = true;                               \
                     }                                                         \
                 }                                                             \
             }                                                                 \
@@ -483,7 +484,7 @@ void ssa_copyprop(SSAFunc *sf)
     if (tc <= 0) return;
 
     /* Build def map: for each SSA temp, where is it defined? */
-    int *copy_of = (int *)malloc((size_t)tc * sizeof(int));
+    int *copy_of = (int *)xmalloc((size_t)tc * sizeof(int));
     for (int i = 0; i < tc; i++) copy_of[i] = i; /* identity */
 
     /* Find all MOV temp-to-temp definitions */
@@ -594,17 +595,17 @@ void ssa_adce(SSAFunc *sf)
     if (tc <= 0 || fn->instr_count == 0) return;
 
     /* Mark array for instructions */
-    bool *live_instr = (bool *)calloc((size_t)fn->instr_count, sizeof(bool));
+    bool *live_instr = (bool *)xcalloc((size_t)fn->instr_count, sizeof(bool));
 
     /* Mark array for phis */
     int total_phis = 0;
     for (int b = 0; b < sf->block_count; b++) total_phis += sf->blocks[b].phi_count;
-    bool *live_phi = (bool *)calloc((size_t)(total_phis + 1), sizeof(bool));
+    bool *live_phi = (bool *)xcalloc((size_t)(total_phis + 1), sizeof(bool));
 
     /* Temp → defining instruction index (-1 = phi or none) */
-    int *def_instr = (int *)malloc((size_t)tc * sizeof(int));
+    int *def_instr = (int *)xmalloc((size_t)tc * sizeof(int));
     /* Temp → defining phi: encode as (block_id << 16) | phi_idx, or -1 */
-    int *def_phi = (int *)malloc((size_t)tc * sizeof(int));
+    int *def_phi = (int *)xmalloc((size_t)tc * sizeof(int));
     for (int i = 0; i < tc; i++) { def_instr[i] = -1; def_phi[i] = -1; }
 
     /* Build def maps */
@@ -626,8 +627,8 @@ void ssa_adce(SSAFunc *sf)
     }
 
     /* Worklist of live temps */
-    int *wl = (int *)malloc((size_t)tc * sizeof(int));
-    bool *in_wl = (bool *)calloc((size_t)tc, sizeof(bool));
+    int *wl = (int *)xmalloc((size_t)tc * sizeof(int));
+    bool *in_wl = (bool *)xcalloc((size_t)tc, sizeof(bool));
     int wl_count = 0;
 
     /* Seed: mark essential instructions as live */
@@ -747,15 +748,93 @@ void ssa_adce(SSAFunc *sf)
  * to ensure correctness.
  * ═════════════════════════════════════════════════════════════ */
 
-#define GVN_TABLE_SIZE 512
+#define GVN_INIT_CAP   1024
+#define GVN_LOAD_NUM   7    /* grow when count * 10 > cap * 7 (70%) */
+#define GVN_LOAD_DEN   10
 
-static uint32_t gvn_hash(IROpcode op, int vn1, int vn2, int extra)
+typedef struct {
+    GVNEntry *entries;
+    bool     *valid;
+    int       cap;
+    int       count;
+} GVNTable;
+
+static uint32_t gvn_hash_cap(IROpcode op, int vn1, int vn2, int extra, int cap)
 {
     uint32_t h = (uint32_t)op * 2654435761u;
     h ^= (uint32_t)vn1 * 2246822519u;
     h ^= (uint32_t)vn2 * 3266489917u;
     h ^= (uint32_t)extra * 668265263u;
-    return h % GVN_TABLE_SIZE;
+    return h % (uint32_t)cap;
+}
+
+/* Linear-probing lookup: returns slot index or -1 if not found. */
+static int gvn_find(const GVNTable *t,
+                    IROpcode op, int v1, int v2, int extra)
+{
+    uint32_t h = gvn_hash_cap(op, v1, v2, extra, t->cap);
+    for (int i = 0; i < t->cap; i++) {
+        uint32_t idx = (h + (uint32_t)i) % (uint32_t)t->cap;
+        if (!t->valid[idx]) return -1;
+        if (t->entries[idx].op == op && t->entries[idx].src1_vn == v1 &&
+            t->entries[idx].src2_vn == v2 && t->entries[idx].extra == extra)
+            return (int)idx;
+    }
+    return -1;
+}
+
+/* Grow the table to double capacity and rehash all entries. */
+static void gvn_grow(GVNTable *t)
+{
+    int new_cap = t->cap * 2;
+    GVNEntry *new_entries = (GVNEntry *)xcalloc((size_t)new_cap, sizeof(GVNEntry));
+    bool     *new_valid   = (bool *)xcalloc((size_t)new_cap, sizeof(bool));
+
+    for (int i = 0; i < t->cap; i++) {
+        if (!t->valid[i]) continue;
+        GVNEntry *e = &t->entries[i];
+        uint32_t h = gvn_hash_cap(e->op, e->src1_vn, e->src2_vn, e->extra, new_cap);
+        for (int j = 0; j < new_cap; j++) {
+            uint32_t idx = (h + (uint32_t)j) % (uint32_t)new_cap;
+            if (!new_valid[idx]) {
+                new_entries[idx] = *e;
+                new_valid[idx] = true;
+                break;
+            }
+        }
+    }
+
+    free(t->entries);
+    free(t->valid);
+    t->entries = new_entries;
+    t->valid   = new_valid;
+    t->cap     = new_cap;
+}
+
+/* Linear-probing insert with automatic resize at 70% load. */
+static void gvn_insert(GVNTable *t,
+                       IROpcode op, int v1, int v2, int dest, int extra)
+{
+    /* Grow if load factor exceeds threshold */
+    if ((t->count + 1) * GVN_LOAD_DEN > t->cap * GVN_LOAD_NUM)
+        gvn_grow(t);
+
+    uint32_t h = gvn_hash_cap(op, v1, v2, extra, t->cap);
+    for (int i = 0; i < t->cap; i++) {
+        uint32_t idx = (h + (uint32_t)i) % (uint32_t)t->cap;
+        if (!t->valid[idx]) {
+            t->entries[idx] = (GVNEntry){ op, v1, v2, dest, extra };
+            t->valid[idx] = true;
+            t->count++;
+            return;
+        }
+        /* If same key exists, update it. */
+        if (t->entries[idx].op == op && t->entries[idx].src1_vn == v1 &&
+            t->entries[idx].src2_vn == v2 && t->entries[idx].extra == extra) {
+            t->entries[idx].result_temp = dest;
+            return;
+        }
+    }
 }
 
 void ssa_gvn(SSAFunc *sf)
@@ -765,15 +844,18 @@ void ssa_gvn(SSAFunc *sf)
     if (tc <= 0) return;
 
     /* Value number table: vn[temp] = value number */
-    int *vn = (int *)malloc((size_t)tc * sizeof(int));
+    int *vn = (int *)xmalloc((size_t)tc * sizeof(int));
     for (int i = 0; i < tc; i++) vn[i] = i; /* start as identity */
 
-    /* GVN hash table */
-    GVNEntry *table = (GVNEntry *)calloc(GVN_TABLE_SIZE, sizeof(GVNEntry));
-    bool *table_valid = (bool *)calloc(GVN_TABLE_SIZE, sizeof(bool));
+    /* GVN hash table (dynamic, grows at 70% load) */
+    GVNTable tbl;
+    tbl.cap     = GVN_INIT_CAP;
+    tbl.count   = 0;
+    tbl.entries  = (GVNEntry *)xcalloc((size_t)tbl.cap, sizeof(GVNEntry));
+    tbl.valid    = (bool *)xcalloc((size_t)tbl.cap, sizeof(bool));
 
     /* Process blocks in dominator tree order (BFS) */
-    int *order = (int *)malloc((size_t)sf->block_count * sizeof(int));
+    int *order = (int *)xmalloc((size_t)sf->block_count * sizeof(int));
     int order_count = 0;
     order[order_count++] = 0;
     for (int i = 0; i < order_count && i < sf->block_count; i++) {
@@ -819,18 +901,18 @@ void ssa_gvn(SSAFunc *sf)
             /* LOAD_IMM: value number by constant value */
             if (ins->op == IR_LOAD_IMM) {
                 /* Look for existing temp with same imm */
-                uint32_t h = gvn_hash(IR_LOAD_IMM, (int)ins->src1.imm, 0, 0);
-                if (table_valid[h] && table[h].op == IR_LOAD_IMM &&
-                    table[h].src1_vn == (int)ins->src1.imm) {
-                    int existing = table[h].result_temp;
+                int slot = gvn_find(&tbl,
+                                    IR_LOAD_IMM, (int)ins->src1.imm, 0, 0);
+                if (slot >= 0) {
+                    int existing = tbl.entries[slot].result_temp;
                     if (existing >= 0 && existing < tc &&
                         dominates(sf, sf->def_block[existing], b)) {
                         vn[dest] = vn[existing];
                         continue;
                     }
                 }
-                table[h] = (GVNEntry){ IR_LOAD_IMM, (int)ins->src1.imm, 0, dest, 0 };
-                table_valid[h] = true;
+                gvn_insert(&tbl,
+                           IR_LOAD_IMM, (int)ins->src1.imm, 0, dest, 0);
                 continue;
             }
 
@@ -866,11 +948,10 @@ void ssa_gvn(SSAFunc *sf)
                 int tmp = v1; v1 = v2; v2 = tmp;
             }
 
-            uint32_t h = gvn_hash(ins->op, v1, v2, ins->extra);
-            if (table_valid[h] && table[h].op == ins->op &&
-                table[h].src1_vn == v1 && table[h].src2_vn == v2 &&
-                table[h].extra == ins->extra) {
-                int existing = table[h].result_temp;
+            int slot = gvn_find(&tbl,
+                                ins->op, v1, v2, ins->extra);
+            if (slot >= 0) {
+                int existing = tbl.entries[slot].result_temp;
                 if (existing >= 0 && existing < tc &&
                     dominates(sf, sf->def_block[existing], b)) {
                     /* Reuse existing computation */
@@ -882,8 +963,8 @@ void ssa_gvn(SSAFunc *sf)
                     continue;
                 }
             }
-            table[h] = (GVNEntry){ ins->op, v1, v2, dest, ins->extra };
-            table_valid[h] = true;
+            gvn_insert(&tbl,
+                       ins->op, v1, v2, dest, ins->extra);
         }
     }
 
@@ -919,8 +1000,8 @@ void ssa_gvn(SSAFunc *sf)
     }
 
     free(vn);
-    free(table);
-    free(table_valid);
+    free(tbl.entries);
+    free(tbl.valid);
     free(order);
 }
 
@@ -1047,8 +1128,8 @@ void ssa_licm(SSAFunc *sf)
         if (preheader < 0) continue;
 
         /* Collect blocks in this loop (loop_header == h) */
-        bool *in_loop = (bool *)calloc((size_t)sf->block_count, sizeof(bool));
-        int *body = (int *)malloc((size_t)sf->block_count * sizeof(int));
+        bool *in_loop = (bool *)xcalloc((size_t)sf->block_count, sizeof(bool));
+        int *body = (int *)xmalloc((size_t)sf->block_count * sizeof(int));
         int body_count = 0;
 
         for (int b = 0; b < sf->block_count; b++) {
@@ -1061,7 +1142,7 @@ void ssa_licm(SSAFunc *sf)
         if (body_count == 0) { free(body); free(in_loop); continue; }
 
         /* Find definitions in the loop */
-        bool *def_in_loop = (bool *)calloc((size_t)tc, sizeof(bool));
+        bool *def_in_loop = (bool *)xcalloc((size_t)tc, sizeof(bool));
         for (int bi = 0; bi < body_count; bi++) {
             int b = body[bi];
             SSABlock *blk = &sf->blocks[b];
@@ -1086,7 +1167,7 @@ void ssa_licm(SSAFunc *sf)
         )
 
         /* Iteratively mark invariant instructions and collect them */
-        int *hoist_indices = (int *)malloc((size_t)fn->instr_count * sizeof(int));
+        int *hoist_indices = (int *)xmalloc((size_t)fn->instr_count * sizeof(int));
         int hoist_count = 0;
 
         bool progress = true;
@@ -1125,7 +1206,7 @@ void ssa_licm(SSAFunc *sf)
         }
 
         /* Build a set for O(1) lookup of hoisted positions */
-        bool *is_hoisted = (bool *)calloc((size_t)fn->instr_count, sizeof(bool));
+        bool *is_hoisted = (bool *)xcalloc((size_t)fn->instr_count, sizeof(bool));
         for (int i = 0; i < hoist_count; i++)
             is_hoisted[hoist_indices[i]] = true;
 
@@ -1133,7 +1214,7 @@ void ssa_licm(SSAFunc *sf)
          * end of the preheader block (before its terminator), and NOP them
          * out of the loop body. */
         int new_cap = fn->instr_count + hoist_count + 4;
-        IRInstr *new_instrs = (IRInstr *)malloc(
+        IRInstr *new_instrs = (IRInstr *)xmalloc(
             (size_t)new_cap * sizeof(IRInstr));
 
         /* Find insertion point: just before the preheader's last instruction
@@ -1151,7 +1232,7 @@ void ssa_licm(SSAFunc *sf)
 
         int nc = 0;
         /* Map: old instruction index → new instruction index (for blocks) */
-        int *idx_map = (int *)malloc((size_t)fn->instr_count * sizeof(int));
+        int *idx_map = (int *)xmalloc((size_t)fn->instr_count * sizeof(int));
 
         for (int i = 0; i < fn->instr_count; i++) {
             if (i == insert_before) {
@@ -1236,7 +1317,7 @@ void ssa_licm(SSAFunc *sf)
  * new SSA temps for the duplicated body.
  * ═════════════════════════════════════════════════════════════ */
 
-#define SSA_UNROLL_MAX_BODY 64
+#define SSA_UNROLL_MAX_BODY 96
 
 void ssa_unroll(SSAFunc *sf)
 {
@@ -1506,7 +1587,7 @@ void ssa_addr_mode_select(SSAFunc *sf)
     if (tc <= 0) return;
 
     /* Build single-def map: temp → instruction index */
-    int *def_idx = (int *)malloc((size_t)tc * sizeof(int));
+    int *def_idx = (int *)xmalloc((size_t)tc * sizeof(int));
     for (int i = 0; i < tc; i++) def_idx[i] = -1;
 
     for (int b = 0; b < sf->block_count; b++) {
@@ -1643,15 +1724,15 @@ void ssa_live_range_split(SSAFunc *sf)
     for (int h = 0; h < sf->block_count; h++) {
         if (!sf->blocks[h].is_loop_header) continue;
 
-        bool *in_loop = (bool *)calloc((size_t)sf->block_count, sizeof(bool));
+        bool *in_loop = (bool *)xcalloc((size_t)sf->block_count, sizeof(bool));
         for (int b = 0; b < sf->block_count; b++) {
             if (sf->blocks[b].loop_header == h || b == h)
                 in_loop[b] = true;
         }
 
         /* Collect defs in/out of loop and uses in/out of loop */
-        bool *def_inside = (bool *)calloc((size_t)tc, sizeof(bool));
-        bool *used_outside = (bool *)calloc((size_t)tc, sizeof(bool));
+        bool *def_inside = (bool *)xcalloc((size_t)tc, sizeof(bool));
+        bool *used_outside = (bool *)xcalloc((size_t)tc, sizeof(bool));
 
         for (int b = 0; b < sf->block_count; b++) {
             SSABlock *blk = &sf->blocks[b];
@@ -1801,7 +1882,7 @@ void ssa_branch_relax(IRFunc *fn)
         }
     }
 
-    int *label_pos = (int *)calloc((size_t)(max_label + 2), sizeof(int));
+    int *label_pos = (int *)xcalloc((size_t)(max_label + 2), sizeof(int));
     for (int i = 0; i <= max_label; i++) label_pos[i] = -1;
     for (int i = 0; i < fn->instr_count; i++) {
         if (fn->instrs[i].op == IR_LABEL)
@@ -1878,8 +1959,8 @@ void ssa_nop_align(IRFunc *fn)
         }
     }
 
-    int *label_pos = (int *)calloc((size_t)(max_label + 2), sizeof(int));
-    bool *is_loop_header = (bool *)calloc((size_t)(max_label + 2), sizeof(bool));
+    int *label_pos = (int *)xcalloc((size_t)(max_label + 2), sizeof(int));
+    bool *is_loop_header = (bool *)xcalloc((size_t)(max_label + 2), sizeof(bool));
 
     for (int i = 0; i <= max_label; i++) label_pos[i] = -1;
     for (int i = 0; i < fn->instr_count; i++) {
@@ -1909,7 +1990,7 @@ void ssa_nop_align(IRFunc *fn)
     }
 
     if (new_count > fn->instr_count) {
-        IRInstr *new_instrs = (IRInstr *)malloc((size_t)new_count * sizeof(IRInstr));
+        IRInstr *new_instrs = (IRInstr *)xmalloc((size_t)new_count * sizeof(IRInstr));
         int w = 0;
         for (int i = 0; i < fn->instr_count; i++) {
             if (fn->instrs[i].op == IR_LABEL) {
@@ -2076,7 +2157,7 @@ void ssa_optimize(IRProgram *ir, OptLevel level, Arena *arena, bool verbose)
     /* Inlining operates on flat IR before SSA construction (O1+) */
     if (level >= OPT_O1) {
         if (verbose) fprintf(stderr, "[ssa] inlining (pre-SSA)...\n");
-        int passes = (level >= OPT_O3) ? 7 : (level >= OPT_O2) ? 5 : 3;
+        int passes = (level >= OPT_O3) ? 7 : 5;
         ssa_inline(ir, passes);
         opt_dce(ir);
     }
@@ -2139,26 +2220,26 @@ void ssa_optimize(IRProgram *ir, OptLevel level, Arena *arena, bool verbose)
         if (verbose) fprintf(stderr, "[ssa]   loop rotate...\n");
         ssa_loop_rotate(&sf);
 
-        /* Loop unrolling: O2+ (not Os) */
-        if (level >= OPT_O2 && level != OPT_Os) {
+        /* Loop unrolling: O1+ (not Os) */
+        if (level >= OPT_O1 && level != OPT_Os) {
             if (verbose) fprintf(stderr, "[ssa]   loop unroll...\n");
             ssa_unroll(&sf);
         }
 
         /* ── Tier 4: Lowering (O2+) ─────────────────────── */
-        if (level >= OPT_O2) {
+        if (level >= OPT_O1) {
             if (verbose) fprintf(stderr, "[ssa]   address mode select...\n");
             ssa_addr_mode_select(&sf);
         }
 
-        /* Instruction scheduling: O2+ */
-        if (level >= OPT_O2) {
+        /* Instruction scheduling: O1+ */
+        if (level >= OPT_O1) {
             if (verbose) fprintf(stderr, "[ssa]   instruction scheduling...\n");
             ssa_insn_schedule(&sf);
         }
 
         /* ── Tier 5: Live Range Splitting (O2+) ──────────── */
-        if (level >= OPT_O2) {
+        if (level >= OPT_O1) {
             if (verbose) fprintf(stderr, "[ssa]   live range split...\n");
             ssa_live_range_split(&sf);
         }
@@ -2222,9 +2303,8 @@ void ssa_optimize(IRProgram *ir, OptLevel level, Arena *arena, bool verbose)
     opt_minmaxabs(ir);
     opt_dce(ir);
     opt_vrp(ir);
-
     opt_licm(ir);
-    if (level >= OPT_O2 && level != OPT_Os) opt_unroll(ir);
+    if (level >= OPT_O1 && level != OPT_Os) opt_unroll(ir);
     opt_regpromote(ir);
     opt_loadstore_elim(ir);
     opt_copyprop(ir);
@@ -2241,6 +2321,13 @@ void ssa_optimize(IRProgram *ir, OptLevel level, Arena *arena, bool verbose)
     opt_sink(ir);
     opt_dce(ir);
 
+    /* Second round: catch cascading optimization opportunities */
+    opt_constfold(ir);
+    opt_copyprop(ir);
+    opt_peephole(ir);
+    opt_simplify_cfg(ir);
+    opt_dce(ir);
+
     /* ── Tier 6: Post-RA optimization ─────────────────── */
     if (verbose) fprintf(stderr, "[ssa] post-RA passes...\n");
 
@@ -2253,12 +2340,12 @@ void ssa_optimize(IRProgram *ir, OptLevel level, Arena *arena, bool verbose)
         /* Branch relaxation: always at O1+ */
         ssa_branch_relax(fn);
 
-        /* NOP alignment: O2+ */
-        if (level >= OPT_O2)
+        /* NOP alignment: O1+ */
+        if (level >= OPT_O1)
             ssa_nop_align(fn);
 
-        /* Post-RA scheduling: O2+ */
-        if (level >= OPT_O2)
+        /* Post-RA scheduling: O1+ */
+        if (level >= OPT_O1)
             ssa_post_schedule(fn);
     }
 

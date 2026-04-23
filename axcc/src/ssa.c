@@ -36,6 +36,7 @@ static bool instr_dest_is_use(IROpcode op)
     case IR_INDEX_STORE:  /* base[idx] = val      — dest = base addr   */
     case IR_STORE_IND:    /* *ptr = val            — dest = pointer     */
     case IR_MEMCPY:       /* memcpy(dst, src, n)   — dest = dst addr   */
+    case IR_CMOV:         /* cmov dest, src1, cond — dest = current val */
         return true;
     default:
         return false;
@@ -789,11 +790,117 @@ void ssa_construct(SSAFunc *sf, IRFunc *fn, Arena *arena)
 }
 
 /* ═════════════════════════════════════════════════════════════
+ * Parallel-Copy Sequentialization (Boissinot et al.)
+ *
+ * Phi-deconstruction produces *parallel* copies that must all
+ * read their sources before any destination is written.
+ * Naively emitting them sequentially causes the "lost-copy" bug
+ * when a destination overwrites a source needed by a later copy,
+ * and the "swap" bug when two copies form a cycle (a←b, b←a).
+ *
+ * Algorithm:
+ *   1. Emit non-blocked copies (dest not used as src elsewhere).
+ *   2. Repeat until only cycles remain.
+ *   3. Break each cycle by saving one destination into a fresh
+ *      temporary, redirecting sources, then continuing.
+ * ═════════════════════════════════════════════════════════════ */
+
+typedef struct { int dest, src; } PhiCopy;
+
+static void sequentialize_copies(SSAFunc *sf, const PhiCopy *par, int count,
+                                 IRInstr *out, int *wp)
+{
+    if (count == 0) return;
+
+    /* Mutable working copies */
+    typedef struct { int dest, src; bool done; } PCopy;
+    PCopy *copies = (PCopy *)arena_alloc(sf->arena,
+                                         (size_t)count * sizeof(PCopy));
+    for (int i = 0; i < count; i++) {
+        copies[i].dest = par[i].dest;
+        copies[i].src  = par[i].src;
+        copies[i].done = (par[i].dest == par[i].src); /* trivial → skip */
+    }
+
+    int w = *wp;
+
+    /* Repeatedly emit non-blocked copies (dest not used as src elsewhere) */
+    bool progress = true;
+    while (progress) {
+        progress = false;
+        for (int i = 0; i < count; i++) {
+            if (copies[i].done) continue;
+            /* Is copies[i].dest used as src by any other remaining copy? */
+            bool blocked = false;
+            for (int j = 0; j < count; j++) {
+                if (j == i || copies[j].done) continue;
+                if (copies[j].src == copies[i].dest) { blocked = true; break; }
+            }
+            if (!blocked) {
+                IRInstr mov = {0};
+                mov.op = IR_MOV;
+                mov.dest.kind = OPER_TEMP; mov.dest.temp_id = copies[i].dest; mov.dest.size = 4;
+                mov.src1.kind = OPER_TEMP; mov.src1.temp_id = copies[i].src;  mov.src1.size = 4;
+                out[w++] = mov;
+                copies[i].done = true;
+                progress = true;
+            }
+        }
+    }
+
+    /* Remaining copies form cycles — break each with a fresh temp */
+    for (int i = 0; i < count; i++) {
+        if (copies[i].done) continue;
+
+        /* Save the blocked destination into a fresh temp */
+        int tmp = sf->ssa_temp_count++;
+        IRInstr sv = {0};
+        sv.op = IR_MOV;
+        sv.dest.kind = OPER_TEMP; sv.dest.temp_id = tmp;             sv.dest.size = 4;
+        sv.src1.kind = OPER_TEMP; sv.src1.temp_id = copies[i].dest;  sv.src1.size = 4;
+        out[w++] = sv;
+
+        /* Redirect all remaining copies that read copies[i].dest → tmp */
+        for (int j = 0; j < count; j++) {
+            if (copies[j].done) continue;
+            if (copies[j].src == copies[i].dest)
+                copies[j].src = tmp;
+        }
+
+        /* Now copies[i].dest is no longer read — drain the unblocked chain */
+        progress = true;
+        while (progress) {
+            progress = false;
+            for (int k = 0; k < count; k++) {
+                if (copies[k].done) continue;
+                bool blocked = false;
+                for (int j = 0; j < count; j++) {
+                    if (j == k || copies[j].done) continue;
+                    if (copies[j].src == copies[k].dest) { blocked = true; break; }
+                }
+                if (!blocked) {
+                    IRInstr mov = {0};
+                    mov.op = IR_MOV;
+                    mov.dest.kind = OPER_TEMP; mov.dest.temp_id = copies[k].dest; mov.dest.size = 4;
+                    mov.src1.kind = OPER_TEMP; mov.src1.temp_id = copies[k].src;  mov.src1.size = 4;
+                    out[w++] = mov;
+                    copies[k].done = true;
+                    progress = true;
+                }
+            }
+        }
+    }
+
+    *wp = w;
+}
+
+/* ═════════════════════════════════════════════════════════════
  * SSA Destruction
  *
- * 1. Deconstruct phi functions into copies at predecessor ends
- * 2. Flatten blocks back into linear instruction array
- * 3. Update the original IRFunc
+ * 1. Deconstruct phi functions into parallel copies
+ * 2. Sequentialize copies (cycle-aware, no lost-copy bugs)
+ * 3. Flatten blocks back into linear instruction array
+ * 4. Update the original IRFunc
  * ═════════════════════════════════════════════════════════════ */
 
 void ssa_destruct(SSAFunc *sf)
@@ -827,7 +934,6 @@ void ssa_destruct(SSAFunc *sf)
     }
 
     /* Allocate copy arrays per predecessor block */
-    typedef struct { int dest, src; } PhiCopy;
     PhiCopy **pcopies = (PhiCopy **)arena_alloc(sf->arena,
                             (size_t)sf->block_count * sizeof(PhiCopy *));
     int *pcopy_idx = (int *)arena_alloc(sf->arena,
@@ -860,7 +966,8 @@ void ssa_destruct(SSAFunc *sf)
     }
 
     /* ── Phase 2: flatten blocks, inserting copies before terminators ── */
-    int total = fn->instr_count + total_phi_copies;
+    /* Extra space for cycle-breaking temporaries (worst case: +1 MOV per cycle) */
+    int total = fn->instr_count + total_phi_copies * 2;
     IRInstr *new_instrs = (IRInstr *)arena_alloc(sf->arena,
                                                   (size_t)(total + 8) * sizeof(IRInstr));
     int w = 0;
@@ -886,19 +993,9 @@ void ssa_destruct(SSAFunc *sf)
             new_instrs[w++] = fn->instrs[i];
         }
 
-        /* Emit phi-deconstruction MOVs for this block's successors' phis */
-        for (int c = 0; c < pcopy_idx[b]; c++) {
-            IRInstr mov;
-            memset(&mov, 0, sizeof(mov));
-            mov.op = IR_MOV;
-            mov.dest.kind = OPER_TEMP;
-            mov.dest.temp_id = pcopies[b][c].dest;
-            mov.dest.size = 4;
-            mov.src1.kind = OPER_TEMP;
-            mov.src1.temp_id = pcopies[b][c].src;
-            mov.src1.size = 4;
-            new_instrs[w++] = mov;
-        }
+        /* Emit phi-deconstruction MOVs (parallel-copy sequentialization) */
+        sequentialize_copies(sf, pcopies[b], pcopy_idx[b],
+                             new_instrs, &w);
 
         /* Emit the terminator */
         if (term_pos >= 0) {

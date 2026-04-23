@@ -309,4 +309,9 @@ void opt_tail_merge(IRProgram *ir);
 void opt_sra(IRProgram *ir);
 void opt_switch_lower(IRProgram *ir);
 
+/* Shared helpers (used across opt_*.c files) */
+bool is_pure_op(IROpcode op);
+bool has_complex_params(const IRFunc *fn);
+int  func_max_label(const IRFunc *fn);
+
 #endif /* AXIS_OPT_H */
