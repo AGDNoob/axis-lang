@@ -8,6 +8,16 @@ axcc/build/
 axcc/ax.bat
 axcc/ax
 
+# AXCC binaries
+axcc/*.exe
+
+# AXCC test runners
+axcc/*.sh
+axcc/tests/*.sh
+axcc/tests/*.py
+axcc/tests/*.txt
+axcc/tests/*.md
+
 # AXCC debug dumps
 axcc/*.txt
 
@@ -16,6 +26,7 @@ installer/*.exe
 
 # Python (legacy)
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 .venv/
@@ -42,15 +53,20 @@ axis-vscode/*.vsix
 axis-vscode/out/
 
 # Internal / not for GitHub
+audit/
 Release_Roadmap.md
 BRAINSTORM.md
 docs/BRAINSTORM.md
-v1.2.0-ideas.md
+v*-ideas.md
 1.2.0_Feature-List.md
+RELEASE_CHECKLIST*.md
+
+# Benchmark binaries
+*_bench
 RELEASE_NOTES_v1.3.0.md
 COMMIT_HISTORY.md
 GITHUB_RELEASE_*.md
-tests/
+docs/GitHub/
 
 # Benchmark compiled outputs (source .axis/.c tracked)
 axcc/benchmarks/**/*.exe
@@ -59,3 +75,18 @@ axcc/benchmarks/**/*.bin
 axcc/benchmarks/**/*.elf
 *.s
 *.log
+
+# clangd caches and per-machine compile DB
+.cache/
+**/.cache/
+compile_commands.json
+axcc/compile_commands.json
+
+# Root-level scratch / smoke test files
+/test.axis
+/test_*.axis
+/stdout.txt
+/stderr.txt
+
+# VS Code Extension build artifacts
+axis-vscode/out/
