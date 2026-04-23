@@ -1,5 +1,5 @@
 // Example 01: Hello, World!
-// The simplest AXIS program — script mode runs directly.
+// The simplest AXIS program — script mode runs top-level code directly.
 
 mode script
 

@@ -1,0 +1,24 @@
+// Example 20: Type Casting
+// In-place (update..as) and copy-based (copy..as) type conversion.
+
+mode script
+
+// In-place widening: i8 -> i64
+x: i8 = 42
+write("i8:  ")
+writeln(x)
+update x as i64
+write("i64: ")
+writeln(x)
+
+// Copy with conversion
+a: i32 = 1000
+b: i8 = copy a as i8
+write("i32 1000 as i8 -> ")
+writeln(b)
+
+// Widening preserves sign
+neg: i8 = -5
+wide: i64 = copy neg as i64
+write("i8 -5 as i64  -> ")
+writeln(wide)

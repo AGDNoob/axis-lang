@@ -1,0 +1,26 @@
+// Example 26: Bubble Sort
+// Sort an array with nested loops and swapping.
+
+mode script
+
+data: (i32; 8) = [64, 34, 25, 12, 22, 11, 90, 1]
+
+writeln("Before:")
+for x in data:
+    write(x)
+    write(" ")
+writeln("")
+
+// Bubble sort
+for i in range(0, 7):
+    for j in range(0, 7):
+        when data[j] > data[j + 1]:
+            temp: i32 = copy data[j]
+            data[j] = data[j + 1]
+            data[j + 1] = temp
+
+writeln("After:")
+for x in data:
+    write(x)
+    write(" ")
+writeln("")

@@ -1,0 +1,32 @@
+// Example 17: Copy Semantics
+// Explicit "copy" creates independent duplicates of arrays.
+
+mode script
+
+// Array copy — independent duplicate
+original: (i32; 4) = [1, 2, 3, 4]
+duplicate: (i32; 4) = copy original
+
+// Modifying duplicate does NOT affect original
+duplicate[0] = 99
+write("original[0]  = ")
+writeln(original[0])
+write("duplicate[0] = ")
+writeln(duplicate[0])
+
+// Second copy
+backup: (i32; 4) = copy original
+backup[2] = 55
+write("original[2] = ")
+writeln(original[2])
+write("backup[2]   = ")
+writeln(backup[2])
+
+// Copy of expression
+nums: (i32; 3) = [10, 20, 30]
+clone: (i32; 3) = copy nums
+clone[0] = clone[0] + 1
+write("nums[0]  = ")
+writeln(nums[0])
+write("clone[0] = ")
+writeln(clone[0])

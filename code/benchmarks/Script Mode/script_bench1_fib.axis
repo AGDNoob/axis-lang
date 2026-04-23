@@ -1,0 +1,8 @@
+mode script
+
+func fib(n: i32) i32:
+    when n <= 1:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+result: i32 = fib(38)

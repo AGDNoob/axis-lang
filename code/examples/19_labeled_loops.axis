@@ -1,0 +1,28 @@
+// Example 19: Labeled Loops
+// @label lets stop/skip target an outer loop.
+
+mode script
+
+// Break out of nested loops
+writeln("Search for (2, 3):")
+@search for i in range(0, 5):
+    for j in range(0, 5):
+        when i == 2 and j == 3:
+            write("  Found at (")
+            write(i)
+            write(", ")
+            write(j)
+            writeln(")")
+            stop @search
+
+// Skip outer loop from inner
+writeln("Skip row 1:")
+@rows for r in range(0, 3):
+    when r == 1:
+        skip @rows
+    for c in range(0, 3):
+        write("  (")
+        write(r)
+        write(",")
+        write(c)
+        writeln(")")

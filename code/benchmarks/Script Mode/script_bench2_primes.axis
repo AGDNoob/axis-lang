@@ -1,0 +1,17 @@
+mode script
+
+func is_prime(n: i32) i32:
+    when n < 2:
+        return 0
+    i: i32 = 2
+    while i * i <= n:
+        when n % i == 0:
+            return 0
+        i = i + 1
+    return 1
+
+count: i32 = 0
+num: i32 = 2
+while num < 500000:
+    count = count + is_prime(num)
+    num = num + 1

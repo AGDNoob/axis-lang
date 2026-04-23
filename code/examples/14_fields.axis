@@ -1,0 +1,41 @@
+// Example 14: Fields (Structs)
+// Custom composite data types with default values.
+// Fields require compile mode.
+
+mode compile
+
+Point: field:
+    x: i32 = 0
+    y: i32 = 0
+
+func print_point(p: Point):
+    write("(")
+    write(p.x)
+    write(", ")
+    write(p.y)
+    writeln(")")
+
+func move(update p: Point, dx: i32, dy: i32):
+    p.x = p.x + dx
+    p.y = p.y + dy
+
+func distance_sq(a: Point, b: Point) -> i32:
+    dx: i32 = a.x - b.x
+    dy: i32 = a.y - b.y
+    return dx * dx + dy * dy
+
+func main() -> i32:
+    origin: Point
+    writeln("Origin:")
+    print_point(origin)
+
+    move(origin, 3, 4)
+    writeln("After move(3, 4):")
+    print_point(origin)
+
+    other: Point
+    other.x = 6
+    other.y = 8
+    write("Distance^2 = ")
+    writeln(distance_sq(origin, other))
+    return 0

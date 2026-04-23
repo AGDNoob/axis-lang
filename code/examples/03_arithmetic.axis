@@ -1,5 +1,5 @@
-// Example 03: Arithmetic and Operators
-// +, -, *, /, %, and compound assignment.
+// Example 03: Arithmetic
+// Basic operators and compound assignment.
 
 mode script
 
@@ -20,14 +20,19 @@ writeln(a % b)
 
 // Compound assignment
 x: i32 = 10
+write("x = 10 -> ")
 x += 5
-write("10 += 5 -> ")
+write("+=5 -> ")
 writeln(x)
 
-x *= 3
-write(" *= 3  -> ")
+x -= 3
+write("  -=3 -> ")
 writeln(x)
 
-x /= 9
-write(" /= 9  -> ")
+x *= 4
+write("  *=4 -> ")
+writeln(x)
+
+x /= 6
+write("  /=6 -> ")
 writeln(x)

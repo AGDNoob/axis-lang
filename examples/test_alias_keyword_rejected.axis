@@ -1,5 +1,0 @@
-mode script
-
-x: i32 = 42
-y: i32 = alias x
-writeln(y)

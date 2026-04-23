@@ -1,0 +1,31 @@
+// Example 21: Aliases
+// Assignment without "copy" creates an alias (shared reference).
+
+mode script
+
+// Basic alias
+x: i32 = 42
+y: i32 = x
+
+writeln("Before mutation:")
+write("  x = ")
+writeln(x)
+write("  y = ")
+writeln(y)
+
+y = 99
+writeln("After y = 99:")
+write("  x = ")
+writeln(x)
+write("  y = ")
+writeln(y)
+
+// Independent copy with "copy"
+a: i32 = 10
+b: i32 = copy a
+b = 77
+writeln("With copy:")
+write("  a = ")
+writeln(a)
+write("  b = ")
+writeln(b)

@@ -1,0 +1,16 @@
+// Example 22: User Input
+// Read integers from the user with input().
+
+mode script
+
+write("Enter a number: ")
+n: i32 = input()
+
+write("You entered: ")
+writeln(n)
+
+write("Double: ")
+writeln(n * 2)
+
+write("Square: ")
+writeln(n * n)

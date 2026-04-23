@@ -1,0 +1,29 @@
+// Example 18: Constants
+// The const keyword creates immutable bindings.
+
+mode script
+
+const MAX_SIZE: i32 = 100
+const PI_APPROX: i32 = 3
+const ACTIVE: bool = True
+
+write("MAX_SIZE   = ")
+writeln(MAX_SIZE)
+write("PI_APPROX  = ")
+writeln(PI_APPROX)
+write("ACTIVE     = ")
+writeln(ACTIVE)
+
+// Const expressions
+const WIDTH: i32 = 16
+const HEIGHT: i32 = 9
+const AREA: i32 = WIDTH * HEIGHT
+write("AREA       = ")
+writeln(AREA)
+
+// Const array
+const PRIMES: (i32; 5) = [2, 3, 5, 7, 11]
+writeln("First 5 primes:")
+for p in PRIMES:
+    write("  ")
+    writeln(p)

@@ -1,0 +1,30 @@
+// Example 13: Arrays
+// Fixed-size arrays with indexing, modification, and iteration.
+
+mode script
+
+// Declare with initial values
+nums: (i32; 5) = [10, 20, 30, 40, 50]
+
+write("First: ")
+writeln(nums[0])
+write("Last:  ")
+writeln(nums[4])
+
+// Modify an element
+nums[2] = 99
+write("nums[2] = ")
+writeln(nums[2])
+
+// Iterate with for-each
+writeln("All elements:")
+for x in nums:
+    write("  ")
+    writeln(x)
+
+// Sum
+total: i32 = 0
+for x in nums:
+    total += x
+write("Sum = ")
+writeln(total)

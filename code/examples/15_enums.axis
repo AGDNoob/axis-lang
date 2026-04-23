@@ -1,0 +1,29 @@
+// Example 15: Enums
+// Named constant groups with ordinal values.
+// Enums require compile mode.
+
+mode compile
+
+Season: enum:
+    Spring
+    Summer
+    Autumn
+    Winter
+
+func describe(s: Season):
+    match s:
+        Season.Spring:
+            writeln("Spring — flowers bloom")
+        Season.Summer:
+            writeln("Summer — warm and sunny")
+        Season.Autumn:
+            writeln("Autumn — leaves fall")
+        Season.Winter:
+            writeln("Winter — cold and snowy")
+
+func main() -> i32:
+    describe(Season.Spring)
+    describe(Season.Summer)
+    describe(Season.Autumn)
+    describe(Season.Winter)
+    return 0

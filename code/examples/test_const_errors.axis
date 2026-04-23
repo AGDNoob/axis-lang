@@ -1,5 +1,0 @@
-// Test: const reassignment should fail
-mode script
-
-const x: i32 = 42
-x = 99

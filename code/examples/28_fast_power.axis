@@ -1,0 +1,25 @@
+// Example 28: Fast Exponentiation
+// Power by repeated squaring using bitwise operations.
+
+mode script
+
+func power(base: i32, exp: i32) -> i32:
+    result: i32 = 1
+    b: i32 = copy base
+    e: i32 = copy exp
+    while e > 0:
+        when (e & 1) == 1:
+            result = result * b
+        b = b * b
+        e = e >> 1
+    return result
+
+writeln("Powers:")
+write("  2^10 = ")
+writeln(power(2, 10))
+write("  3^5  = ")
+writeln(power(3, 5))
+write("  5^3  = ")
+writeln(power(5, 3))
+write("  7^0  = ")
+writeln(power(7, 0))

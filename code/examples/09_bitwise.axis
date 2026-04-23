@@ -1,0 +1,29 @@
+// Example 09: Bitwise Operations
+// AND, OR, XOR, shifts on integers.
+
+mode script
+
+a: i32 = 0b1100
+b: i32 = 0b1010
+
+write("a AND b = ")
+writeln(a & b)
+write("a OR  b = ")
+writeln(a | b)
+write("a XOR b = ")
+writeln(a ^ b)
+write("a << 2  = ")
+writeln(a << 2)
+write("a >> 1  = ")
+writeln(a >> 1)
+
+// Practical: check even/odd
+x: i32 = 42
+when (x & 1) == 0:
+    write(x)
+    writeln(" is even")
+
+// Extract low nibble
+val: i32 = 0xAB
+write("low nibble of 0xAB = ")
+writeln(val & 0x0F)

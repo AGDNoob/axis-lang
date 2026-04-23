@@ -1,5 +1,0 @@
-// Test: const compound assignment should fail
-mode script
-
-const x: i32 = 10
-x += 5

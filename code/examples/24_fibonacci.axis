@@ -1,0 +1,13 @@
+// Example 24: Fibonacci Sequence
+// Iterative generation using variable swapping.
+
+mode script
+
+writeln("First 20 Fibonacci numbers:")
+a: i32 = 0
+b: i32 = 1
+for i in range(0, 20):
+    writeln(a)
+    next: i32 = a + b
+    a = b
+    b = next

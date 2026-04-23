@@ -1,0 +1,39 @@
+// Example 12: The update Modifier
+// Pass by reference — the function modifies the caller's variable.
+
+mode script
+
+func double(update x: i32) -> i32:
+    x = x * 2
+    return 0
+
+func swap(update a: i32, update b: i32) -> i32:
+    temp: i32 = copy a
+    a = b
+    b = temp
+    return 0
+
+func clamp(update val: i32, lo: i32, hi: i32) -> i32:
+    when val < lo:
+        val = lo
+    else when val > hi:
+        val = hi
+    return 0
+
+val: i32 = 5
+double(val)
+write("double(5) -> ")
+writeln(val)
+
+x: i32 = 10
+y: i32 = 20
+swap(x, y)
+write("swap(10,20) -> x=")
+write(x)
+write(", y=")
+writeln(y)
+
+n: i32 = 150
+clamp(n, 0, 100)
+write("clamp(150, 0, 100) -> ")
+writeln(n)

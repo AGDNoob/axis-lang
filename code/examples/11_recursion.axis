@@ -1,0 +1,28 @@
+// Example 11: Recursion
+// Functions that call themselves.
+
+mode script
+
+func factorial(n: i32) -> i32:
+    when n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+func power(base: i32, exp: i32) -> i32:
+    when exp == 0:
+        return 1
+    return base * power(base, exp - 1)
+
+writeln("Factorials:")
+for i in range(1, 11):
+    write("  ")
+    write(i)
+    write("! = ")
+    writeln(factorial(i))
+
+writeln("Powers of 2:")
+for i in range(0, 9):
+    write("  2^")
+    write(i)
+    write(" = ")
+    writeln(power(2, i))

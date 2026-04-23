@@ -1,9 +1,0 @@
-// Test: const field variable - modifying fields should fail
-mode script
-
-Vec2: field:
-    x: i32 = 0
-    y: i32 = 0
-
-const pos: Vec2
-pos.x = 99

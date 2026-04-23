@@ -1,36 +1,44 @@
-// Example 02: Variables and Types
-// AXIS has signed/unsigned integers, booleans, and strings.
+// Example 02: Variables & Types
+// AXIS supports signed/unsigned integers, booleans, and strings.
 
 mode script
 
-// Integers
-x: i32 = 42
-big: i64 = 1000000
-small: u8 = 255
-negative: i32 = -100
+// Signed integers
+a: i8 = 127
+b: i16 = 32000
+c: i32 = 42
+d: i64 = 1000000
 
-// Booleans
+// Unsigned integers
+e: u8 = 255
+f: u32 = 100
+
+// Boolean and string
 active: bool = True
-done: bool = False
-
-// Strings
 name: str = "AXIS"
 
-// Zero-initialized (default)
+// Zero-initialized by default
 count: i32
-flag: bool
 
-writeln("x       = ")
-writeln(x)
-writeln("big     = ")
-writeln(big)
-writeln("small   = ")
-writeln(small)
-writeln("active  = ")
+writeln("Signed:")
+write("  i8  = ")
+writeln(a)
+write("  i16 = ")
+writeln(b)
+write("  i32 = ")
+writeln(c)
+write("  i64 = ")
+writeln(d)
+
+writeln("Unsigned:")
+write("  u8  = ")
+writeln(e)
+write("  u32 = ")
+writeln(f)
+
+write("active = ")
 writeln(active)
-writeln("name    = ")
+write("name   = ")
 writeln(name)
-writeln("count   = ")
+write("count  = ")
 writeln(count)
-writeln("flag    = ")
-writeln(flag)

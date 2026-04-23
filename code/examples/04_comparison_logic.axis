@@ -1,0 +1,33 @@
+// Example 04: Comparison & Boolean Logic
+// Relational operators and logical connectives with short-circuit evaluation.
+
+mode script
+
+x: i32 = 15
+
+// Comparison operators
+write("x == 15: ")
+writeln(x == 15)
+write("x != 10: ")
+writeln(x != 10)
+write("x > 10:  ")
+writeln(x > 10)
+write("x <= 20: ")
+writeln(x <= 20)
+
+// Logical: and, or, not
+when x > 10 and x < 20:
+    writeln("x is between 10 and 20")
+
+when x == 5 or x == 15:
+    writeln("x is 5 or 15")
+
+flag: bool = False
+when not flag:
+    writeln("flag is False")
+
+// Combined
+a: bool = True
+b: bool = False
+when a and not b:
+    writeln("a=True, b=False")

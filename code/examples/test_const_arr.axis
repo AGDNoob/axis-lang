@@ -1,5 +1,0 @@
-// Test: const array element assignment should fail
-mode script
-
-const arr: (i32; 3) = [1, 2, 3]
-arr[0] = 99

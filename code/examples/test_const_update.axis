@@ -1,8 +1,0 @@
-// Test: const variable passed as update parameter should fail
-mode script
-
-func double(update x: i32):
-    x = x * 2
-
-const val: i32 = 10
-double(val)

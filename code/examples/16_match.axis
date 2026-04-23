@@ -1,0 +1,54 @@
+// Example 16: Match (Pattern Matching)
+// Match on integers; _ is the wildcard.
+
+mode script
+
+// Match day number to name
+day: i32 = 3
+write("Day 3 = ")
+match day:
+    1:
+        writeln("Monday")
+    2:
+        writeln("Tuesday")
+    3:
+        writeln("Wednesday")
+    4:
+        writeln("Thursday")
+    5:
+        writeln("Friday")
+    _:
+        writeln("Weekend")
+
+// Match score to grade
+score: i32 = 85
+write("Score 85 -> ")
+match score:
+    100:
+        writeln("Perfect!")
+    _:
+        when score >= 90:
+            writeln("A")
+        else when score >= 80:
+            writeln("B")
+        else when score >= 70:
+            writeln("C")
+        else:
+            writeln("F")
+
+// Match with computation
+code: i32 = 404
+write("HTTP ")
+write(code)
+write(" = ")
+match code:
+    200:
+        writeln("OK")
+    301:
+        writeln("Moved")
+    404:
+        writeln("Not Found")
+    500:
+        writeln("Server Error")
+    _:
+        writeln("Unknown")
