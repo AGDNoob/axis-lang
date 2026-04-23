@@ -1,65 +1,54 @@
 {
   "name": "axis-language",
   "displayName": "AXIS Language Support",
-  "description": "Syntax highlighting for AXIS - value-oriented system programming language (script & compile)",
-  "version": "0.5.0",
+  "description": "Syntax highlighting, linting and IntelliSense for AXIS v1.3.0.",
+  "version": "1.3.0",
   "publisher": "axis-lang",
-  "engines": {
-    "vscode": "^1.70.0"
-  },
-  "categories": [
-    "Programming Languages",
-    "Snippets"
-  ],
-  "keywords": [
-    "axis",
-    "systems",
-    "compiler",
-    "transpiler",
-    "script",
-    "x86-64",
-    "value-oriented",
-    "enum",
-    "match",
-    "for-loop",
-    "field",
-    "syntax-highlighting"
-  ],
+  "main": "./out/extension.js",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages", "Snippets", "Linters"],
+  "keywords": ["axis", "axcc", "compiler", "x86-64", "native", "linter", "intellisense"],
   "contributes": {
-    "languages": [
-      {
-        "id": "axis",
-        "aliases": [
-          "AXIS",
-          "axis"
-        ],
-        "extensions": [
-          ".axis"
-        ],
-        "icon": {
-          "light": "./icons/axis-light.svg",
-          "dark": "./icons/axis-dark.svg"
-        },
-        "configuration": "./language-configuration.json"
-      }
+    "languages": [{
+      "id": "axis",
+      "aliases": ["AXIS", "axis"],
+      "extensions": [".axis"],
+      "icon": { "light": "./icons/axis-light.svg", "dark": "./icons/axis-dark.svg" },
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "axis",
+      "scopeName": "source.axis",
+      "path": "./syntaxes/axis.tmLanguage.json"
+    }],
+    "snippets": [{ "language": "axis", "path": "./snippets/axis.json" }],
+    "commands": [
+      { "command": "axis.check", "title": "AXIS: Check current file", "category": "AXIS" },
+      { "command": "axis.clearDiagnostics", "title": "AXIS: Clear all diagnostics", "category": "AXIS" }
     ],
-    "grammars": [
-      {
-        "language": "axis",
-        "scopeName": "source.axis",
-        "path": "./syntaxes/axis.tmLanguage.json"
+    "configuration": {
+      "title": "AXIS",
+      "properties": {
+        "axis.compilerPath": { "type": "string", "default": "", "description": "Path to the axcc binary. If empty, the extension looks for axcc/axis in the workspace, then falls back to PATH." },
+        "axis.useWsl": { "type": "boolean", "default": false, "description": "On Windows, run the compiler through wsl." },
+        "axis.enableLinter": { "type": "boolean", "default": true, "description": "Run axis check on open/save/type." },
+        "axis.lintOnType": { "type": "boolean", "default": true, "description": "Re-lint while typing (debounced)." },
+        "axis.lintDelay": { "type": "number", "default": 500, "minimum": 100, "maximum": 5000, "description": "Milliseconds of inactivity before a lint-on-type run." },
+        "axis.checkArgs": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Extra args after check." }
       }
-    ],
-    "snippets": [
-      {
-        "language": "axis",
-        "path": "./snippets/axis.json"
-      }
-    ]
+    }
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/AGDNoob/axis-lang"
+  "repository": { "type": "git", "url": "https://github.com/AGDNoob/axis-lang" },
+  "license": "MIT",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "tsc --noEmit -p ./"
   },
-  "license": "MIT"
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.4.0"
+  }
 }

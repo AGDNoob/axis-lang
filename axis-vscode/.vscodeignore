@@ -2,3 +2,11 @@
 .vscode-test/**
 .gitignore
 *.vsix
+src/**
+tsconfig.json
+node_modules/**
+**/*.ts.map
+.vscode/**
+.vscode-test/**
+.gitignore
+*.vsix

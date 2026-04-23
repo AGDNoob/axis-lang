@@ -1,20 +1,22 @@
 # AXIS Language Support for VS Code
 
-Full-featured VS Code extension for the AXIS programming language.
+VS Code extension for the AXIS programming language (v1.3.0).
 
 ## Features
 
 ### Syntax Highlighting
 
-- **Keywords** — `func`, `give`, `return`, `when`, `else`, `while`, `loop`, `repeat`, `break`, `stop`, `continue`, `skip`, `match`, `for`, `in`, `syscall`
+- **Keywords** — `func`, `return`, `when`, `else`, `while`, `loop`, `repeat`, `break`, `stop`, `continue`, `skip`, `match`, `for`, `in`, `syscall`
+- **Labels** — `@label` on loops, plus `stop @label` / `skip @label`
 - **Type definitions** — `field`, `enum` with type name + underlying type coloring
-- **Modifiers** — `update`, `copy`
+- **Modifiers** — `update`, `copy`, `const`
+- **Cast operator** — `as` (e.g. `x as i64`)
 - **Logical operators** — `and`, `or`, `not`
 - **Built-in types** — `i8`–`i64`, `u8`–`u64`, `bool`, `str`, `ptr`, `void`
 - **Array types** — `(i32; 5)`, `(Vec2; 3)` etc.
 - **Mode declarations** — `mode script`, `mode compile`
 - **Copy expressions** — `copy.runtime`, `copy.compile`
-- **Built-in functions** — `write`, `writeln`, `read`, `readln`, `readchar`, `read_failed`, `range`
+- **Built-in functions** — `write`, `writeln`, `input`, `range`, and the `{var}_input_failed()` helper
 - **Variable declarations** — `name: type` colored (both built-in and user-defined types)
 - **Function definitions** — `func name(params) -> type:` with parameter highlighting
 - **Function parameters** — `param: type`, `update param: type`, `copy param: type`
@@ -57,7 +59,43 @@ Type a prefix and press `Tab`:
 | `arr` | Array declaration |
 | `compile` | Full compile mode template |
 | `script` | Full script mode template |
-| `give` | Return value |
+| `return`| `return ...` value |
+| `const` | Immutable constant |
+| `input` | `input(...)` with cast |
+| `lbl`   | Labeled loop (`@outer`) |
+
+### Linter
+
+The extension runs `axis check` in the background and shows any errors it
+reports inline, in the **Problems** panel, and as squiggles on the affected
+lines. It runs:
+
+- when a `.axis` file is opened,
+- after a save,
+- and (debounced) while typing, so unsaved edits are checked against the
+  in-memory buffer.
+
+Use the command palette entry **AXIS: Check current file** to trigger a run
+manually, or **AXIS: Clear all diagnostics** to wipe the markers.
+
+### IntelliSense
+
+- **Completion** for keywords, primitive types, booleans, built-in functions
+  (`write`, `writeln`, `input`, `range`, `syscall`), and a handful of block
+  snippets (`main`, `whenelse`, `forrange`, `matchblock`).
+- **Hover** documentation for keywords, primitive types, and the built-ins
+  above, including a short code example for each function.
+
+### Configuration
+
+| Setting | Default | Purpose |
+| ------- | ------- | ------- |
+| `axis.compilerPath`  | `""` (auto-detect) | Path to `axis` / `axis.exe`. When empty, the extension looks for `<workspace>/axcc/axis` first, then falls back to the `PATH`. |
+| `axis.useWsl`        | `false`            | On Windows, invoke the compiler through `wsl` (useful when `axcc` is built for Linux only). Paths are translated automatically. |
+| `axis.enableLinter`  | `true`             | Turn the linter on or off without disabling the extension. |
+| `axis.lintOnType`    | `true`             | Re-lint while typing. Disable to lint only on save. |
+| `axis.lintDelay`     | `500`              | Debounce interval (ms) for lint-on-type. |
+| `axis.checkArgs`     | `[]`               | Extra arguments appended after `check`, e.g. `["--all"]`. |
 
 ## Installation (Local)
 

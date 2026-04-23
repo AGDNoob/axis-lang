@@ -55,7 +55,7 @@
           "patterns": [
             {
               "name": "constant.character.escape.axis",
-              "match": "\\\\[nrt\\\\\"0]"
+              "match": "\\\\[nrtabfv\\\\\"0]"
             }
           ]
         }
@@ -305,12 +305,16 @@
     "keywords": {
       "patterns": [
         {
+          "name": "keyword.control.label.axis",
+          "match": "@[a-zA-Z_][a-zA-Z0-9_]*"
+        },
+        {
           "name": "keyword.control.axis",
           "match": "\\b(when|else|while|loop|repeat|break|stop|continue|skip|match|for|in)\\b"
         },
         {
           "name": "keyword.control.flow.axis",
-          "match": "\\b(give|return)\\b"
+          "match": "\\b(return)\\b"
         },
         {
           "name": "keyword.declaration.function.axis",
@@ -327,6 +331,10 @@
         {
           "name": "storage.modifier.const.axis",
           "match": "\\bconst\\b"
+        },
+        {
+          "name": "keyword.operator.cast.axis",
+          "match": "\\bas\\b"
         },
         {
           "name": "keyword.operator.logical.word.axis",
@@ -360,11 +368,15 @@
       "patterns": [
         {
           "name": "support.function.io.axis",
-          "match": "\\b(write|writeln|read|readln|readchar|read_failed)\\s*(?=\\()"
+          "match": "\\b(write|writeln|input)\\s*(?=\\()"
         },
         {
           "name": "support.function.builtin.axis",
           "match": "\\b(range|syscall)\\s*(?=\\()"
+        },
+        {
+          "name": "support.function.input-check.axis",
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)_input_failed\\s*(?=\\()"
         }
       ]
     },
@@ -414,7 +426,7 @@
       "patterns": [
         {
           "comment": "function_call( — but not keywords/builtins",
-          "match": "\\b(?!(?:when|else|while|loop|repeat|for|match|func|field|enum|mode|write|writeln|read|readln|readchar|read_failed|range|syscall|return|give|if|and|or|not|copy|update|const|break|stop|continue|skip|in)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "match": "\\b(?!(?:when|else|while|loop|repeat|for|match|func|field|enum|mode|script|compile|write|writeln|input|range|syscall|return|and|or|not|copy|update|const|as|break|stop|continue|skip|in)\\b)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
           "captures": {
             "1": { "name": "entity.name.function.call.axis" }
           }

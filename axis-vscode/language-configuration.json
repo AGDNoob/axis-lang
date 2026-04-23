@@ -43,7 +43,7 @@
   ],
   "indentationRules": {
     "increaseIndentPattern": "^\\s*(func|when|else|while|loop|repeat|match|field|enum|for)\\b.*:\\s*(//.*)?$",
-    "decreaseIndentPattern": "^\\s*(else|stop|break|skip|continue|give|return)\\b"
+    "decreaseIndentPattern": "^\\s*(else|stop|break|skip|continue|return)\\b"
   },
   "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)"
 }

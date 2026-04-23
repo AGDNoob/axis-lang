@@ -17,7 +17,7 @@
     "body": [
       "func main() -> i32:",
       "    ${0}",
-      "    give 0"
+      "    return 0"
     ],
     "description": "Main function (compile mode)"
   },
@@ -121,7 +121,7 @@
       "",
       "func main() -> i32:",
       "    ${0}",
-      "    give 0"
+      "    return 0"
     ],
     "description": "Complete compile mode template"
   },
@@ -135,8 +135,26 @@
     "description": "Complete script mode template"
   },
   "Give Return": {
-    "prefix": "give",
-    "body": ["give ${0}"],
+    "prefix": "return",
+    "body": ["return ${0}"],
     "description": "Return value from function"
+  },
+  "Const Declaration": {
+    "prefix": "const",
+    "body": ["const ${1:NAME}: ${2:i32} = ${0}"],
+    "description": "Declare an immutable constant"
+  },
+  "Input Read": {
+    "prefix": "input",
+    "body": ["${1:name}: ${2:i32} = input(\"${3:prompt: }\") as ${2:i32}"],
+    "description": "Read a value from stdin"
+  },
+  "Labeled Loop": {
+    "prefix": "lbl",
+    "body": [
+      "@${1:outer} while ${2:condition}:",
+      "    ${0}"
+    ],
+    "description": "Loop with a label (use stop @label / skip @label)"
   }
 }
