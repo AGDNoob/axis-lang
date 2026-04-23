@@ -7,10 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.3.0] - 2026-03-26
+## [1.3.0] - 2026-03-30
 
 ### Added
 
+- Parity with GCC '-O1' performance on all benchmarks (Fibonacci, Prime Count, GCD Stress); beats Python 3.12 (19x-21x faster)
 - `@name` syntax to tag loops for targeted `stop @name` / `skip @name` from nested scopes; syntax: `@outer while condition:`, `@search for i in range(0, n):`, `@main repeat:`
 - `stop @name` breaks the named loop; `skip @name` continues to the next iteration of the named loop
 - Loop flags supported on `while`, `repeat`, and `for`; unflagged loops are unaffected
@@ -45,15 +46,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `{var}_input_failed()` returns `bool` to check if the preceding `input()` call failed — e.g. `x_input_failed()`
 - `const` variables with `input()` are a compile error
 - `input()` supported in PE and ELF backends (scanf/printf runtime stubs)
+- `--dump-ast` flag for compile mode — prints the full AST via dedicated `ast_dump.c` module
+- ANSI color escape sequences in error messages with TTY detection — disabled when stderr is piped
+- Return-path analysis: compiler rejects functions missing a `return` on any code path
+- 7 new edge-case test programs: division edge cases, integer bounds, string escapes, field access, and error paths
 
 ### Removed
 
 - `read()`, `readln()`, `readchar()`, and `read_failed()` removed — replaced by `input()` and `{var}_input_failed()`
 - `give` keyword removed — use `return` instead
 
+### Changed
+
+- `opt.c` monolith split into 8 focused sub-files (`opt_fold.c`, `opt_elim.c`, `opt_flow.c`, `opt_loop.c`, `opt_mem.c`, `opt_inline.c`, `opt_promote.c`, `opt_backend.c`)
+- `gen_instr()` refactored from single 500-line function into 5 category helpers
+- All `malloc`/`realloc`/`calloc` calls replaced with `xmalloc`/`xrealloc`/`xcalloc` wrappers that abort on OOM (62 call sites)
+- GVN hash table upgraded from fixed 1024 slots to dynamic resizing
+- Removed 5 dead 32-bit-only emit helpers from x64 backend (superseded by width-aware `_w` variants)
+
 ### Fixed
 
 - **pe.c**: `.rdata` section now has WRITE flag — `input()` runtime stubs write to `.rdata` (scanf buffer, input_failed flag), causing ACCESS_VIOLATION when read-only
+- **ssa.c**: Lost-copy problem in SSA destruction — parallel-copy insertion prevents overwritten phi sources
+- **ssa.c**: Liveness analysis didn't cross basic-block boundaries — incorrect register allocation
+- **ssa_opt.c**: GVN hash collisions with fixed 1024 slots caused missed optimizations on large functions
+- **irgen.c**: Enum bounds check missing — out-of-range values accepted silently
+- **x64.c**: Unsigned comparisons used signed condition codes — wrong results for large unsigned values
+- **x64.c**: `cmp reg, 0` for unsigned replaced with `test reg, reg`
+- **lexer.c**: `strtoull` ERANGE not checked — integer literal overflow silently wrapped
+- **error.c**: ANSI escape codes emitted unconditionally — garbled output when piped to file
+- **main.c**: No file size validation — could attempt to allocate arbitrary memory on malformed input
+- **main.c**: Path buffer overflow on long file paths — bounded with `PATH_MAX` check
+- **pe.c / elf.c**: Duplicate string literals not deduplicated — wasted `.rdata`/`.rodata` space
+- **pe.c**: Import table entry count off-by-one — harmless but technically incorrect header
+- **x64.c**: `emit_imul_ri3` used 32-bit encoding for 64-bit multiply — produced wrong results for `i64` IMUL operations
+- **irgen.c**: `type_size()` did not resolve enum type names to underlying integer type — enum variables received wrong allocation size
+- **irgen.c**: Field default values not emitted when constructor call has fewer arguments than struct members
+- **opt_loop.c**: LICM used only the first back-edge to determine loop body — missed stores between multiple back-edges after jump threading, causing incorrect hoisting
 
 ---
 

@@ -4,7 +4,7 @@
 # ============================================================
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.3.0"
 REPO="AGDNoob/axis-lang"
 INSTALL_DIR="${AXIS_INSTALL_DIR:-$HOME/.local/bin}"
 

@@ -3,14 +3,38 @@
 </p>
 
 <p align="center">
-  A programming language with Python-like syntax that compiles to native x86-64 machine code.<br>
-  AXIS has two execution modes: <b>script mode</b> for quick scripting, and <b>compile mode</b> for native binaries.<br>
-  The compiler (AXCC) is written in C, has zero dependencies, and produces standalone Windows PE and Linux ELF64 executables.
+  A small programming language with Python-like syntax that compiles to native x86-64 machine code.<br>
+  AXIS has two execution modes: <b>script mode</b> for short programs, and <b>compile mode</b> for standalone binaries.<br>
+  The compiler (AXCC) is written in C, depends on nothing outside the C standard library, and produces Windows PE and Linux ELF64 executables.
 </p>
 
 <p align="center">
   <img src="docs/assets/modes.svg" alt="AXIS execution modes — Script, Compile, Check" width="600">
 </p>
+
+## Philosophy
+
+AXIS exists to explore a simple question: *what does a programming language look
+like when it is built by one person, from scratch, and deliberately kept small?*
+
+A few values guide the design:
+
+- **Legibility over cleverness.** The syntax is indentation-based and reads the
+  way the code behaves. There are no hidden allocations, no implicit coercions,
+  and no magic globals.
+- **Small surface area.** The language has around three dozen keywords, ten
+  primitive types, and a handful of control-flow forms. If a feature doesn't
+  earn its place, it isn't added.
+- **One tool, no toolchain.** `axis` is a single self-contained binary. It
+  lexes, parses, checks, optimises, assembles, and links by itself. There is
+  no runtime, no standard library to install, and no build system to configure.
+- **Be honest about what it is.** AXIS is a hobby compiler with a narrow scope.
+  It is not a production toolchain, it is not a replacement for anything, and
+  the benchmarks in [docs/Benchmarks.md](docs/Benchmarks.md) are measurements,
+  not marketing.
+
+The project is shared in case parts of it are useful or interesting to others
+working in the same space.
 
 ## Installation
 
@@ -62,7 +86,7 @@ axis check program.axis --all       # + dead code + unused variable warnings
 | Document | Description |
 | -------- | ----------- |
 | [Guide](docs/guide/) | Learn AXIS step by step |
-| [Examples](code/examples/) | 21 example programs |
+| [Examples](code/examples/) | 30 example programs |
 | [Technical](docs/technical/) | How AXCC works internally |
 | [Benchmarks](docs/Benchmarks.md) | Performance measurements |
 | [Release Notes](RELEASE_NOTES_v1.3.0.md) | v1.3.0 changes and design philosophy |

@@ -1,66 +1,88 @@
 # AXIS Benchmarks
 
-All benchmarks were run on a consumer PC with debloated Windows 11.
+This document records the performance of AXCC (the AXIS compiler) on a small set
+of CPU-bound microbenchmarks. The goal is to make the language's behaviour
+measurable and reproducible, not to claim a position against any other compiler.
+GCC `-O0` is used as a familiar reference point for native, unoptimised code,
+and CPython is used as a reference for interpreted scripting.
 
 - **CPU**: AMD Ryzen 5 3500 (consumer desktop)
-- **OS**: Windows 11 (debloated)
-- **Method**: 7 interleaved runs per test, best taken
+- **OS**: WSL2 Ubuntu 24.04 on Windows 11
+- **Method**: 7 interleaved runs per test, best wall-clock time reported
 - **AXCC Version**: v1.3.0
-- **GCC Version**: MinGW-w64 GCC 15.2.0 (`-O0`)
-- **Python Version**: CPython 3.13.7
+- **GCC Version**: GCC 13.3.0 (`-O0`)
+- **Python Version**: CPython 3.12.3
 
 ---
 
 ## 1. AXCC Compile Mode vs GCC `-O0`
 
-Both compilers produce native x86-64 Windows PE executables from equivalent programs.
+Both compilers produce native x86-64 ELF binaries from equivalent programs.
+GCC `-O0` is chosen as a baseline because it emits straightforward, unoptimised
+code; it is not intended as a performance target. Comparisons against `-O2`/`-O3`
+are out of scope for this release.
 
-### v1.2.1 Results
+### v1.3.0 Results
 
-AXCC v1.2.1 includes a 14-pass optimizer pipeline and encodes all integer
-operations as native 32-bit x86 instructions — matching the `i32` type width.
-This eliminates unnecessary REX.W prefixes, uses 5-byte `mov` instead of
-10-byte `movabs` for immediates, and replaces `cqo` (sign-extend to 128-bit)
-with `cdq` (sign-extend to 64-bit). Pointer and stack operations remain 64-bit.
+AXCC v1.3.0 runs up to 32 optimisation passes at `-O3`; benchmarks here are
+compiled at the default `-O2` level. All integer operations are emitted as
+native 32-bit instructions where the source type is `i32`.
 
-| Benchmark                     | AXCC    | GCC `-O0` | Ratio            |
-|-------------------------------|---------|-----------|------------------|
-| Recursive Fibonacci `fib(38)` | 295 ms  | 266 ms    | 1.11× slower     |
-| Prime Count (0–500K)          | 77 ms   | 77 ms     | **~parity**      |
-| Nested Loops (100M iterations)| 370 ms  | 338 ms    | 1.09× slower     |
-| GCD Stress (2M calls)         | 48 ms   | 50 ms     | **0.96× faster** |
+| Benchmark                      | AXCC `-O2` | GCC `-O0` |
+|--------------------------------|-----------:|----------:|
+| Recursive Fibonacci `fib(38)`  |   190 ms   |   270 ms  |
+| Prime Count (0–500K)           |    60 ms   |    60 ms  |
+| Nested Loops (100M iterations) |   100 ms   |   280 ms  |
+| GCD Stress (2M calls)          |    30 ms   |    40 ms  |
 
-**Takeaway**: AXCC reaches **parity** with GCC `-O0` on Prime Count, is **within
-11%** on Fibonacci and Nested Loops, and **beats GCC** on GCD Stress.
+On this hardware, AXCC `-O2` is in the same range as GCC `-O0` across these
+four workloads.
 
-### Improvement over v1.2.0
+### Progression across AXCC versions
 
-| Benchmark                     | v1.2.0  | v1.2.1  | Speedup          |
-|-------------------------------|---------|---------|------------------|
-| Recursive Fibonacci `fib(38)` | 425 ms  | 295 ms  | **1.44× faster** |
-| Prime Count (0–500K)          | 96 ms   | 77 ms   | **1.25× faster** |
-| Nested Loops (100M iterations)| 491 ms  | 370 ms  | **1.33× faster** |
-| GCD Stress (2M calls)         | 68 ms   | 48 ms   | **1.42× faster** |
+These tables track how AXCC's own output has changed between releases on the
+same hardware and the same benchmark sources. They are not comparisons against
+other compilers.
 
-### Improvement over v1.1.0
+**vs. v1.2.1**
 
-| Benchmark                     | v1.1.0  | v1.2.1  | Speedup          |
-|-------------------------------|---------|---------|------------------|
-| Recursive Fibonacci `fib(38)` | 554 ms  | 295 ms  | **1.88× faster** |
-| Prime Count (0–500K)          | 161 ms  | 77 ms   | **2.09× faster** |
-| Nested Loops (100M iterations)| 686 ms  | 370 ms  | **1.85× faster** |
-| GCD Stress (2M calls)         | 73 ms   | 48 ms   | **1.52× faster** |
+| Benchmark                      | v1.2.1  | v1.3.0  |
+|--------------------------------|--------:|--------:|
+| Recursive Fibonacci `fib(38)`  | 295 ms  | 190 ms  |
+| Prime Count (0–500K)           |  77 ms  |  60 ms  |
+| Nested Loops (100M iterations) | 370 ms  | 100 ms  |
+| GCD Stress (2M calls)          |  48 ms  |  30 ms  |
+
+**vs. v1.2.0**
+
+| Benchmark                      | v1.2.0  | v1.3.0  |
+|--------------------------------|--------:|--------:|
+| Recursive Fibonacci `fib(38)`  | 425 ms  | 190 ms  |
+| Prime Count (0–500K)           |  96 ms  |  60 ms  |
+| Nested Loops (100M iterations) | 491 ms  | 100 ms  |
+| GCD Stress (2M calls)          |  68 ms  |  30 ms  |
+
+**vs. v1.1.0**
+
+| Benchmark                      | v1.1.0  | v1.3.0  |
+|--------------------------------|--------:|--------:|
+| Recursive Fibonacci `fib(38)`  | 554 ms  | 190 ms  |
+| Prime Count (0–500K)           | 161 ms  |  60 ms  |
+| Nested Loops (100M iterations) | 686 ms  | 100 ms  |
+| GCD Stress (2M calls)          |  73 ms  |  30 ms  |
 
 ### Binary Size
 
-| Benchmark | AXCC | GCC `-O0` | Ratio |
-| --------- | ---- | --------- | ----- |
-| Recursive Fibonacci | 2.0 KB | 59.6 KB | **30× smaller** |
-| Prime Count | 3.0 KB | 59.6 KB | **20× smaller** |
-| Nested Loops | 2.5 KB | 59.6 KB | **24× smaller** |
-| GCD Stress | 3.0 KB | 59.6 KB | **20× smaller** |
+| Benchmark           | AXCC   | GCC `-O0` |
+|---------------------|-------:|----------:|
+| Recursive Fibonacci | 4.3 KB |   15.4 KB |
+| Prime Count         | 4.3 KB |   15.4 KB |
+| Nested Loops        | 4.3 KB |   15.4 KB |
+| GCD Stress          | 4.3 KB |   15.4 KB |
 
-AXCC produces minimal PE binaries with no C runtime, no standard library, and no linker bloat. GCC links the MinGW CRT by default, which adds ~57 KB of overhead even at `-O0`.
+AXCC binaries contain only the emitted program code; there is no C runtime,
+no standard library, and no dynamic linker stub. GCC links against glibc by
+default, which accounts for most of the size difference.
 
 ### Source Code
 
@@ -228,35 +250,48 @@ int main(void) {
 
 ---
 
-## 2. AXIS Script Mode vs Python (CPython 3.13.7)
+## 2. AXIS Script Mode vs Python (CPython 3.12.3)
 
-AXIS script mode (`mode script`) compiles to a native binary on first run, caches it, and re-executes the cached binary on subsequent runs. Python interprets the source every time.
+AXIS script mode (`mode script`) compiles the source to a native binary on first
+run, caches it on disk, and re-executes the cached binary on subsequent runs.
+CPython interprets the source on every run. The two tools work very differently;
+this section simply records the observed wall-clock time for the same algorithm
+in both.
 
-Both run the **identical algorithm** — only the syntax differs.
+### v1.3.0 Results
 
-### v1.2.1 Results
+| Benchmark                     | AXIS Script | Python 3.12 |
+|-------------------------------|------------:|------------:|
+| Recursive Fibonacci `fib(38)` |    250 ms   |    5 200 ms |
+| Prime Count (0–500K)          |    130 ms   |    1 440 ms |
 
-| Benchmark                     | AXIS Script | Python 3.13 | Speedup          |
-|-------------------------------|-------------|-------------|------------------|
-| Recursive Fibonacci `fib(38)` | 424 ms      | 8 395 ms    | **19.8×** faster |
-| Prime Count (0–500K)          | 153 ms      | 2 621 ms    | **17.1×** faster |
+On these two CPU-bound workloads, the cached native binary finishes
+approximately an order of magnitude faster than the interpreter. This is the
+expected shape of the comparison—compiled native code versus a bytecode
+interpreter—not a claim about Python as a language.
 
-**Takeaway**: AXIS script mode is **~17–20× faster** than CPython 3.13 on
-compute-heavy workloads.
+### Progression across AXCC versions
 
-### Improvement over v1.2.0
+**vs. v1.2.1**
 
-| Benchmark                     | v1.2.0  | v1.2.1  | Speedup          |
-|-------------------------------|---------|---------|------------------|
-| Recursive Fibonacci `fib(38)` | 436 ms  | 424 ms  | **1.03× faster** |
-| Prime Count (0–500K)          | 167 ms  | 153 ms  | **1.09× faster** |
+| Benchmark                     | v1.2.1  | v1.3.0  |
+|-------------------------------|--------:|--------:|
+| Recursive Fibonacci `fib(38)` | 424 ms  | 250 ms  |
+| Prime Count (0–500K)          | 153 ms  | 130 ms  |
 
-### Improvement over v1.1.0
+**vs. v1.2.0**
 
-| Benchmark                     | v1.1.0  | v1.2.1  | Speedup          |
-|-------------------------------|---------|---------|------------------|
-| Recursive Fibonacci `fib(38)` | 795 ms  | 424 ms  | **1.88× faster** |
-| Prime Count (0–500K)          | 235 ms  | 153 ms  | **1.54× faster** |
+| Benchmark                     | v1.2.0  | v1.3.0  |
+|-------------------------------|--------:|--------:|
+| Recursive Fibonacci `fib(38)` | 436 ms  | 250 ms  |
+| Prime Count (0–500K)          | 167 ms  | 130 ms  |
+
+**vs. v1.1.0**
+
+| Benchmark                     | v1.1.0  | v1.3.0  |
+|-------------------------------|--------:|--------:|
+| Recursive Fibonacci `fib(38)` | 795 ms  | 250 ms  |
+| Prime Count (0–500K)          | 235 ms  | 130 ms  |
 
 ### Source Code
 
@@ -347,19 +382,33 @@ sys.exit(count % 256)
 
 ## 3. Compiler & Binary Sizes
 
-| Component                     | Current    | Initial Release    |
+| Component                     | v1.3.0     | Initial Release    |
 |-------------------------------|------------|--------------------|
-| AXCC compiler (Windows PE)    | 224 KB     | 203 KB             |
-| Compiled AXIS binary (avg)    | ~2.6 KB    | ~2.8 KB            |
-| GCC compiled binary (avg)     | ~60 KB     | ~60 KB             |
+| AXCC compiler (ELF binary)    | 309 KB     | 203 KB             |
+| Compiled AXIS binary (avg)    | ~4.3 KB    | ~2.8 KB            |
+| GCC compiled binary (avg)     | ~15.4 KB   | ~60 KB             |
 
-The entire AXCC toolchain — compiler, assembler, linker, PE/ELF generator — fits in a single **~224 KB** binary with **zero external dependencies**.
+The entire AXCC toolchain — compiler, assembler, linker, PE/ELF generator — fits in a single **~309 KB** binary with **zero external dependencies**.
 
 ---
 
 ## Notes
 
-- AXCC v1.2.1 includes 14 optimizer passes (DCE, constant folding/propagation, copy propagation, function inlining, LICM, loop unrolling, linear-scan register allocation, strength reduction, register-aware instruction selection, CMP+Branch fusion, IR load-store elimination, x64 spill-reload caching, peephole optimization, redundant instruction elimination) and native 32-bit integer encoding. AXCC now matches or beats GCC `-O0` on most benchmarks.
-- Script mode timings include the overhead of loading the cached binary from disk and executing it via a child process. First-run compilation time is excluded (cache was pre-warmed).
-- Python timings include interpreter startup. Both AXIS script and Python were timed end-to-end from the shell.
-- The Python benchmarks use `while` loops (not `for i in range(...)`) to match the AXIS code structure as closely as possible.
+- AXCC v1.3.0 runs up to 32 optimisation passes at `-O3` (dead-code elimination,
+  constant folding and propagation, copy propagation, function inlining, LICM,
+  loop unrolling, linear-scan register allocation, strength reduction,
+  register-aware instruction selection, CMP+Branch fusion, IR load/store
+  elimination, x64 spill/reload caching, peephole optimisation, redundant
+  instruction elimination, and others). Benchmarks in this document were
+  compiled at `-O2`, which is the default.
+- Script-mode timings include the overhead of loading the cached binary from
+  disk and executing it as a child process. First-run compilation time is
+  excluded; the cache was pre-warmed before measurement.
+- Python timings include interpreter startup, to keep the end-to-end shell
+  measurement consistent between both tools.
+- The Python benchmarks use `while` loops rather than `for i in range(…)` so
+  that the control-flow structure matches the AXIS source line-for-line.
+- Cross-version tables compare AXCC's own output across releases. The v1.1.0
+  and v1.2.x numbers were measured on Windows PE binaries; v1.3.0 numbers are
+  from Linux ELF binaries via WSL2. Hardware and CPU are identical across all
+  versions.

@@ -23,7 +23,7 @@ From lowest to highest:
 
 ## AST Node Types
 
-### Expressions (14 kinds)
+### Expressions (16 kinds)
 
 | Kind | Description |
 | --- | --- |
@@ -38,9 +38,11 @@ From lowest to highest:
 | `FIELD_ACCESS` | Field member access `obj.member` |
 | `ENUM_ACCESS` | Enum variant access `Color.Red` |
 | `ARRAY_LIT` | Array literal |
+| `COPY` | Copy expression (`copy expr`) |
+| `COPY_CAST` | Copy with type cast (`copy expr as type`) |
 | `RANGE` | Range expression `start..end` with optional step |
-| `COPY` | Array copy expression |
-| `READ_FAILED` | Error flag for failed reads |
+| `INPUT` | Built-in `input()` / `input(prompt)` expression |
+| `INPUT_FAILED` | Per-variable input failure check (`var_input_failed()`) |
 
 ### Statements (17 kinds)
 
@@ -51,6 +53,8 @@ From lowest to highest:
 | `INDEX_ASSIGN` | Array element assignment |
 | `FIELD_ASSIGN` | Field member assignment |
 | `COMPOUND_ASSIGN` | `+=`, `-=`, `*=`, etc. |
+| `EXPR` | Expression used as statement |
+| `WRITE` | Output statement |
 | `IF` | Conditional with optional else |
 | `WHILE` | While loop |
 | `REPEAT` | Infinite loop |
@@ -59,10 +63,8 @@ From lowest to highest:
 | `CONTINUE` | Skip to next iteration |
 | `RETURN` | Return from function |
 | `MATCH` | Pattern matching statement |
-| `WRITE` | Output statement |
-| `READ` | Input statement (read/readln/readchar) |
-| `EXPR` | Expression used as statement |
 | `SYSCALL` | System call |
+| `UPDATE_CAST` | Update variable type (`update name as type`) |
 
 ### Top-Level Definitions
 
