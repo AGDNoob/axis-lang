@@ -98,6 +98,7 @@ static void print_usage(const char *prog) {
         "  --pe            Output Windows PE executable\n"
         "  --elf           Output Linux ELF64 executable\n"
         "  --dump-tokens   Print token stream\n"
+        "  --dump-ast      Print AST\n"
         "  --dump-ir       Print IR\n"
         "  --dump-x64      Print x64 code info\n"
         "  -O0             No optimization (debug-friendly)\n"
@@ -106,7 +107,7 @@ static void print_usage(const char *prog) {
         "  -O3             Aggressive optimization (all 32 passes)\n"
         "  -Os             Optimize for size\n"
         "  -v, --verbose   Verbose output\n"
-        "  --version       Show version\n"
+        "  -V, --version   Show version\n"
         "  -h, --help      Show this help\n"
         "\n"
         "Check flags:\n"
@@ -179,7 +180,7 @@ static int parse_args(int argc, char **argv, Options *opts) {
         if (strcmp(arg, "-o") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "error: -o requires an argument\n");
-                return -1;
+                return 1;
             }
             opts->output_file = argv[++i];
             continue;
@@ -190,6 +191,7 @@ static int parse_args(int argc, char **argv, Options *opts) {
         if (strcmp(arg, "--dead") == 0)        { opts->check_dead = true; continue; }
         if (strcmp(arg, "--all") == 0)         { opts->check_all = true; continue; }
         if (strcmp(arg, "--dump-tokens") == 0) { opts->dump_tokens = true; continue; }
+        if (strcmp(arg, "--dump-ast") == 0)    { opts->dump_ast = true; continue; }
         if (strcmp(arg, "--dump-ir") == 0)     { opts->dump_ir = true; continue; }
         if (strcmp(arg, "--dump-x64") == 0)    { opts->dump_x64 = true; continue; }
         if (strcmp(arg, "-v") == 0 || strcmp(arg, "--verbose") == 0) {
@@ -204,12 +206,12 @@ static int parse_args(int argc, char **argv, Options *opts) {
         /* Unknown flag */
         if (arg[0] == '-') {
             fprintf(stderr, "error: unknown option '%s'\n", arg);
-            return -1;
+            return 1;
         }
         /* Positional: input file */
         if (opts->input_file) {
             fprintf(stderr, "error: multiple input files not supported\n");
-            return -1;
+            return 1;
         }
         opts->input_file = arg;
     }
@@ -217,7 +219,7 @@ static int parse_args(int argc, char **argv, Options *opts) {
     if (opts->command != CMD_HELP && opts->command != CMD_VERSION
         && !opts->input_file) {
         fprintf(stderr, "error: no input file\n");
-        return -1;
+        return 1;
     }
 
     return 0;
@@ -244,7 +246,15 @@ static char *read_source(const char *path, size_t *out_len) {
         return NULL;
     }
 
-    char *buf = (char *)malloc((size_t)size + 1);
+    #define MAX_FILE_SIZE (64L * 1024 * 1024)  /* 64 MB */
+    if (size > MAX_FILE_SIZE) {
+        fprintf(stderr, "error: '%s' too large (%ld bytes, max %ld)\n",
+                path, (long)size, (long)MAX_FILE_SIZE);
+        fclose(f);
+        return NULL;
+    }
+
+    char *buf = (char *)xmalloc((size_t)size + 1);
     if (!buf) {
         fprintf(stderr, "error: out of memory reading '%s'\n", path);
         fclose(f);
@@ -309,7 +319,8 @@ static void ensure_cache_dir(const char *input_path) {
 #endif
     if (last_sep) {
         size_t prefix_len = (size_t)(last_sep - input_path + 1);
-        if (prefix_len >= sizeof(dir) - 16) return;
+        if (prefix_len + 12 >= sizeof(dir))
+            axis_fatal("path too long for cache directory");
         memcpy(dir, input_path, prefix_len);
         snprintf(dir + prefix_len, sizeof(dir) - prefix_len, "__axcache__");
     } else {
@@ -318,7 +329,8 @@ static void ensure_cache_dir(const char *input_path) {
 
     struct stat st;
     if (stat(dir, &st) != 0) {
-        axis_mkdir(dir);
+        if (axis_mkdir(dir) != 0)
+            fprintf(stderr, "warning: could not create cache directory '%s'\n", dir);
     }
 }
 
@@ -350,14 +362,17 @@ static void build_cache_path(const char *input_path, char *out, size_t out_size)
 #else
     cache_ext = "";
 #endif
+    int n;
     if (prefix_len > 0) {
-        snprintf(out, out_size, "%.*s__axcache__%c%.*s%s",
-                 (int)prefix_len, input_path, PATH_SEP,
-                 (int)name_len, basename, cache_ext);
+        n = snprintf(out, out_size, "%.*s__axcache__%c%.*s%s",
+                     (int)prefix_len, input_path, PATH_SEP,
+                     (int)name_len, basename, cache_ext);
     } else {
-        snprintf(out, out_size, "__axcache__%c%.*s%s",
-                 PATH_SEP, (int)name_len, basename, cache_ext);
+        n = snprintf(out, out_size, "__axcache__%c%.*s%s",
+                     PATH_SEP, (int)name_len, basename, cache_ext);
     }
+    if (n < 0 || (size_t)n >= out_size)
+        axis_fatal("cache path too long (input: '%s')", input_path);
 }
 
 /* ═════════════════════════════════════════════════════════════
@@ -407,6 +422,22 @@ static int run_executable(const char *path, bool verbose) {
 }
 
 /* ═════════════════════════════════════════════════════════════
+ * atexit() cleanup handler
+ *
+ * Guards against resource leaks when sem_error() or axis_fatal()
+ * call exit() before compile_to_exe() can reach its cleanup.
+ * ═════════════════════════════════════════════════════════════ */
+
+static Arena *g_arena  = NULL;
+static char  *g_source = NULL;
+
+static void axis_cleanup(void)
+{
+    if (g_arena)  { arena_free(g_arena); g_arena  = NULL; }
+    if (g_source) { free(g_source);      g_source = NULL; }
+}
+
+/* ═════════════════════════════════════════════════════════════
  * Compile pipeline (shared by run + build)
  * Returns 0 on success, nonzero on error.
  * ═════════════════════════════════════════════════════════════ */
@@ -426,6 +457,12 @@ static int compile_to_exe(const char *input_path, const char *output_path,
     /* ── Arena ──────────────────────────────────────────── */
     Arena arena;
     arena_init(&arena);
+
+    /* Register atexit cleanup so exit() from sem_error / axis_fatal
+     * still frees heap resources.  Clear pointers on normal cleanup
+     * to prevent double-free. */
+    g_source = source;
+    g_arena  = &arena;
 
     /* ── Lexer ──────────────────────────────────────────── */
     if (opts->verbose) fprintf(stderr, "[axis] lexing...\n");
@@ -457,6 +494,7 @@ static int compile_to_exe(const char *input_path, const char *output_path,
         return 1;
     }
 
+    if (opts->dump_ast) ast_dump(ast, stderr);
     if (opts->verbose) {
         fprintf(stderr, "[axis] %d functions, %d top-level statements\n",
                 ast->func_count, ast->stmt_count);
@@ -614,6 +652,8 @@ static int compile_to_exe(const char *input_path, const char *output_path,
     /* ── Cleanup ────────────────────────────────────────── */
     free(source);
     arena_free(&arena);
+    g_source = NULL;
+    g_arena  = NULL;
 
     return 0;
 }
@@ -679,9 +719,11 @@ static void default_output_path(const char *input, OutputFormat format,
     }
     const char *ext = (fmt == FMT_PE) ? ".exe" : "";
 
-    snprintf(out, out_size, "%.*s%.*s%s",
-             (int)prefix_len, input,
-             (int)name_len, basename, ext);
+    int n = snprintf(out, out_size, "%.*s%.*s%s",
+                     (int)prefix_len, input,
+                     (int)name_len, basename, ext);
+    if (n < 0 || (size_t)n >= out_size)
+        axis_fatal("output path too long (input: '%s')", input);
 }
 
 /* ═════════════════════════════════════════════════════════════
@@ -756,6 +798,7 @@ static int check_file(const char *input_path, const Options *opts) {
 
 int main(int argc, char **argv) {
     diag_init();
+    atexit(axis_cleanup);
 
     Options opts;
     if (parse_args(argc, argv, &opts) != 0) {
@@ -781,8 +824,10 @@ int main(int argc, char **argv) {
         /* Format flags are not supported in run mode */
         if (opts.format != FMT_DEFAULT) {
             fprintf(stderr,
-                "\033[33mwarning: --pe/--elf flags are ignored in run mode.\033[0m\n"
+                "%swarning: --pe/--elf flags are ignored in run mode.%s\n"
                 "  Use 'axis build %s -o output --pe/--elf' to cross-compile.\n",
+                diag_colors_enabled() ? "\033[33m" : "",
+                diag_colors_enabled() ? "\033[0m"  : "",
                 opts.input_file);
             opts.format = FMT_DEFAULT;
         }
@@ -817,7 +862,8 @@ int main(int argc, char **argv) {
     if (opts.command == CMD_BUILD) {
         char out_path[1024];
         if (opts.output_file) {
-            snprintf(out_path, sizeof(out_path), "%s", opts.output_file);
+            if (snprintf(out_path, sizeof(out_path), "%s", opts.output_file) >= (int)sizeof(out_path))
+                axis_fatal("output path too long");
         } else {
             default_output_path(opts.input_file, opts.format, out_path, sizeof(out_path));
         }
@@ -837,8 +883,10 @@ int main(int argc, char **argv) {
             /* Format flags are not supported when running scripts */
             if (opts.format != FMT_DEFAULT) {
                 fprintf(stderr,
-                    "\033[33mwarning: --pe/--elf flags are ignored when running scripts.\033[0m\n"
+                    "%swarning: --pe/--elf flags are ignored when running scripts.%s\n"
                     "  Use 'axis build %s -o output --pe/--elf' to cross-compile.\n",
+                    diag_colors_enabled() ? "\033[33m" : "",
+                    diag_colors_enabled() ? "\033[0m"  : "",
                     opts.input_file);
                 opts.format = FMT_DEFAULT;
             }
@@ -860,7 +908,8 @@ int main(int argc, char **argv) {
             /* Compile mode → ask for output if not given */
             char out_path[1024];
             if (opts.output_file) {
-                snprintf(out_path, sizeof(out_path), "%s", opts.output_file);
+                if (snprintf(out_path, sizeof(out_path), "%s", opts.output_file) >= (int)sizeof(out_path))
+                    axis_fatal("output path too long");
             } else {
                 char default_out[1024];
                 default_output_path(opts.input_file, opts.format, default_out, sizeof(default_out));

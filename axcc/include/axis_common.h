@@ -18,6 +18,15 @@
 #define AXIS_VERSION_PATCH 0
 #define AXIS_VERSION_STR   "1.3.0"
 
+#include <stdarg.h>
+
+/* ── Compiler attributes ─────────────────────────────────── */
+#ifdef __GNUC__
+#define AXIS_PRINTF_FMT __attribute__((format(printf, 1, 2)))
+#else
+#define AXIS_PRINTF_FMT
+#endif
+
 /* ── Utility macros ───────────────────────────────────────── */
 #define AXIS_ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))
 #define AXIS_UNUSED(x)    ((void)(x))
@@ -26,10 +35,38 @@
 #define AXIS_MIN(a, b)    ((a) < (b) ? (a) : (b))
 
 /* ── Fatal error ──────────────────────────────────────────── */
-static inline _Noreturn void axis_fatal(const char *msg)
+AXIS_PRINTF_FMT
+static inline _Noreturn void axis_fatal(const char *fmt, ...)
 {
-    fprintf(stderr, "axisc: fatal: %s\n", msg);
+    va_list ap;
+    va_start(ap, fmt);
+    fprintf(stderr, "axisc: fatal: ");
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    va_end(ap);
     exit(1);
+}
+
+/* ── Checked allocation wrappers ──────────────────────────── */
+static inline void *xmalloc(size_t n)
+{
+    void *p = malloc(n);
+    if (!p) axis_fatal("out of memory");
+    return p;
+}
+
+static inline void *xcalloc(size_t count, size_t size)
+{
+    void *p = calloc(count, size);
+    if (!p) axis_fatal("out of memory");
+    return p;
+}
+
+static inline void *xrealloc(void *ptr, size_t n)
+{
+    void *p = realloc(ptr, n);
+    if (!p) axis_fatal("out of memory");
+    return p;
 }
 
 /* ── Source location ──────────────────────────────────────── */

@@ -95,14 +95,14 @@ static void sb_init(StubBuf *sb)
 {
     sb->cap = 2048;
     sb->len = 0;
-    sb->data = (uint8_t *)calloc(1, (size_t)sb->cap);
+    sb->data = (uint8_t *)xcalloc(1, (size_t)sb->cap);
 }
 
 static void sb_emit8(StubBuf *sb, uint8_t v)
 {
     if (sb->len >= sb->cap) {
         sb->cap *= 2;
-        sb->data = (uint8_t *)realloc(sb->data, (size_t)sb->cap);
+        sb->data = (uint8_t *)xrealloc(sb->data, (size_t)sb->cap);
     }
     sb->data[sb->len++] = v;
 }
@@ -874,7 +874,7 @@ int elf_write(ELFCtx *ctx, const X64Ctx *x64)
 
     /* ── Mutable copy of code + relocs for in-place patching ─── */
     X64Ctx x64_mut = *x64;  /* shallow copy */
-    x64_mut.code.data = (uint8_t *)malloc((size_t)x64->code.len + 4096);
+    x64_mut.code.data = (uint8_t *)xmalloc((size_t)x64->code.len + 4096);
     if (!x64_mut.code.data) return -1;
     memcpy(x64_mut.code.data, x64->code.data, (size_t)x64->code.len);
     x64_mut.code.len = x64->code.len;
@@ -913,7 +913,7 @@ int elf_write(ELFCtx *ctx, const X64Ctx *x64)
     patch_string_relocs(&x64_mut, text_va, data_va);
 
     /* ── Build .data content ─────────────────────────────────── */
-    uint8_t *data_buf = (uint8_t *)calloc(1, (size_t)data_size);
+    uint8_t *data_buf = (uint8_t *)xcalloc(1, (size_t)data_size);
     if (!data_buf) { sb_free(&sb); free(x64_mut.code.data); return -1; }
     if (x64->rdata_len > 0)
         memcpy(data_buf, x64->rdata, (size_t)x64->rdata_len);
@@ -929,7 +929,7 @@ int elf_write(ELFCtx *ctx, const X64Ctx *x64)
 
     /* Total file size: data_off + data_size */
     int file_size = (int)data_off + (int)data_size;
-    ctx->buf = (uint8_t *)calloc(1, (size_t)file_size);
+    ctx->buf = (uint8_t *)xcalloc(1, (size_t)file_size);
     if (!ctx->buf) { sb_free(&sb); free(x64_mut.code.data); free(data_buf); return -1; }
     ctx->cap = file_size;
     int pos = 0;

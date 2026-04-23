@@ -20,6 +20,7 @@
 #include "axis_error.h"
 #include <stdarg.h>
 #include <setjmp.h>
+#include <limits.h>
 
 /* ═════════════════════════════════════════════════════════════
  * Helpers
@@ -175,6 +176,8 @@ static ASTTypeNode *parse_array_type(Parser *p)
         if (!match(p, TOK_INT_LIT))
             parse_error(p, "expected array size");
         size = (int)cur(p)->int_val;
+        if (size <= 0)
+            parse_error(p, "array size must be positive");
         advance(p);
     }
     expect(p, close);
@@ -1191,6 +1194,8 @@ static ASTFieldMember parse_field_member(Parser *p)
             advance(p); /* field */
             expect(p, TOK_SEMICOLON);
             int size = (int)expect(p, TOK_INT_LIT)->int_val;
+            if (size <= 0)
+                parse_error(p, "array size must be positive");
             expect(p, TOK_RPAREN);
             expect(p, TOK_COLON);
 
@@ -1299,6 +1304,8 @@ static ASTEnumDef parse_enum_def(Parser *p)
             advance(p);
             if (!match(p, TOK_INT_LIT))
                 parse_error(p, "expected integer literal for enum variant value");
+            if (cur(p)->int_val > INT_MAX || cur(p)->int_val < INT_MIN)
+                parse_error(p, "enum variant value out of range");
             v->value     = (int)cur(p)->int_val;
             v->has_value = true;
             next_val = v->value + 1;

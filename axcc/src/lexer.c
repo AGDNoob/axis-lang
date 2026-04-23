@@ -8,6 +8,7 @@
 #include "axis_lexer.h"
 #include "axis_error.h"
 #include <ctype.h>
+#include <errno.h>
 
 /* ── Keyword table ─────────────────────────────────────────── */
 typedef struct { const char *kw; TokenType tt; } KWEntry;
@@ -189,6 +190,10 @@ static char escape_char(char c)
     case 'n':  return '\n';
     case 't':  return '\t';
     case 'r':  return '\r';
+    case 'a':  return '\a';
+    case 'b':  return '\b';
+    case 'f':  return '\f';
+    case 'v':  return '\v';
     case '\\': return '\\';
     case '"':  return '"';
     case '0':  return '\0';
@@ -268,6 +273,7 @@ static bool handle_indent(Lexer *lex, Token *out)
         if (lex->indent_top >= LEXER_MAX_INDENT_DEPTH) {
             lex_error(lex, lex->line, 1, "maximum indentation depth (%d) exceeded",
                       LEXER_MAX_INDENT_DEPTH);
+            return false;
         }
         lex->indent_stack[lex->indent_top] = indent;
         *out = mktok(TOK_INDENT, lex->line, 1, lex->src + lex->pos, 0);
@@ -304,6 +310,8 @@ static Token read_number(Lexer *lex)
     /* hex 0x */
     if (cur(lex) == '0' && (peek(lex,1) == 'x' || peek(lex,1) == 'X')) {
         adv(lex); adv(lex);
+        if (lex->pos >= lex->src_len || (!isxdigit((unsigned char)cur(lex)) && cur(lex) != '_'))
+            lex_error(lex, sl, sc, "empty hex literal");
         while (lex->pos < lex->src_len && (isxdigit((unsigned char)cur(lex)) || cur(lex) == '_'))
             adv(lex);
         int len = (int)(lex->src + lex->pos - start);
@@ -313,22 +321,36 @@ static Token read_number(Lexer *lex)
         for (const char *p = start; p < start + len && bi < 62; p++)
             if (*p != '_') buf[bi++] = *p;
         buf[bi] = '\0';
+        errno = 0;
         tok.int_val = (int64_t)strtoull(buf, NULL, 0);
+        if (errno == ERANGE)
+            lex_error(lex, sl, sc, "integer literal out of range");
         return tok;
     }
 
     /* binary 0b */
     if (cur(lex) == '0' && (peek(lex,1) == 'b' || peek(lex,1) == 'B')) {
         adv(lex); adv(lex);
+        if (lex->pos >= lex->src_len || (cur(lex) != '0' && cur(lex) != '1' && cur(lex) != '_'))
+            lex_error(lex, sl, sc, "empty binary literal");
         while (lex->pos < lex->src_len && (cur(lex) == '0' || cur(lex) == '1' || cur(lex) == '_'))
             adv(lex);
         int len = (int)(lex->src + lex->pos - start);
+        /* Validate digit count (max 64 binary digits) */
+        int digit_count = 0;
+        for (const char *dp = start + 2; dp < lex->src + lex->pos; dp++)
+            if (*dp != '_') digit_count++;
+        if (digit_count > 64)
+            lex_error(lex, sl, sc, "binary literal exceeds 64 bits");
         Token tok = mktok(TOK_INT_LIT, sl, sc, start, len);
         char buf[128]; int bi = 0;
         for (const char *p = start; p < start + len && bi < 126; p++)
             if (*p != '_') buf[bi++] = *p;
         buf[bi] = '\0';
+        errno = 0;
         tok.int_val = (int64_t)strtoull(buf + 2, NULL, 2);
+        if (errno == ERANGE)
+            lex_error(lex, sl, sc, "integer literal out of range");
         return tok;
     }
 
@@ -341,7 +363,10 @@ static Token read_number(Lexer *lex)
     for (const char *p = start; p < start + len && bi < 62; p++)
         if (*p != '_') buf[bi++] = *p;
     buf[bi] = '\0';
+    errno = 0;
     tok.int_val = (int64_t)strtoull(buf, NULL, 10);
+    if (errno == ERANGE)
+        lex_error(lex, sl, sc, "integer literal out of range");
     return tok;
 }
 
@@ -376,7 +401,7 @@ static Token read_string(Lexer *lex)
 
     char *buf = (char *)arena_alloc(lex->arena, slen + 1);
     size_t bi = 0;
-    while (cur(lex) != '"') {
+    while (cur(lex) != '"' && lex->pos < lex->src_len && cur(lex) != '\n') {
         if (cur(lex) == '\\') {
             adv(lex);
             char esc = escape_char(cur(lex));

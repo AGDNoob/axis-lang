@@ -126,14 +126,14 @@ static void buf_init(PECtx *ctx)
 {
     ctx->cap = 64 * 1024;
     ctx->len = 0;
-    ctx->buf = (uint8_t *)calloc(1, ctx->cap);
+    ctx->buf = (uint8_t *)xcalloc(1, ctx->cap);
 }
 
 static void buf_grow(PECtx *ctx, int need)
 {
     while (ctx->len + need > ctx->cap) {
         ctx->cap *= 2;
-        ctx->buf = (uint8_t *)realloc(ctx->buf, ctx->cap);
+        ctx->buf = (uint8_t *)xrealloc(ctx->buf, ctx->cap);
     }
 }
 
@@ -268,14 +268,14 @@ static void idata_init(IdataBuilder *ib)
 {
     ib->cap = 4096;
     ib->len = 0;
-    ib->data = (uint8_t *)calloc(1, ib->cap);
+    ib->data = (uint8_t *)xcalloc(1, ib->cap);
 }
 
 static void idata_grow(IdataBuilder *ib, int need)
 {
     while (ib->len + need > ib->cap) {
         ib->cap *= 2;
-        ib->data = (uint8_t *)realloc(ib->data, ib->cap);
+        ib->data = (uint8_t *)xrealloc(ib->data, ib->cap);
     }
 }
 
@@ -447,7 +447,7 @@ static RtFormats add_rt_formats(uint8_t **rdata, int *rdata_len, int *rdata_cap)
     int slen = (int)sizeof(s);                                  \
     while (*rdata_len + slen > *rdata_cap) {                    \
         *rdata_cap *= 2;                                        \
-        *rdata = (uint8_t *)realloc(*rdata, *rdata_cap);        \
+        *rdata = (uint8_t *)xrealloc(*rdata, *rdata_cap);        \
     }                                                           \
     rf.field = *rdata_len;                                      \
     memcpy(*rdata + *rdata_len, s, slen);                       \
@@ -465,7 +465,7 @@ static RtFormats add_rt_formats(uint8_t **rdata, int *rdata_len, int *rdata_cap)
     /* 256-byte input buffer */
     while (*rdata_len + 256 > *rdata_cap) {
         *rdata_cap *= 2;
-        *rdata = (uint8_t *)realloc(*rdata, *rdata_cap);
+        *rdata = (uint8_t *)xrealloc(*rdata, *rdata_cap);
     }
     rf.fmt_buf = *rdata_len;
     memset(*rdata + *rdata_len, 0, 256);
@@ -474,7 +474,7 @@ static RtFormats add_rt_formats(uint8_t **rdata, int *rdata_len, int *rdata_cap)
     /* 1-byte read_failed flag (0 = ok, 1 = failed) */
     while (*rdata_len + 1 > *rdata_cap) {
         *rdata_cap *= 2;
-        *rdata = (uint8_t *)realloc(*rdata, *rdata_cap);
+        *rdata = (uint8_t *)xrealloc(*rdata, *rdata_cap);
     }
     rf.read_failed_flag = *rdata_len;
     (*rdata)[*rdata_len] = 0;
@@ -498,14 +498,14 @@ static void sb_init(StubBuf *sb)
 {
     sb->cap = 1024;
     sb->len = 0;
-    sb->data = (uint8_t *)calloc(1, sb->cap);
+    sb->data = (uint8_t *)xcalloc(1, sb->cap);
 }
 
 static void sb_emit8(StubBuf *sb, uint8_t v)
 {
     if (sb->len >= sb->cap) {
         sb->cap *= 2;
-        sb->data = (uint8_t *)realloc(sb->data, sb->cap);
+        sb->data = (uint8_t *)xrealloc(sb->data, sb->cap);
     }
     sb->data[sb->len++] = v;
 }
@@ -522,11 +522,13 @@ static void sb_emit_call_iat(StubBuf *sb, uint32_t iat_rva,
     /* The call [rip+disp32] instruction is 6 bytes.
      * RIP at execution = text_rva + stub_text_off + sb->len + 6
      * disp32 = iat_rva - RIP */
-    int rip = (int)(text_rva + stub_text_off + sb->len + 6);
-    int disp = (int)iat_rva - rip;
+    int64_t rip = (int64_t)text_rva + stub_text_off + sb->len + 6;
+    int64_t disp = (int64_t)iat_rva - rip;
+    if (disp < INT32_MIN || disp > INT32_MAX)
+        axis_fatal("PE IAT displacement out of range (>2GB image?)");
     sb_emit8(sb, 0xFF);
     sb_emit8(sb, 0x15); /* ModRM: mod=00 reg=010 rm=101 → [rip+d32] */
-    sb_emit32(sb, (uint32_t)disp);
+    sb_emit32(sb, (uint32_t)(int32_t)disp);
 }
 
 /* Emit: lea reg, [rip + disp32]  to load a .rdata address */
@@ -536,12 +538,14 @@ static void sb_emit_lea_rip(StubBuf *sb, int reg,
 {
     /* lea r64, [rip+disp32]: REX.W + 8D modrm(00, reg, 101) disp32
      * Instruction is 7 bytes. RIP = text_rva + stub_text_off + sb->len + 7 */
-    int rip = (int)(text_rva + stub_text_off + sb->len + 7);
-    int disp = (int)(rdata_rva + rdata_off) - rip;
+    int64_t rip = (int64_t)text_rva + stub_text_off + sb->len + 7;
+    int64_t disp = (int64_t)(rdata_rva + rdata_off) - rip;
+    if (disp < INT32_MIN || disp > INT32_MAX)
+        axis_fatal("PE LEA displacement out of range (>2GB image?)");
     sb_emit8(sb, (uint8_t)(0x48 | ((reg >= 8) ? 0x04 : 0)));  /* REX.W + R */
     sb_emit8(sb, 0x8D);
     sb_emit8(sb, (uint8_t)(0x05 | ((reg & 7) << 3)));  /* modrm(00, reg, 5) */
-    sb_emit32(sb, (uint32_t)disp);
+    sb_emit32(sb, (uint32_t)(int32_t)disp);
 }
 
 /* Emit: mov rdx, rcx (pass value as 2nd arg, push format to 1st) */
@@ -765,7 +769,9 @@ static StubOffsets gen_stubs(StubBuf *sb,
     sb_emit8(sb, 0x41); sb_emit8(sb, 0x55); /* push r13  */
     sb_emit8(sb, 0x41); sb_emit8(sb, 0x56); /* push r14  */
     sb_emit8(sb, 0x41); sb_emit8(sb, 0x57); /* push r15  */
-    sb_emit_sub_rsp_40(sb);
+    /* 5 pushes (odd) → RSP already 16-aligned; need sub 0x30 (48)
+       so RSP stays 16-aligned before inner calls (strlen, malloc). */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x83); sb_emit8(sb, 0xEC); sb_emit8(sb, 0x30);
     /* mov r12, rcx (str1) */
     sb_emit8(sb, 0x49); sb_emit8(sb, 0x89); sb_emit8(sb, 0xCC);
     /* mov r13, rdx (str2) */
@@ -805,7 +811,7 @@ static StubOffsets gen_stubs(StubBuf *sb,
     /* mov rax, r15 (return buf) */
     sb_emit8(sb, 0x4C); sb_emit8(sb, 0x89); sb_emit8(sb, 0xF8);
     /* restore callee-saved and return */
-    sb_emit_add_rsp_40(sb);
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x83); sb_emit8(sb, 0xC4); sb_emit8(sb, 0x30);
     sb_emit8(sb, 0x41); sb_emit8(sb, 0x5F); /* pop r15  */
     sb_emit8(sb, 0x41); sb_emit8(sb, 0x5E); /* pop r14  */
     sb_emit8(sb, 0x41); sb_emit8(sb, 0x5D); /* pop r13  */
@@ -929,8 +935,9 @@ static int gen_entry_stub(StubBuf *sb, const X64Ctx *x64,
     /* entry_stub_off = absolute .text offset where entry begins */
     int entry_stub_off = x64->code.len + sb->len;
 
-    /* sub rsp, 40 (shadow space + alignment) */
-    sb_emit_sub_rsp_40(sb);                        /* 4 bytes */
+    /* sub rsp, 48 (shadow space + 16-byte alignment) */
+    sb_emit8(sb, 0x48); sb_emit8(sb, 0x83);
+    sb_emit8(sb, 0xEC); sb_emit8(sb, 0x30);         /* 4 bytes */
     /* call rel32 → top-level */
     sb_emit8(sb, 0xE8);                            /* 1 byte  */
     int patch_pos = sb->len;
@@ -975,7 +982,7 @@ int pe_write(PECtx *ctx, const X64Ctx *x64)
     /* We'll work with a mutable copy of the code buffer + relocs
      * so we can patch in-place. */
     X64Ctx x64_mut = *x64;                    /* shallow copy */
-    x64_mut.code.data = (uint8_t *)malloc(x64->code.len + 4096);
+    x64_mut.code.data = (uint8_t *)xmalloc(x64->code.len + 4096);
     memcpy(x64_mut.code.data, x64->code.data, x64->code.len);
     x64_mut.code.len = x64->code.len;
     x64_mut.code.cap = x64->code.len + 4096;
@@ -983,18 +990,18 @@ int pe_write(PECtx *ctx, const X64Ctx *x64)
     /* Copy rdata so we can append runtime format strings */
     int rdata_cap = x64->rdata_len + 1024;
     int rdata_len = x64->rdata_len;
-    uint8_t *rdata_buf = (uint8_t *)malloc(rdata_cap);
+    uint8_t *rdata_buf = (uint8_t *)xmalloc(rdata_cap);
     if (x64->rdata_len > 0)
         memcpy(rdata_buf, x64->rdata, x64->rdata_len);
 
     /* Copy relocs */
-    x64_mut.relocs = (Reloc *)malloc(x64->reloc_cap * sizeof(Reloc));
+    x64_mut.relocs = (Reloc *)xmalloc(x64->reloc_cap * sizeof(Reloc));
     memcpy(x64_mut.relocs, x64->relocs, x64->reloc_count * sizeof(Reloc));
     x64_mut.reloc_count = x64->reloc_count;
     x64_mut.reloc_cap = x64->reloc_cap;
 
     /* Copy strings */
-    x64_mut.strings = (X64String *)malloc(x64->string_count * sizeof(X64String));
+    x64_mut.strings = (X64String *)xmalloc(x64->string_count * sizeof(X64String));
     memcpy(x64_mut.strings, x64->strings, x64->string_count * sizeof(X64String));
 
     /* Add runtime format strings to rdata */

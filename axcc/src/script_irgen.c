@@ -266,8 +266,14 @@ static int type_size(const char *t)
     if (!t) return 8;
     if (strcmp(t,"i8")==0 || strcmp(t,"u8")==0 || strcmp(t,"bool")==0) return 1;
     if (strcmp(t,"i16")==0 || strcmp(t,"u16")==0) return 2;
-    if (strcmp(t,"i32")==0 || strcmp(t,"u32")==0) return 4;
-    return 8;
+    if (strcmp(t,"i32")==0 || strcmp(t,"u32")==0 || strcmp(t,"f32")==0) return 4;
+    if (strcmp(t,"i64")==0 || strcmp(t,"u64")==0 || strcmp(t,"f64")==0) return 8;
+    /* Pointer-sized types */
+    if (strcmp(t,"str")==0 || strcmp(t,"ptr")==0) return 8;
+    /* Arrays / structs / user-defined → pointer-sized by default */
+    if (t[0] == '[' || t[0] == '*') return 8;
+    axis_fatal("type_size: unknown type '%s'", t);
+    return 8; /* unreachable, silences compiler warning */
 }
 
 static bool is_signed(const char *t)
@@ -500,7 +506,8 @@ static IROper gen_binop(SIRGen *g, ASTExpr *e)
         if ((irop == IR_CMP_LT || irop == IR_CMP_LE ||
              irop == IR_CMP_GT || irop == IR_CMP_GE ||
              irop == IR_DIV || irop == IR_MOD || irop == IR_SHR)
-            && !is_signed(expr_type(e->binary.left)))
+            && (!is_signed(expr_type(e->binary.left))
+                || !is_signed(expr_type(e->binary.right))))
             unsig = 1;
         EMIT_X(irop, oper_temp(t, res_sz), lv, rv, unsig, e->loc);
     }
@@ -693,15 +700,26 @@ static IROper gen_array_lit(SIRGen *g, ASTExpr *e)
         const char *et = expr_type(e->array_lit.elements[0]);
         elem_sz = type_size(et);
     }
-    AXIS_UNUSED(elem_sz);
 
-    for (int i = 0; i < e->array_lit.count; i++) {
+    int count = e->array_lit.count;
+    int total = count * elem_sz;
+    int aligned = total + (total % 8 ? (8 - total % 8) : 0);
+
+    /* Reserve stack space for the array. */
+    int base_off = -(g->cur->stack_size + total);
+    g->cur->stack_size += aligned;
+
+    /* Store each element into the stack-allocated array. */
+    for (int i = 0; i < count; i++) {
         IROper v = gen_expr(g, e->array_lit.elements[i]);
-        AXIS_UNUSED(v);
+        int elem_off = base_off + (i * elem_sz);
+        emit(g, IR_STORE_VAR, oper_stack(elem_off, elem_sz),
+             v, oper_none(), 0, e->loc);
     }
 
+    /* Return a pointer (LEA) to the array base. */
     int t = new_temp(g, 8);
-    EMIT(IR_LOAD_IMM, oper_temp(t, 8), oper_imm(0, 8), oper_none());
+    EMIT(IR_LEA, oper_temp(t, 8), oper_stack(base_off, total), oper_none());
     return oper_temp(t, 8);
 }
 
@@ -1077,6 +1095,8 @@ static void gen_while(SIRGen *g, ASTStmt *st)
 
     int saved_fc = g->flag_label_count;
     if (st->while_loop.flag) {
+        if (g->flag_label_count >= MAX_SIR_FLAGS)
+            ir_error(g, st->loc, "too many nested flagged loops");
         g->flag_labels[g->flag_label_count].name = st->while_loop.flag;
         g->flag_labels[g->flag_label_count].brk  = end_lbl;
         g->flag_labels[g->flag_label_count].cont = top_lbl;
@@ -1115,6 +1135,8 @@ static void gen_repeat(SIRGen *g, ASTStmt *st)
 
     int saved_fc = g->flag_label_count;
     if (st->repeat_loop.flag) {
+        if (g->flag_label_count >= MAX_SIR_FLAGS)
+            ir_error(g, st->loc, "too many nested flagged loops");
         g->flag_labels[g->flag_label_count].name = st->repeat_loop.flag;
         g->flag_labels[g->flag_label_count].brk  = end_lbl;
         g->flag_labels[g->flag_label_count].cont = top_lbl;
@@ -1152,6 +1174,8 @@ static void gen_for(SIRGen *g, ASTStmt *st)
 
     int saved_fc = g->flag_label_count;
     if (st->for_loop.flag) {
+        if (g->flag_label_count >= MAX_SIR_FLAGS)
+            ir_error(g, st->loc, "too many nested flagged loops");
         g->flag_labels[g->flag_label_count].name = st->for_loop.flag;
         g->flag_labels[g->flag_label_count].brk  = end_lbl;
         g->flag_labels[g->flag_label_count].cont = step_lbl;

@@ -11,6 +11,13 @@
  * Colors:  Error → red,  Warning → yellow,  Hint → green
  */
 
+/* Request POSIX.1-2008 so fileno() is declared via <stdio.h>. */
+#ifndef _WIN32
+#  ifndef _POSIX_C_SOURCE
+#    define _POSIX_C_SOURCE 200809L
+#  endif
+#endif
+
 #include "axis_error.h"
 #include <stdio.h>
 #include <string.h>
@@ -56,6 +63,8 @@ void diag_init(void)
         colors_enabled = 1;
 #endif
 }
+
+int diag_colors_enabled(void) { return colors_enabled; }
 
 /* ── Helpers ────────────────────────────────────────────── */
 

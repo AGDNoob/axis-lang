@@ -24,7 +24,7 @@ typedef struct Symbol Symbol;
 struct Symbol {
     const char   *name;
     const char   *type_name;      /* "i32", "bool", "array", field/enum name */
-    bool          mutable;
+    bool          is_mutable;
     int           stack_offset;
     bool          is_param;
     bool          is_update;      /* parameter "update" modifier */

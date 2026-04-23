@@ -20,6 +20,9 @@ typedef enum {
 /* Call once at program start to enable ANSI colors on Windows. */
 void diag_init(void);
 
+/* Return non-zero when ANSI color output is enabled (stderr is a TTY). */
+int  diag_colors_enabled(void);
+
 /* Report a diagnostic with source context (printf-style). */
 void diag_report(DiagSeverity sev, const char *filename,
                  const char *source, int line, int col,

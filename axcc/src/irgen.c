@@ -298,6 +298,15 @@ static ASTEnumDef *irgen_find_enum(IRGen *g, const char *name)
     return NULL;
 }
 
+/* type_size() that resolves enum names to their underlying type */
+static int irgen_type_size(IRGen *g, const char *t)
+{
+    if (!t) return 8;
+    ASTEnumDef *ed = irgen_find_enum(g, t);
+    if (ed) return type_size(ed->underlying_type);
+    return type_size(t);
+}
+
 static int irgen_field_member_offset(IRGen *g, const char *field_type,
                                      const char *member)
 {
@@ -359,7 +368,7 @@ static IROper gen_bool_lit(IRGen *g, ASTExpr *e)
 
 static IROper gen_ident(IRGen *g, ASTExpr *e)
 {
-    int sz = type_size(expr_type(e));
+    int sz = irgen_type_size(g, expr_type(e));
     int t  = new_temp(g, sz);
     int off = irgen_name_lookup(g, e->ident.name, e->loc);
     /* extra=1 flags unsigned type → x64 uses zero-extension */
@@ -412,7 +421,7 @@ static IROper gen_binop(IRGen *g, ASTExpr *e)
     /* ── Standard binary ops ──────────────────────────── */
     IROper lv = gen_expr(g, e->binary.left);
     IROper rv = gen_expr(g, e->binary.right);
-    int sz    = type_size(expr_type(e));
+    int sz    = irgen_type_size(g, expr_type(e));
 
     IROpcode irop;
     switch (op) {
@@ -457,7 +466,7 @@ static IROper gen_binop(IRGen *g, ASTExpr *e)
 static IROper gen_unary(IRGen *g, ASTExpr *e)
 {
     IROper ov = gen_expr(g, e->unary.operand);
-    int    sz = type_size(expr_type(e));
+    int    sz = irgen_type_size(g, expr_type(e));
 
     if (e->unary.op == TOK_MINUS) {
         int t = new_temp(g, sz);
@@ -473,7 +482,7 @@ static IROper gen_unary(IRGen *g, ASTExpr *e)
 static IROper gen_call(IRGen *g, ASTExpr *e)
 {
     const char *name = e->call.name;
-    int sz = type_size(expr_type(e));
+    int sz = irgen_type_size(g, expr_type(e));
 
     /* Evaluate all arguments into temps first, so that nested calls
      * don't clobber the outer call's argument registers. */
@@ -603,7 +612,7 @@ static IROper gen_struct_base(IRGen *g, ASTExpr *obj, int sz)
 
 static IROper gen_index_access(IRGen *g, ASTExpr *e)
 {
-    int    sz   = type_size(expr_type(e));
+    int    sz   = irgen_type_size(g, expr_type(e));
     IROper base = gen_array_base(g, e->index.array, sz);
     IROper idx  = gen_expr(g, e->index.index);
     int    t    = new_temp(g, sz);
@@ -615,7 +624,7 @@ static IROper gen_index_access(IRGen *g, ASTExpr *e)
 
 static IROper gen_field_access(IRGen *g, ASTExpr *e)
 {
-    int    sz   = type_size(expr_type(e));
+    int    sz   = irgen_type_size(g, expr_type(e));
     IROper base = gen_struct_base(g, e->field_access.object, sz);
     int    t    = new_temp(g, sz);
 
@@ -750,7 +759,7 @@ static IROper gen_expr(IRGen *g, ASTExpr *e)
 static void gen_vardecl(IRGen *g, ASTStmt *st)
 {
     int off  = st->var_decl.stack_offset;
-    int sz   = type_size(st->var_decl.type_node
+    int sz   = irgen_type_size(g, st->var_decl.type_node
                          ? (st->var_decl.type_node->kind == TYPE_NODE_SIMPLE
                             ? st->var_decl.type_node->simple.name : "i32")
                          : "i32");
@@ -828,10 +837,58 @@ static void gen_vardecl(IRGen *g, ASTStmt *st)
                     ? (fd->members[i].type_node->kind == TYPE_NODE_SIMPLE
                        ? fd->members[i].type_node->simple.name : "i32")
                     : "i32";
+                /* Check if this member is itself a field (nested struct) */
+                ASTFieldDef *mfd = irgen_find_field(g, mt);
+                if (mfd && ctor->call.args[i]->kind == EXPR_CALL) {
+                    /* Nested field constructor — expand inline */
+                    ASTExpr *nested = ctor->call.args[i];
+                    for (int j = 0; j < mfd->member_count && j < nested->call.arg_count; j++) {
+                        const char *nmt = mfd->members[j].type_node
+                            ? (mfd->members[j].type_node->kind == TYPE_NODE_SIMPLE
+                               ? mfd->members[j].type_node->simple.name : "i32")
+                            : "i32";
+                        int nmsz = type_size(nmt);
+                        IROper v = gen_expr(g, nested->call.args[j]);
+                        emit(g, IR_STORE_VAR, oper_stack(off + mem_off, nmsz),
+                             v, oper_none(), 0, st->loc);
+                        mem_off += nmsz;
+                    }
+                } else {
+                    int msz = type_size(mt);
+                    IROper v = gen_expr(g, ctor->call.args[i]);
+                    emit(g, IR_STORE_VAR, oper_stack(off + mem_off, msz),
+                         v, oper_none(), 0, st->loc);
+                    mem_off += msz;
+                }
+            }
+            /* Store default values for remaining members not in constructor */
+            for (int i = ctor->call.arg_count; i < fd->member_count; i++) {
+                const char *mt = fd->members[i].type_node
+                    ? (fd->members[i].type_node->kind == TYPE_NODE_SIMPLE
+                       ? fd->members[i].type_node->simple.name : "i32")
+                    : "i32";
                 int msz = type_size(mt);
-                IROper v = gen_expr(g, ctor->call.args[i]);
-                emit(g, IR_STORE_VAR, oper_stack(off + mem_off, msz),
-                     v, oper_none(), 0, st->loc);
+                if (fd->members[i].default_value) {
+                    IROper v = gen_expr(g, fd->members[i].default_value);
+                    emit(g, IR_STORE_VAR, oper_stack(off + mem_off, msz),
+                         v, oper_none(), 0, st->loc);
+                }
+                mem_off += msz;
+            }
+        } else {
+            /* No constructor call — store defaults for all members */
+            int mem_off = 0;
+            for (int i = 0; i < fd->member_count; i++) {
+                const char *mt = fd->members[i].type_node
+                    ? (fd->members[i].type_node->kind == TYPE_NODE_SIMPLE
+                       ? fd->members[i].type_node->simple.name : "i32")
+                    : "i32";
+                int msz = type_size(mt);
+                if (fd->members[i].default_value) {
+                    IROper v = gen_expr(g, fd->members[i].default_value);
+                    emit(g, IR_STORE_VAR, oper_stack(off + mem_off, msz),
+                         v, oper_none(), 0, st->loc);
+                }
                 mem_off += msz;
             }
         }
@@ -1421,7 +1478,7 @@ static void gen_function(IRGen *g, ASTFunction *fn, IRFunc *out)
                    ? p->type_node->simple.name : "i32")
                 : "i32";
             out->param_info[i].offset    = p->stack_offset;
-            out->param_info[i].size      = type_size(pt);
+            out->param_info[i].size      = irgen_type_size(g, pt);
             out->param_info[i].is_update = p->is_update;
 
             /* Detect array parameters — pass by pointer + memcpy */

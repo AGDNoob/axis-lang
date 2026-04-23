@@ -45,7 +45,7 @@ static void cb_init(CodeBuf *cb)
 {
     cb->cap  = 4096;
     cb->len  = 0;
-    cb->data = (uint8_t *)malloc(cb->cap);
+    cb->data = (uint8_t *)xmalloc(cb->cap);
     if (!cb->data) x64_error("out of memory for code buffer");
 }
 
@@ -53,7 +53,7 @@ static void cb_grow(CodeBuf *cb, int need)
 {
     while (cb->len + need > cb->cap) {
         cb->cap *= 2;
-        cb->data = (uint8_t *)realloc(cb->data, cb->cap);
+        cb->data = (uint8_t *)xrealloc(cb->data, cb->cap);
         if (!cb->data) x64_error("out of memory growing code buffer");
     }
 }
@@ -102,7 +102,7 @@ static void add_reloc(X64Ctx *ctx, RelocKind kind, int offset,
 {
     if (ctx->reloc_count >= ctx->reloc_cap) {
         ctx->reloc_cap = ctx->reloc_cap ? ctx->reloc_cap * 2 : 64;
-        ctx->relocs = (Reloc *)realloc(ctx->relocs,
+        ctx->relocs = (Reloc *)xrealloc(ctx->relocs,
                                        ctx->reloc_cap * sizeof(Reloc));
     }
     Reloc *r       = &ctx->relocs[ctx->reloc_count++];
@@ -120,7 +120,7 @@ static void ensure_label(X64Ctx *ctx, int id)
     if (id >= ctx->label_cap) {
         int old = ctx->label_cap;
         ctx->label_cap = (id + 64) & ~63;
-        ctx->label_offsets = (int *)realloc(ctx->label_offsets,
+        ctx->label_offsets = (int *)xrealloc(ctx->label_offsets,
                                             ctx->label_cap * sizeof(int));
         for (int i = old; i < ctx->label_cap; i++)
             ctx->label_offsets[i] = -1;
@@ -592,10 +592,26 @@ static void emit_alu_rr(CodeBuf *cb, uint8_t opcode, int dst, int src)
     cb_emit8(cb, modrm(3, src, dst));
 }
 
-/* ALU immediate: op r/m32, imm32  (83 /ext imm8 or 81 /ext imm32) */
-static void emit_alu_ri32(CodeBuf *cb, int reg, uint8_t ext, int32_t imm)
+/* Two-operand ALU: op rax, rcx (64-bit) */
+static void emit_alu_rr64(CodeBuf *cb, uint8_t opcode, int dst, int src)
 {
-    emit_rex32(cb, 0, 0, reg);
+    cb_emit8(cb, rex(1, src, 0, dst));
+    cb_emit8(cb, opcode);
+    cb_emit8(cb, modrm(3, src, dst));
+}
+
+/* Width-aware ALU reg,reg: 32-bit or 64-bit based on wide flag */
+static void emit_alu_rr_w(CodeBuf *cb, uint8_t opcode, int dst, int src, int wide)
+{
+    if (wide) emit_alu_rr64(cb, opcode, dst, src);
+    else      emit_alu_rr(cb, opcode, dst, src);
+}
+
+/* Width-aware ALU reg, imm (83 /ext imm8 or 81 /ext imm32) */
+static void emit_alu_ri_w(CodeBuf *cb, int reg, uint8_t ext, int32_t imm, int wide)
+{
+    if (wide) cb_emit8(cb, rex(1, 0, 0, reg));
+    else      emit_rex32(cb, 0, 0, reg);
     if (imm >= -128 && imm <= 127) {
         cb_emit8(cb, 0x83);
         cb_emit8(cb, modrm(3, ext, reg));
@@ -607,20 +623,22 @@ static void emit_alu_ri32(CodeBuf *cb, int reg, uint8_t ext, int32_t imm)
     }
 }
 
-/* Two-operand ALU: op rax, rcx (64-bit) */
-static void emit_alu_rr64(CodeBuf *cb, uint8_t opcode, int dst, int src)
+/* Width-aware neg reg */
+static void emit_neg_reg_w(CodeBuf *cb, int reg, int wide)
 {
-    cb_emit8(cb, rex(1, src, 0, dst));
-    cb_emit8(cb, opcode);
-    cb_emit8(cb, modrm(3, src, dst));
+    if (wide) cb_emit8(cb, rex(1, 0, 0, reg));
+    else      emit_rex32(cb, 0, 0, reg);
+    cb_emit8(cb, 0xF7);
+    cb_emit8(cb, modrm(3, 3, reg));
 }
 
-/* neg eax (32-bit) */
-static void emit_neg_reg(CodeBuf *cb, int reg)
+/* Width-aware test reg, reg */
+static void emit_test_rr_w(CodeBuf *cb, int a, int b, int wide)
 {
-    emit_rex32(cb, 0, 0, reg);
-    cb_emit8(cb, 0xF7);
-    cb_emit8(cb, modrm(3, 3, reg));     /* /3 = neg */
+    if (wide) cb_emit8(cb, rex(1, b, 0, a));
+    else      emit_rex32(cb, b, 0, a);
+    cb_emit8(cb, 0x85);
+    cb_emit8(cb, modrm(3, b, a));
 }
 
 /* not eax (32-bit) */
@@ -630,12 +648,6 @@ static void emit_not_reg(CodeBuf *cb, int reg)
     emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0xF7);
     cb_emit8(cb, modrm(3, 2, reg));     /* /2 = not */
-}
-
-/* cmp rax, rcx (64-bit) */
-static void emit_cmp_rr(CodeBuf *cb, int a, int b)
-{
-    emit_alu_rr(cb, 0x39, a, b);   /* cmp r/m64, r64 */
 }
 
 /* test reg, reg (32-bit) */
@@ -743,16 +755,6 @@ static void __attribute__((unused)) emit_add_rsp_imm32(CodeBuf *cb, int32_t val)
     cb_emit32(cb, (uint32_t)val);
 }
 
-/* â”€â”€ sub reg, imm32  (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-static void emit_sub_reg_imm32(CodeBuf *cb, int reg, int32_t val)
-{
-    emit_rex32(cb, 0, 0, reg);
-    cb_emit8(cb, 0x81);
-    cb_emit8(cb, modrm(3, 5, reg));    /* /5 = sub */
-    cb_emit32(cb, (uint32_t)val);
-}
-
 /* â”€â”€ cmp reg, imm32  (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 static void emit_cmp_reg_imm32(CodeBuf *cb, int reg, int32_t val)
@@ -760,16 +762,6 @@ static void emit_cmp_reg_imm32(CodeBuf *cb, int reg, int32_t val)
     emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0x81);
     cb_emit8(cb, modrm(3, 7, reg));    /* /7 = cmp */
-    cb_emit32(cb, (uint32_t)val);
-}
-
-/* â”€â”€ add reg, imm32  (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-static void emit_add_reg_imm32(CodeBuf *cb, int reg, int32_t val)
-{
-    emit_rex32(cb, 0, 0, reg);
-    cb_emit8(cb, 0x81);
-    cb_emit8(cb, modrm(3, 0, reg));    /* /0 = add */
     cb_emit32(cb, (uint32_t)val);
 }
 
@@ -786,25 +778,25 @@ static void emit_lea_rbp(CodeBuf *cb, int dst, int off)
 
 /* â”€â”€ Shift: sal/shr reg, cl â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-static void emit_shift_cl(CodeBuf *cb, int reg, uint8_t ext)
+static void emit_shift_cl(CodeBuf *cb, int reg, uint8_t ext, int wide)
 {
     /* D3 /ext  â†’ shift r32 by CL */
-    emit_rex32(cb, 0, 0, reg);
+    if (wide) cb_emit8(cb, rex(1, 0, 0, reg));
+    else      emit_rex32(cb, 0, 0, reg);
     cb_emit8(cb, 0xD3);
     cb_emit8(cb, modrm(3, ext, reg));
 }
 
 /* â”€â”€ Shift: sal/shr reg, imm8 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-static void emit_shift_imm(CodeBuf *cb, int reg, uint8_t ext, uint8_t imm)
+static void emit_shift_imm(CodeBuf *cb, int reg, uint8_t ext, uint8_t imm, int wide)
 {
-    emit_rex32(cb, 0, 0, reg);
+    if (wide) cb_emit8(cb, rex(1, 0, 0, reg));
+    else      emit_rex32(cb, 0, 0, reg);
     if (imm == 1) {
-        /* D1 /ext â†’ shift r32 by 1 (shorter encoding) */
         cb_emit8(cb, 0xD1);
         cb_emit8(cb, modrm(3, ext, reg));
     } else {
-        /* C1 /ext imm8 â†’ shift r32 by imm8 */
         cb_emit8(cb, 0xC1);
         cb_emit8(cb, modrm(3, ext, reg));
         cb_emit8(cb, imm);
@@ -813,9 +805,10 @@ static void emit_shift_imm(CodeBuf *cb, int reg, uint8_t ext, uint8_t imm)
 
 /* â”€â”€ imul rax, rcx (signed 64-bit multiply) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-static void emit_imul_rr(CodeBuf *cb, int dst, int src)
+static void emit_imul_rr(CodeBuf *cb, int dst, int src, int wide)
 {
-    emit_rex32(cb, dst, 0, src);
+    if (wide) cb_emit8(cb, rex(1, dst, 0, src));
+    else      emit_rex32(cb, dst, 0, src);
     cb_emit8(cb, 0x0F);
     cb_emit8(cb, 0xAF);
     cb_emit8(cb, modrm(3, dst, src));
@@ -823,9 +816,10 @@ static void emit_imul_rr(CodeBuf *cb, int dst, int src)
 
 /* â”€â”€ 3-operand imul: imul $imm, src, dst â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-static void emit_imul_ri3(CodeBuf *cb, int dst, int src, int32_t imm)
+static void emit_imul_ri3(CodeBuf *cb, int dst, int src, int32_t imm, int wide)
 {
-    emit_rex32(cb, dst, 0, src);
+    if (wide) cb_emit8(cb, rex(1, dst, 0, src));
+    else      emit_rex32(cb, dst, 0, src);
     if (imm >= -128 && imm <= 127) {
         cb_emit8(cb, 0x6B);
         cb_emit8(cb, modrm(3, dst, src));
@@ -841,7 +835,7 @@ static void emit_imul_ri3(CodeBuf *cb, int dst, int src, int32_t imm)
 /* Computes dst = src * (1 + scale) where scale âˆˆ {2,4,8}.
  * Used for Ã—3, Ã—5, Ã—9 to replace IMUL with a single LEA. */
 
-static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
+static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale, int wide)
 {
     int ss;
     switch (scale) {
@@ -850,8 +844,9 @@ static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
     case 8: ss = 3; break;
     default: return;
     }
-    /* 8D /r with SIB: [base + index*scale] (32-bit) */
-    emit_rex32(cb, dst, src, src);
+    /* 8D /r with SIB: [base + index*scale] */
+    if (wide) cb_emit8(cb, rex(1, dst, src, src));
+    else      emit_rex32(cb, dst, src, src);
     cb_emit8(cb, 0x8D);
     /* ModRM: mod depends on base (RBP/R13 need mod=01+disp8) */
     int mod = ((src & 7) == 5) ? 1 : 0;
@@ -866,7 +861,7 @@ static void emit_lea_scale(CodeBuf *cb, int dst, int src, int scale)
  * Used for fused MUL+ADD patterns (e.g. Ã—7+add â†’ lea+sub). */
 
 static void emit_lea_base_idx_scale(CodeBuf *cb, int dst, int base,
-                                     int idx, int scale)
+                                     int idx, int scale, int wide)
 {
     int ss;
     switch (scale) {
@@ -878,7 +873,8 @@ static void emit_lea_base_idx_scale(CodeBuf *cb, int dst, int base,
     }
     /* SIB index field 0b100 means 'no index' â€” caller must avoid
      * passing RSP/R12 (reg & 7 == 4) as the index register.       */
-    emit_rex32(cb, dst, idx, base);
+    if (wide) cb_emit8(cb, rex(1, dst, idx, base));
+    else      emit_rex32(cb, dst, idx, base);
     cb_emit8(cb, 0x8D);
     int mod = ((base & 7) == 5) ? 1 : 0;  /* RBP/R13 base needs mod=01+disp8 */
     cb_emit8(cb, modrm(mod, dst, 4));       /* rm=4 â†’ SIB follows */
@@ -888,11 +884,12 @@ static void emit_lea_base_idx_scale(CodeBuf *cb, int dst, int base,
 
 /* â”€â”€ LEA dst, [base + index] (32-bit, no scale) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-static void emit_lea_rr(CodeBuf *cb, int dst, int base, int idx)
+static void emit_lea_rr(CodeBuf *cb, int dst, int base, int idx, int wide)
 {
     /* SIB can't encode RSP as index; swap if needed (commutative) */
     if ((idx & 7) == 4) { int t = base; base = idx; idx = t; }
-    emit_rex32(cb, dst, idx, base);
+    if (wide) cb_emit8(cb, rex(1, dst, idx, base));
+    else      emit_rex32(cb, dst, idx, base);
     cb_emit8(cb, 0x8D);
     int mod = ((base & 7) == 5) ? 1 : 0;  /* RBP/R13 needs mod=01+disp8 */
     cb_emit8(cb, modrm(mod, dst, 4));       /* rm=4 â†’ SIB follows */
@@ -902,9 +899,10 @@ static void emit_lea_rr(CodeBuf *cb, int dst, int base, int idx)
 
 /* â”€â”€ LEA dst, [base + disp] (32-bit) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-static void emit_lea_ri(CodeBuf *cb, int dst, int base, int32_t disp)
+static void emit_lea_ri(CodeBuf *cb, int dst, int base, int32_t disp, int wide)
 {
-    emit_rex32(cb, dst, 0, base);
+    if (wide) cb_emit8(cb, rex(1, dst, 0, base));
+    else      emit_rex32(cb, dst, 0, base);
     cb_emit8(cb, 0x8D);
     if (disp >= -128 && disp <= 127) {
         cb_emit8(cb, modrm(1, dst, base));
@@ -961,7 +959,7 @@ static void rdata_init(X64Ctx *ctx)
 {
     ctx->rdata_cap = 1024;
     ctx->rdata_len = 0;
-    ctx->rdata = (uint8_t *)malloc(ctx->rdata_cap);
+    ctx->rdata = (uint8_t *)xmalloc(ctx->rdata_cap);
 }
 
 static int rdata_add_string(X64Ctx *ctx, const char *s)
@@ -969,7 +967,7 @@ static int rdata_add_string(X64Ctx *ctx, const char *s)
     int slen = (int)strlen(s) + 1;  /* include NUL */
     while (ctx->rdata_len + slen > ctx->rdata_cap) {
         ctx->rdata_cap *= 2;
-        ctx->rdata = (uint8_t *)realloc(ctx->rdata, ctx->rdata_cap);
+        ctx->rdata = (uint8_t *)xrealloc(ctx->rdata, ctx->rdata_cap);
     }
     int off = ctx->rdata_len;
     memcpy(&ctx->rdata[ctx->rdata_len], s, slen);
@@ -1051,105 +1049,11 @@ static void emit_lea_string(X64Ctx *ctx, int reg, int str_idx)
 /* Forward declaration â€“ defined after gen_instr */
 static void emit_epilogue(X64Ctx *ctx);
 
-/*
- * gen_instr â€“ Lower a single IR instruction to x86-64 machine code.
- *
- * Returns the number of IR instructions consumed (normally 1, but
- * CMP+Branch fusion may consume 2).  idx is the current instruction
- * index within fn->instrs.
- */
-static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
+static int gen_arith(X64Ctx *ctx, const IRFunc *fn, int idx,
+                        const IRInstr *ins)
 {
-    const IRInstr *ins = &fn->instrs[idx];
     CodeBuf *cb = &ctx->code;
-
-    /* Flush spill-reload cache for instructions that clobber registers
-     * outside of load_oper/store_temp (calls, divs, memory ops, etc.).
-     * Simple ALU/MOV/CMP/branch instructions are safe â€” their register
-     * usage is fully tracked through load_oper and store_temp.
-     *
-     * We flush both BEFORE and AFTER non-safe instructions.  The pre-flush
-     * prevents stale entries from being consumed by load_oper calls inside
-     * the instruction.  The post-flush prevents entries populated by
-     * load_oper from surviving past internal clobbers (e.g. IMUL in
-     * INDEX_LOAD trashes RCX after load_oper cached it). */
-    int need_post_flush = 0;
     switch (ins->op) {
-    case IR_NOP: case IR_MOV: case IR_LOAD_IMM: case IR_LOAD_STR:
-    case IR_LOAD_VAR: case IR_STORE_VAR:
-    case IR_ADD: case IR_SUB: case IR_MUL: case IR_NEG:
-    case IR_BIT_AND: case IR_BIT_OR: case IR_BIT_XOR:
-    case IR_SHL: case IR_SHR:
-    case IR_CMP_EQ: case IR_CMP_NE: case IR_CMP_LT:
-    case IR_CMP_LE: case IR_CMP_GT: case IR_CMP_GE:
-    case IR_LOG_NOT: case IR_ARG:
-    case IR_JMP: case IR_JZ: case IR_JNZ:
-    case IR_SEXT: case IR_ZEXT: case IR_TRUNC:
-    case IR_CMOV:
-        break;
-    default:
-        src_flush();
-        need_post_flush = 1;
-        break;
-    }
-
-    switch (ins->op) {
-
-    /* â”€â”€ NOP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_NOP:
-        cb_emit8(cb, 0x90);
-        break;
-
-    /* â”€â”€ MOV: dest = src1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_MOV: {
-        int dr = dest_reg(ctx, &ins->dest, RAX);
-        load_oper(ctx, dr, &ins->src1);
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
-        else if (ins->dest.kind == OPER_STACK)
-            emit_store_rbp(cb, ins->dest.stack_off, dr);
-        break;
-    }
-
-    /* â”€â”€ LOAD_IMM: dest = imm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_LOAD_IMM: {
-        int dr = dest_reg(ctx, &ins->dest, RAX);
-        emit_load_imm(cb, dr, ins->src1.imm);
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
-        break;
-    }
-
-    /* â”€â”€ LOAD_STR: dest = &string[idx] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_LOAD_STR: {
-        int dr = dest_reg(ctx, &ins->dest, RAX);
-        emit_lea_string(ctx, dr, ins->src1.str_idx);
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
-        break;
-    }
-
-    /* â”€â”€ LOAD_VAR: dest = [rbp + stack_off] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_LOAD_VAR: {
-        int dr = dest_reg(ctx, &ins->dest, RAX);
-        if (ins->extra)   /* unsigned â†’ zero-extend */
-            emit_load_rbp_zx(cb, dr, ins->src1.stack_off, ins->src1.size);
-        else              /* signed   â†’ sign-extend */
-            emit_load_rbp_sx(cb, dr, ins->src1.stack_off, ins->src1.size);
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
-        break;
-    }
-
-    /* â”€â”€ STORE_VAR: [rbp + stack_off] = src1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_STORE_VAR: {
-        int s1r = oper_phys(ctx, &ins->src1);
-        int r = (s1r >= 0) ? s1r : RAX;
-        if (s1r < 0) load_oper(ctx, RAX, &ins->src1);
-        emit_store_rbp_sz(cb, ins->dest.stack_off, r, ins->dest.size);
-        break;
-    }
-
     /* â”€â”€ Arithmetic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_ADD: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
@@ -1161,24 +1065,24 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             int sr = oper_phys(ctx, reg_op);
             if (sr >= 0) {
                 /* LEA: non-destructive reg + imm */
-                emit_lea_ri(cb, dr, sr, (int32_t)imm_op->imm);
+                emit_lea_ri(cb, dr, sr, (int32_t)imm_op->imm, ins->dest.size == 8);
             } else {
                 load_oper(ctx, dr, reg_op);
-                emit_add_reg_imm32(cb, dr, (int32_t)imm_op->imm);
+                emit_alu_ri_w(cb, dr, 0, (int32_t)imm_op->imm, ins->dest.size == 8);
             }
         } else {
             int s1r = oper_phys(ctx, &ins->src1);
             int s2r = oper_phys(ctx, &ins->src2);
             if (s1r >= 0 && s2r >= 0) {
                 /* LEA: non-destructive reg + reg */
-                emit_lea_rr(cb, dr, s1r, s2r);
+                emit_lea_rr(cb, dr, s1r, s2r, ins->dest.size == 8);
             } else {
                 const IROper *a = &ins->src1, *b = &ins->src2;
                 if (s2r == dr) { const IROper *t = a; a = b; b = t; s2r = oper_phys(ctx, b); }
                 load_oper(ctx, dr, a);
                 int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
                 if (s2 != s2r) load_oper(ctx, s2, b);
-                emit_alu_rr(cb, 0x01, dr, s2);
+                emit_alu_rr_w(cb, 0x01, dr, s2, ins->dest.size == 8);
             }
         }
         if (ins->dest.kind == OPER_TEMP)
@@ -1194,18 +1098,18 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
                 /* Try LEA for non-destructive reg - imm */
                 int sr = oper_phys(ctx, &ins->src1);
                 if (sr >= 0) {
-                    emit_lea_ri(cb, dr, sr, -(int32_t)v);
+                    emit_lea_ri(cb, dr, sr, -(int32_t)v, ins->dest.size == 8);
                 } else {
                     load_oper(ctx, dr, &ins->src1);
-                    emit_sub_reg_imm32(cb, dr, (int32_t)v);
+                    emit_alu_ri_w(cb, dr, 5, (int32_t)v, ins->dest.size == 8);
                 }
             } else if (v >= INT32_MIN && v <= INT32_MAX) {
                 load_oper(ctx, dr, &ins->src1);
-                emit_sub_reg_imm32(cb, dr, (int32_t)v);
+                emit_alu_ri_w(cb, dr, 5, (int32_t)v, ins->dest.size == 8);
             } else {
                 load_oper(ctx, dr, &ins->src1);
                 load_oper(ctx, RCX, &ins->src2);
-                emit_alu_rr(cb, 0x29, dr, RCX);
+                emit_alu_rr_w(cb, 0x29, dr, RCX, ins->dest.size == 8);
             }
         } else {
             int s2r = oper_phys(ctx, &ins->src2);
@@ -1213,7 +1117,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             load_oper(ctx, dr, &ins->src1);
             int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
             if (s2 != s2r) load_oper(ctx, s2, &ins->src2);
-            emit_alu_rr(cb, 0x29, dr, s2);
+            emit_alu_rr_w(cb, 0x29, dr, s2, ins->dest.size == 8);
         }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
@@ -1233,7 +1137,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             int dr = dest_reg(ctx, &ins->dest, RAX);
             load_oper(ctx, dr, var_op);
             int scale = (cval == 3) ? 2 : (cval == 5) ? 4 : 8;
-            emit_lea_scale(cb, dr, dr, scale);
+            emit_lea_scale(cb, dr, dr, scale, ins->dest.size == 8);
             if (ins->dest.kind == OPER_TEMP)
                 store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
             break;
@@ -1270,16 +1174,16 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
                             int dr = dest_reg(ctx, &nx->dest, RAX);
                             if (dr != sr) {
                                 /* Normal: lea dr,[other+src*8]; sub dr,src */
-                                emit_lea_base_idx_scale(cb, dr, ar, sr, 8);
-                                emit_alu_rr(cb, 0x29, dr, sr);
+                                emit_lea_base_idx_scale(cb, dr, ar, sr, 8, ins->dest.size == 8);
+                                emit_alu_rr_w(cb, 0x29, dr, sr, ins->dest.size == 8);
                             } else {
                                 /* dr==sr collision: use scratch to avoid
                                  * clobbering src before the SUB */
                                 int tmp = RAX;
                                 if (tmp == sr || tmp == ar) tmp = RCX;
                                 if (tmp == sr || tmp == ar) tmp = RDX;
-                                emit_lea_base_idx_scale(cb, tmp, ar, sr, 8);
-                                emit_alu_rr(cb, 0x29, tmp, sr);
+                                emit_lea_base_idx_scale(cb, tmp, ar, sr, 8, ins->dest.size == 8);
+                                emit_alu_rr_w(cb, 0x29, tmp, sr, ins->dest.size == 8);
                                 emit_mov_reg_reg64(cb, dr, tmp);
                             }
                             if (nx->dest.kind == OPER_TEMP)
@@ -1300,12 +1204,12 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
                 /* src and dest share register; stash src first */
                 int scratch = (dr == RCX) ? RDX : RCX;
                 emit_mov_reg_reg64(cb, scratch, sr);
-                emit_shift_imm(cb, dr, 4, 3);        /* dr = src*8 */
-                emit_alu_rr(cb, 0x29, dr, scratch);   /* dr -= src  */
+                emit_shift_imm(cb, dr, 4, 3, ins->dest.size == 8);
+                emit_alu_rr_w(cb, 0x29, dr, scratch, ins->dest.size == 8);
             } else {
                 emit_mov_reg_reg64(cb, dr, sr);       /* dr = src   */
-                emit_shift_imm(cb, dr, 4, 3);         /* dr = src*8 */
-                emit_alu_rr(cb, 0x29, dr, sr);        /* dr -= src  */
+                emit_shift_imm(cb, dr, 4, 3, ins->dest.size == 8);
+                emit_alu_rr_w(cb, 0x29, dr, sr, ins->dest.size == 8);
             }
             if (ins->dest.kind == OPER_TEMP)
                 store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
@@ -1319,7 +1223,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
                 sr = RCX;
                 load_oper(ctx, sr, var_op);
             }
-            emit_imul_ri3(cb, dr, sr, (int32_t)cval);
+            emit_imul_ri3(cb, dr, sr, (int32_t)cval, ins->dest.size == 8);
             if (ins->dest.kind == OPER_TEMP)
                 store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
             break;
@@ -1332,60 +1236,113 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         load_oper(ctx, dr, a);
         int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
         if (s2 != s2r) load_oper(ctx, s2, b);
-        emit_imul_rr(cb, dr, s2);        /* imul dr, s2 */
+        emit_imul_rr(cb, dr, s2, ins->dest.size == 8);  /* imul dr, s2 */
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
-    case IR_DIV:
+    case IR_DIV: {
+        int div_wide = (ins->dest.size == 8);
         load_oper(ctx, RAX, &ins->src1);
         load_oper(ctx, RCX, &ins->src2);
-        emit_test_rr(cb, RCX, RCX);          /* test ecx, ecx */
+        if (div_wide) {
+            cb_emit8(cb, rex(1, RCX, 0, RCX));
+            cb_emit8(cb, 0x85);
+            cb_emit8(cb, modrm(3, RCX, RCX)); /* test rcx, rcx */
+        } else {
+            emit_test_rr(cb, RCX, RCX);       /* test ecx, ecx */
+        }
         cb_emit8(cb, 0x75); cb_emit8(cb, 5); /* jnz +5 (skip call) */
         emit_call_sym(ctx, RT_DIV_ZERO);
         if (ins->extra) {
             emit_alu_rr(cb, 0x31, RDX, RDX); /* xor edx, edx */
-            emit_rex32(cb, 0, 0, RCX);
-            cb_emit8(cb, 0xF7);
-            cb_emit8(cb, modrm(3, 6, RCX));   /* div ecx */
+            if (div_wide) {
+                cb_emit8(cb, rex(1, 0, 0, RCX));
+                cb_emit8(cb, 0xF7);
+                cb_emit8(cb, modrm(3, 6, RCX)); /* div rcx */
+            } else {
+                emit_rex32(cb, 0, 0, RCX);
+                cb_emit8(cb, 0xF7);
+                cb_emit8(cb, modrm(3, 6, RCX)); /* div ecx */
+            }
         } else {
-            emit_cdq(cb);
-            emit_idiv_reg(cb, RCX);
+            if (div_wide) {
+                cb_emit8(cb, rex(1, 0, 0, 0));
+                cb_emit8(cb, 0x99);              /* cqo */
+                cb_emit8(cb, rex(1, 0, 0, RCX));
+                cb_emit8(cb, 0xF7);
+                cb_emit8(cb, modrm(3, 7, RCX)); /* idiv rcx */
+            } else {
+                emit_cdq(cb);
+                emit_idiv_reg(cb, RCX);
+            }
         }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
+    }
 
-    case IR_MOD:
+    case IR_MOD: {
+        int mod_wide = (ins->dest.size == 8);
         load_oper(ctx, RAX, &ins->src1);
         load_oper(ctx, RCX, &ins->src2);
-        emit_test_rr(cb, RCX, RCX);          /* test ecx, ecx */
+        if (mod_wide) {
+            cb_emit8(cb, rex(1, RCX, 0, RCX));
+            cb_emit8(cb, 0x85);
+            cb_emit8(cb, modrm(3, RCX, RCX)); /* test rcx, rcx */
+        } else {
+            emit_test_rr(cb, RCX, RCX);       /* test ecx, ecx */
+        }
         cb_emit8(cb, 0x75); cb_emit8(cb, 5); /* jnz +5 (skip call) */
         emit_call_sym(ctx, RT_DIV_ZERO);
         if (ins->extra) {
             emit_alu_rr(cb, 0x31, RDX, RDX); /* xor edx, edx */
-            emit_rex32(cb, 0, 0, RCX);
-            cb_emit8(cb, 0xF7);
-            cb_emit8(cb, modrm(3, 6, RCX));   /* div ecx */
+            if (mod_wide) {
+                cb_emit8(cb, rex(1, 0, 0, RCX));
+                cb_emit8(cb, 0xF7);
+                cb_emit8(cb, modrm(3, 6, RCX)); /* div rcx */
+            } else {
+                emit_rex32(cb, 0, 0, RCX);
+                cb_emit8(cb, 0xF7);
+                cb_emit8(cb, modrm(3, 6, RCX)); /* div ecx */
+            }
         } else {
-            emit_cdq(cb);
-            emit_idiv_reg(cb, RCX);
+            if (mod_wide) {
+                cb_emit8(cb, rex(1, 0, 0, 0));
+                cb_emit8(cb, 0x99);              /* cqo */
+                cb_emit8(cb, rex(1, 0, 0, RCX));
+                cb_emit8(cb, 0xF7);
+                cb_emit8(cb, modrm(3, 7, RCX)); /* idiv rcx */
+            } else {
+                emit_cdq(cb);
+                emit_idiv_reg(cb, RCX);
+            }
         }
         emit_mov_reg_reg(cb, RAX, RDX);
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
+    }
 
     case IR_NEG: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
         load_oper(ctx, dr, &ins->src1);
-        emit_neg_reg(cb, dr);
+        emit_neg_reg_w(cb, dr, ins->dest.size == 8);
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
+    default: break;
+    }
+    return 1;
+}
+
+static int gen_bitwise(X64Ctx *ctx, const IRInstr *ins)
+{
+    CodeBuf *cb = &ctx->code;
+    switch (ins->op) {
     /* â”€â”€ Bitwise â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_BIT_AND: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
@@ -1395,7 +1352,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
         if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
             load_oper(ctx, dr, reg_op);
-            emit_alu_ri32(cb, dr, 4, (int32_t)imm_op->imm);  /* and dr, imm */
+            emit_alu_ri_w(cb, dr, 4, (int32_t)imm_op->imm, ins->dest.size == 8);
         } else {
             int s2r = oper_phys(ctx, &ins->src2);
             const IROper *a = &ins->src1, *b = &ins->src2;
@@ -1403,7 +1360,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             load_oper(ctx, dr, a);
             int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
             if (s2 != s2r) load_oper(ctx, s2, b);
-            emit_alu_rr(cb, 0x21, dr, s2);  /* and dr, s2 */
+            emit_alu_rr_w(cb, 0x21, dr, s2, ins->dest.size == 8);
         }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
@@ -1418,7 +1375,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
         if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
             load_oper(ctx, dr, reg_op);
-            emit_alu_ri32(cb, dr, 1, (int32_t)imm_op->imm);  /* or dr, imm */
+            emit_alu_ri_w(cb, dr, 1, (int32_t)imm_op->imm, ins->dest.size == 8);
         } else {
             int s2r = oper_phys(ctx, &ins->src2);
             const IROper *a = &ins->src1, *b = &ins->src2;
@@ -1426,7 +1383,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             load_oper(ctx, dr, a);
             int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
             if (s2 != s2r) load_oper(ctx, s2, b);
-            emit_alu_rr(cb, 0x09, dr, s2);  /* or dr, s2 */
+            emit_alu_rr_w(cb, 0x09, dr, s2, ins->dest.size == 8);
         }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
@@ -1441,7 +1398,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         else if (ins->src1.kind == OPER_IMM) { imm_op = &ins->src1; reg_op = &ins->src2; }
         if (imm_op && imm_op->imm >= INT32_MIN && imm_op->imm <= INT32_MAX) {
             load_oper(ctx, dr, reg_op);
-            emit_alu_ri32(cb, dr, 6, (int32_t)imm_op->imm);  /* xor dr, imm */
+            emit_alu_ri_w(cb, dr, 6, (int32_t)imm_op->imm, ins->dest.size == 8);
         } else {
             int s2r = oper_phys(ctx, &ins->src2);
             const IROper *a = &ins->src1, *b = &ins->src2;
@@ -1449,7 +1406,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             load_oper(ctx, dr, a);
             int s2 = (s2r >= 0 && s2r != dr) ? s2r : RCX;
             if (s2 != s2r) load_oper(ctx, s2, b);
-            emit_alu_rr(cb, 0x31, dr, s2);  /* xor dr, s2 */
+            emit_alu_rr_w(cb, 0x31, dr, s2, ins->dest.size == 8);
         }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
@@ -1458,14 +1415,15 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
 
     case IR_SHL: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
+        int wide_sh = (ins->dest.size == 8);
         load_oper(ctx, dr, &ins->src1);
         if (ins->src2.kind == OPER_IMM) {
-            emit_shift_imm(cb, dr, 4, (uint8_t)(ins->src2.imm & 31));
+            emit_shift_imm(cb, dr, 4, (uint8_t)(ins->src2.imm & (wide_sh ? 63 : 31)), wide_sh);
         } else {
             if (dr == RCX) dr = RAX;
             load_oper(ctx, dr, &ins->src1);
             load_oper(ctx, RCX, &ins->src2);
-            emit_shift_cl(cb, dr, 4);
+            emit_shift_cl(cb, dr, 4, wide_sh);
         }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
@@ -1475,20 +1433,31 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     case IR_SHR: {
         int dr = dest_reg(ctx, &ins->dest, RAX);
         uint8_t ext = ins->extra ? 5 : 7; /* shr or sar */
+        int wide_sh = (ins->dest.size == 8);
         load_oper(ctx, dr, &ins->src1);
         if (ins->src2.kind == OPER_IMM) {
-            emit_shift_imm(cb, dr, ext, (uint8_t)(ins->src2.imm & 31));
+            emit_shift_imm(cb, dr, ext, (uint8_t)(ins->src2.imm & (wide_sh ? 63 : 31)), wide_sh);
         } else {
             if (dr == RCX) dr = RAX;
             load_oper(ctx, dr, &ins->src1);
             load_oper(ctx, RCX, &ins->src2);
-            emit_shift_cl(cb, dr, ext);
+            emit_shift_cl(cb, dr, ext, wide_sh);
         }
         if (ins->dest.kind == OPER_TEMP)
             store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
         break;
     }
 
+    default: break;
+    }
+    return 1;
+}
+
+static int gen_cmp(X64Ctx *ctx, const IRFunc *fn, int idx,
+                      const IRInstr *ins)
+{
+    CodeBuf *cb = &ctx->code;
+    switch (ins->op) {
     /* â”€â”€ Comparison â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_CMP_EQ:
     case IR_CMP_NE:
@@ -1502,13 +1471,13 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         if (s1r < 0 || s1r != r1) load_oper(ctx, r1, &ins->src1);
         if (ins->src2.kind == OPER_IMM &&
             ins->src2.imm >= INT32_MIN && ins->src2.imm <= INT32_MAX) {
-            emit_cmp_reg_imm32(cb, r1, (int32_t)ins->src2.imm);
+            emit_alu_ri_w(cb, r1, 7, (int32_t)ins->src2.imm, ins->src1.size == 8);
         } else {
             int s2r = oper_phys(ctx, &ins->src2);
             int r2 = (s2r >= 0 && s2r != r1) ? s2r : RCX;
             if (r1 == r2) { r1 = RAX; r2 = RCX; load_oper(ctx, r1, &ins->src1); }
             if (s2r < 0 || s2r != r2) load_oper(ctx, r2, &ins->src2);
-            emit_cmp_rr(cb, r1, r2);
+            emit_alu_rr_w(cb, 0x39, r1, r2, ins->src1.size == 8);
         }
 
         /* Map opcode to condition code */
@@ -1573,7 +1542,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     /* â”€â”€ Logical NOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LOG_NOT:
         load_oper(ctx, RAX, &ins->src1);
-        emit_test_rr(cb, RAX, RAX);
+        emit_test_rr_w(cb, RAX, RAX, ins->src1.size == 8);
         emit_setcc(cb, 0x04);              /* sete al (ZF=1 when RAX==0) */
         emit_movzx_rax_al(cb);
         if (ins->dest.kind == OPER_TEMP)
@@ -1596,6 +1565,474 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
             store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
         break;
     }
+
+    default: break;
+    }
+    return 1;
+}
+
+static int gen_memory(X64Ctx *ctx, const IRInstr *ins)
+{
+    CodeBuf *cb = &ctx->code;
+    switch (ins->op) {
+    /* â”€â”€ INDEX_LOAD: dest = base[idx] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_INDEX_LOAD: {
+        /* dest = result, src1 = base (stack off), src2 = index
+         * extra = element size | 0x100 if unsigned */
+        bool is_unsig = (ins->extra & 0x100) != 0;
+        int esz = (ins->extra & 0xFF) ? (ins->extra & 0xFF) : 8;
+
+        /* Load index into RCX */
+        load_oper(ctx, RCX, &ins->src2);
+
+        /* Multiply index by element size â†’ RCX */
+        emit_load_imm(cb, RDX, esz);
+        emit_imul_rr(cb, RCX, RDX, 0);
+
+        /* LEA base address â†’ RAX (stack_off is already negative) */
+        if (ins->src1.kind == OPER_STACK)
+            emit_lea_rbp(cb, RAX, ctx->frame_size + ins->src1.stack_off);
+        else
+            load_oper(ctx, RAX, &ins->src1);
+
+        /* Add offset (array grows upward in our layout) */
+        emit_alu_rr64(cb, 0x01, RAX, RCX);  /* add rax, rcx */
+
+        /* Width-aware load from [rax] */
+        if (esz == 1) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, is_unsig ? 0xB6 : 0xBE);  /* movzx / movsx byte */
+            cb_emit8(cb, modrm(0, RAX, RAX));
+        } else if (esz == 2) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, is_unsig ? 0xB7 : 0xBF);  /* movzx / movsx word */
+            cb_emit8(cb, modrm(0, RAX, RAX));
+        } else if (esz <= 4) {
+            if (is_unsig) {
+                /* mov eax, [rax] â€” auto zero-extends to rax */
+                cb_emit8(cb, 0x8B);
+                cb_emit8(cb, modrm(0, RAX, RAX));
+            } else {
+                /* movsxd rax, dword [rax] */
+                cb_emit8(cb, rex(1, RAX, 0, RAX));
+                cb_emit8(cb, 0x63);
+                cb_emit8(cb, modrm(0, RAX, RAX));
+            }
+        } else {
+            /* mov rax, [rax] */
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x8B);
+            cb_emit8(cb, modrm(0, RAX, RAX));
+        }
+
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ INDEX_STORE: base[idx] = val â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_INDEX_STORE: {
+        /* dest = base (stack off), src1 = index, src2 = value
+         * extra = element size */
+        int esz = ins->extra ? ins->extra : 8;
+
+        load_oper(ctx, RCX, &ins->src1);   /* index */
+        emit_load_imm(cb, RDX, esz);
+        emit_imul_rr(cb, RCX, RDX, 0);      /* RCX = index * esz */
+
+        /* LEA base address â†’ RAX (stack_off is already negative) */
+        if (ins->dest.kind == OPER_STACK)
+            emit_lea_rbp(cb, RAX, ctx->frame_size + ins->dest.stack_off);
+        else
+            load_oper(ctx, RAX, &ins->dest);
+
+        emit_alu_rr64(cb, 0x01, RAX, RCX);   /* RAX = base + offset */
+
+        load_oper(ctx, RDX, &ins->src2);    /* value */
+
+        /* Width-aware store: [rax] = rdx */
+        if (esz == 1) {
+            /* mov byte [rax], dl */
+            cb_emit8(cb, 0x88);
+            cb_emit8(cb, modrm(0, RDX, RAX));
+        } else if (esz == 2) {
+            /* mov word [rax], dx */
+            cb_emit8(cb, 0x66);             /* operand-size prefix */
+            cb_emit8(cb, 0x89);
+            cb_emit8(cb, modrm(0, RDX, RAX));
+        } else if (esz <= 4) {
+            /* mov dword [rax], edx */
+            cb_emit8(cb, 0x89);
+            cb_emit8(cb, modrm(0, RDX, RAX));
+        } else {
+            /* mov qword [rax], rdx */
+            cb_emit8(cb, rex(1, RDX, 0, RAX));
+            cb_emit8(cb, 0x89);
+            cb_emit8(cb, modrm(0, RDX, RAX));
+        }
+
+        break;
+    }
+
+    /* â”€â”€ FIELD_LOAD: dest = *(base + offset), width-aware â”€â”€ */
+    case IR_FIELD_LOAD: {
+        /* src1 = base, src2 = oper_imm(field_offset),
+         * extra = member size | 0x100 if unsigned */
+        bool is_unsig = (ins->extra & 0x100) != 0;
+        int esz = (ins->extra & 0xFF) ? (ins->extra & 0xFF) : 8;
+
+        if (ins->src1.kind == OPER_STACK)
+            emit_lea_rbp(cb, RAX, ctx->frame_size + ins->src1.stack_off);
+        else
+            load_oper(ctx, RAX, &ins->src1);
+
+        int foff = (int)ins->src2.imm;
+        if (foff != 0) {
+            emit_load_imm(cb, RCX, foff);
+            emit_alu_rr64(cb, 0x01, RAX, RCX);  /* add rax, rcx */
+        }
+
+        /* Width-aware load from [rax] */
+        if (esz == 1) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, is_unsig ? 0xB6 : 0xBE);  /* movzx / movsx byte */
+            cb_emit8(cb, modrm(0, RAX, RAX));
+        } else if (esz == 2) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, is_unsig ? 0xB7 : 0xBF);  /* movzx / movsx word */
+            cb_emit8(cb, modrm(0, RAX, RAX));
+        } else if (esz <= 4) {
+            if (is_unsig) {
+                /* mov eax, [rax] â€” auto zero-extends to rax */
+                cb_emit8(cb, 0x8B);
+                cb_emit8(cb, modrm(0, RAX, RAX));
+            } else {
+                /* movsxd rax, dword [rax] */
+                cb_emit8(cb, rex(1, RAX, 0, RAX));
+                cb_emit8(cb, 0x63);
+                cb_emit8(cb, modrm(0, RAX, RAX));
+            }
+        } else {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x8B);
+            cb_emit8(cb, modrm(0, RAX, RAX));  /* mov rax, [rax] */
+        }
+
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ FIELD_STORE: *(base + offset) = val, width-aware â”€â”€ */
+    case IR_FIELD_STORE: {
+        /* dest = base, src1 = oper_imm(field_offset), src2 = value,
+         * extra = member size */
+        int esz = ins->extra ? ins->extra : 8;
+
+        if (ins->dest.kind == OPER_STACK)
+            emit_lea_rbp(cb, RAX, ctx->frame_size + ins->dest.stack_off);
+        else
+            load_oper(ctx, RAX, &ins->dest);
+
+        int foff = (int)ins->src1.imm;
+        if (foff != 0) {
+            emit_load_imm(cb, RDX, foff);
+            emit_alu_rr64(cb, 0x01, RAX, RDX);  /* add rax, rdx */
+        }
+
+        load_oper(ctx, RCX, &ins->src2);  /* value */
+
+        /* Width-aware store: [rax] = rcx */
+        if (esz == 1) {
+            cb_emit8(cb, 0x88);
+            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov byte [rax], cl */
+        } else if (esz == 2) {
+            cb_emit8(cb, 0x66);                 /* operand-size prefix */
+            cb_emit8(cb, 0x89);
+            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov word [rax], cx */
+        } else if (esz <= 4) {
+            cb_emit8(cb, 0x89);
+            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov dword [rax], ecx */
+        } else {
+            cb_emit8(cb, rex(1, RCX, 0, RAX));
+            cb_emit8(cb, 0x89);
+            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov qword [rax], rcx */
+        }
+        break;
+    }
+
+    /* â”€â”€ LEA: dest = address of stack slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_LEA:
+        if (ins->src1.kind == OPER_STACK)
+            emit_lea_rbp(cb, RAX, ctx->frame_size + ins->src1.stack_off);
+        else
+            load_oper(ctx, RAX, &ins->src1);
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+
+    /* â”€â”€ MEMCPY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_MEMCPY: {
+        /* dest = dst_addr (temp), src1 = src_addr (temp),
+         * src2.imm = byte count, extra: 0=runtime, 1=compile */
+        load_oper(ctx, RCX, &ins->dest);   /* arg0: dst */
+        load_oper(ctx, RDX, &ins->src1);   /* arg1: src */
+        emit_load_imm(cb, R8, ins->src2.imm); /* arg2: count */
+        if (ins->extra) {
+            /* copy.compile â€” inline byte-copy loop (no call overhead) */
+            /* test r8, r8 */
+            cb_emit8(cb, 0x4D); cb_emit8(cb, 0x85); cb_emit8(cb, 0xC0);
+            /* jz skip (patch offset below) */
+            cb_emit8(cb, 0x74);
+            int jz_patch = cb->len;
+            cb_emit8(cb, 0x00); /* placeholder */
+            /* loop: movzx eax, byte [rdx] */
+            int loop_top = cb->len;
+            cb_emit8(cb, 0x0F); cb_emit8(cb, 0xB6); cb_emit8(cb, 0x02);
+            /* mov [rcx], al */
+            cb_emit8(cb, 0x88); cb_emit8(cb, 0x01);
+            /* inc rcx */
+            cb_emit8(cb, 0x48); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC1);
+            /* inc rdx */
+            cb_emit8(cb, 0x48); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC2);
+            /* dec r8 */
+            cb_emit8(cb, 0x49); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC8);
+            /* jnz loop_top */
+            cb_emit8(cb, 0x75);
+            cb_emit8(cb, (uint8_t)(loop_top - (cb->len + 1)));
+            /* patch jz to skip past loop */
+            cb->data[jz_patch] = (uint8_t)(cb->len - (jz_patch + 1));
+        } else {
+            /* copy.runtime â€” REP MOVSB via runtime stub */
+            /* Shadow space is pre-allocated in the frame */
+            emit_call_sym(ctx, RT_MEMCPY);
+        }
+        break;
+    }
+
+    /* â”€â”€ STORE_IND: *dest = src1 (store through pointer) â”€â”€ */
+    case IR_STORE_IND: {
+        /* dest = address (temp), src1 = value (temp), extra = size */
+        load_oper(ctx, RAX, &ins->dest);   /* address */
+        load_oper(ctx, RCX, &ins->src1);   /* value */
+        int sz = ins->extra;
+        if (sz == 1) {
+            cb_emit8(cb, 0x88);                     /* mov [rax], cl */
+            cb_emit8(cb, modrm(0, RCX, RAX));
+        } else if (sz == 2) {
+            cb_emit8(cb, 0x66);                     /* operand prefix */
+            cb_emit8(cb, 0x89);                     /* mov [rax], cx */
+            cb_emit8(cb, modrm(0, RCX, RAX));
+        } else if (sz == 4) {
+            cb_emit8(cb, 0x89);                     /* mov [rax], ecx */
+            cb_emit8(cb, modrm(0, RCX, RAX));
+        } else {
+            cb_emit8(cb, rex(1, RCX, 0, RAX));      /* REX.W */
+            cb_emit8(cb, 0x89);                     /* mov [rax], rcx */
+            cb_emit8(cb, modrm(0, RCX, RAX));
+        }
+        break;
+    }
+
+    default: break;
+    }
+    return 1;
+}
+
+static int gen_convert(X64Ctx *ctx, const IRInstr *ins)
+{
+    CodeBuf *cb = &ctx->code;
+    switch (ins->op) {
+    /* â”€â”€ Sign extend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_SEXT: {
+        load_oper(ctx, RAX, &ins->src1);
+        int src_sz = ins->src1.size;
+        if (src_sz == 1) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xBE);                 /* movsx rax, al    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 2) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xBF);                 /* movsx rax, ax    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 4) {
+            cb_emit8(cb, rex(1, RAX, 0, RAX));
+            cb_emit8(cb, 0x63);                 /* movsxd rax, eax  */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        }
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ Zero extend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_ZEXT: {
+        load_oper(ctx, RAX, &ins->src1);
+        int src_sz = ins->src1.size;
+        if (src_sz == 1) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB6);                 /* movzx eax, al    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 2) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB7);                 /* movzx eax, ax    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (src_sz == 4) {
+            cb_emit8(cb, 0x89);                 /* mov eax, eax     */
+            cb_emit8(cb, modrm(3, RAX, RAX));   /* clears upper 32  */
+        }
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ Truncate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_TRUNC: {
+        load_oper(ctx, RAX, &ins->src1);
+        int dst_sz = ins->dest.size;
+        if (dst_sz == 1) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB6);                 /* movzx eax, al    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (dst_sz == 2) {
+            cb_emit8(cb, 0x0F);
+            cb_emit8(cb, 0xB7);                 /* movzx eax, ax    */
+            cb_emit8(cb, modrm(3, RAX, RAX));
+        } else if (dst_sz == 4) {
+            cb_emit8(cb, 0x89);                 /* mov eax, eax     */
+            cb_emit8(cb, modrm(3, RAX, RAX));   /* clears upper 32  */
+        }
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+        break;
+    }
+
+    default: break;
+    }
+    return 1;
+}
+
+
+/*
+ * gen_instr â€“ Lower a single IR instruction to x86-64 machine code.
+ *
+ * Returns the number of IR instructions consumed (normally 1, but
+ * CMP+Branch fusion may consume 2).  idx is the current instruction
+ * index within fn->instrs.
+ */
+static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
+{
+    const IRInstr *ins = &fn->instrs[idx];
+    CodeBuf *cb = &ctx->code;
+
+    /* Flush spill-reload cache for instructions that clobber registers
+     * outside of load_oper/store_temp (calls, divs, memory ops, etc.).
+     * Simple ALU/MOV/CMP/branch instructions are safe â€” their register
+     * usage is fully tracked through load_oper and store_temp.
+     *
+     * We flush both BEFORE and AFTER non-safe instructions.  The pre-flush
+     * prevents stale entries from being consumed by load_oper calls inside
+     * the instruction.  The post-flush prevents entries populated by
+     * load_oper from surviving past internal clobbers (e.g. IMUL in
+     * INDEX_LOAD trashes RCX after load_oper cached it). */
+    int need_post_flush = 0;
+    int result = 1;
+    switch (ins->op) {
+    case IR_NOP: case IR_MOV: case IR_LOAD_IMM: case IR_LOAD_STR:
+    case IR_LOAD_VAR: case IR_STORE_VAR:
+    case IR_ADD: case IR_SUB: case IR_MUL: case IR_NEG:
+    case IR_BIT_AND: case IR_BIT_OR: case IR_BIT_XOR:
+    case IR_SHL: case IR_SHR:
+    case IR_CMP_EQ: case IR_CMP_NE: case IR_CMP_LT:
+    case IR_CMP_LE: case IR_CMP_GT: case IR_CMP_GE:
+    case IR_LOG_NOT: case IR_ARG:
+    case IR_JMP: case IR_JZ: case IR_JNZ:
+    case IR_SEXT: case IR_ZEXT: case IR_TRUNC:
+    case IR_CMOV:
+        break;
+    default:
+        src_flush();
+        need_post_flush = 1;
+        break;
+    }
+
+    switch (ins->op) {
+
+    /* â”€â”€ NOP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_NOP:
+        cb_emit8(cb, 0x90);
+        break;
+
+    /* â”€â”€ MOV: dest = src1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_MOV: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        load_oper(ctx, dr, &ins->src1);
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
+        else if (ins->dest.kind == OPER_STACK)
+            emit_store_rbp(cb, ctx->frame_size + ins->dest.stack_off, dr);
+        break;
+    }
+
+    /* â”€â”€ LOAD_IMM: dest = imm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_LOAD_IMM: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        emit_load_imm(cb, dr, ins->src1.imm);
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ LOAD_STR: dest = &string[idx] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_LOAD_STR: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        emit_lea_string(ctx, dr, ins->src1.str_idx);
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ LOAD_VAR: dest = [rbp + stack_off] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_LOAD_VAR: {
+        int dr = dest_reg(ctx, &ins->dest, RAX);
+        if (ins->extra)   /* unsigned â†’ zero-extend */
+            emit_load_rbp_zx(cb, dr, ctx->frame_size + ins->src1.stack_off, ins->src1.size);
+        else              /* signed   â†’ sign-extend */
+            emit_load_rbp_sx(cb, dr, ctx->frame_size + ins->src1.stack_off, ins->src1.size);
+        if (ins->dest.kind == OPER_TEMP)
+            store_temp(ctx, ins->dest.temp_id, dr, ins->dest.size);
+        break;
+    }
+
+    /* â”€â”€ STORE_VAR: [rbp + stack_off] = src1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    case IR_STORE_VAR: {
+        int s1r = oper_phys(ctx, &ins->src1);
+        int r = (s1r >= 0) ? s1r : RAX;
+        if (s1r < 0) load_oper(ctx, RAX, &ins->src1);
+        emit_store_rbp_sz(cb, ctx->frame_size + ins->dest.stack_off, r, ins->dest.size);
+        break;
+    }
+
+    case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
+    case IR_NEG:
+        result = gen_arith(ctx, fn, idx, ins);
+        break;
+
+    case IR_BIT_AND: case IR_BIT_OR: case IR_BIT_XOR: case IR_SHL:
+    case IR_SHR:
+        gen_bitwise(ctx, ins);
+        break;
+
+    case IR_CMP_EQ: case IR_CMP_NE: case IR_CMP_LT: case IR_CMP_LE:
+    case IR_CMP_GT: case IR_CMP_GE: case IR_LOG_NOT: case IR_CMOV:
+        result = gen_cmp(ctx, fn, idx, ins);
+        break;
 
     /* â”€â”€ Labels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
     case IR_LABEL:
@@ -1625,7 +2062,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     case IR_JZ:
     case IR_JNZ: {
         load_oper(ctx, RAX, &ins->src1);
-        emit_test_rr(cb, RAX, RAX);
+        emit_test_rr_w(cb, RAX, RAX, ins->src1.size == 8);
         uint8_t cc = (ins->op == IR_JZ) ? 0x04 : 0x05; /* je / jne */
         int lbl = ins->dest.label_id;
         int target = get_label(ctx, lbl);
@@ -1750,334 +2187,15 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
         break;
     }
 
-    /* â”€â”€ INDEX_LOAD: dest = base[idx] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_INDEX_LOAD: {
-        /* dest = result, src1 = base (stack off), src2 = index
-         * extra = element size | 0x100 if unsigned */
-        bool is_unsig = (ins->extra & 0x100) != 0;
-        int esz = (ins->extra & 0xFF) ? (ins->extra & 0xFF) : 8;
-
-        /* Load index into RCX */
-        load_oper(ctx, RCX, &ins->src2);
-
-        /* Multiply index by element size â†’ RCX */
-        emit_load_imm(cb, RDX, esz);
-        emit_imul_rr(cb, RCX, RDX);
-
-        /* LEA base address â†’ RAX (stack_off is already negative) */
-        if (ins->src1.kind == OPER_STACK)
-            emit_lea_rbp(cb, RAX, ins->src1.stack_off);
-        else
-            load_oper(ctx, RAX, &ins->src1);
-
-        /* Add offset (array grows upward in our layout) */
-        emit_alu_rr64(cb, 0x01, RAX, RCX);  /* add rax, rcx */
-
-        /* Width-aware load from [rax] */
-        if (esz == 1) {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, is_unsig ? 0xB6 : 0xBE);  /* movzx / movsx byte */
-            cb_emit8(cb, modrm(0, RAX, RAX));
-        } else if (esz == 2) {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, is_unsig ? 0xB7 : 0xBF);  /* movzx / movsx word */
-            cb_emit8(cb, modrm(0, RAX, RAX));
-        } else if (esz <= 4) {
-            if (is_unsig) {
-                /* mov eax, [rax] â€” auto zero-extends to rax */
-                cb_emit8(cb, 0x8B);
-                cb_emit8(cb, modrm(0, RAX, RAX));
-            } else {
-                /* movsxd rax, dword [rax] */
-                cb_emit8(cb, rex(1, RAX, 0, RAX));
-                cb_emit8(cb, 0x63);
-                cb_emit8(cb, modrm(0, RAX, RAX));
-            }
-        } else {
-            /* mov rax, [rax] */
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x8B);
-            cb_emit8(cb, modrm(0, RAX, RAX));
-        }
-
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
-        break;
-    }
-
-    /* â”€â”€ INDEX_STORE: base[idx] = val â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_INDEX_STORE: {
-        /* dest = base (stack off), src1 = index, src2 = value
-         * extra = element size */
-        int esz = ins->extra ? ins->extra : 8;
-
-        load_oper(ctx, RCX, &ins->src1);   /* index */
-        emit_load_imm(cb, RDX, esz);
-        emit_imul_rr(cb, RCX, RDX);         /* RCX = index * esz */
-
-        /* LEA base address â†’ RAX (stack_off is already negative) */
-        if (ins->dest.kind == OPER_STACK)
-            emit_lea_rbp(cb, RAX, ins->dest.stack_off);
-        else
-            load_oper(ctx, RAX, &ins->dest);
-
-        emit_alu_rr64(cb, 0x01, RAX, RCX);   /* RAX = base + offset */
-
-        load_oper(ctx, RDX, &ins->src2);    /* value */
-
-        /* Width-aware store: [rax] = rdx */
-        if (esz == 1) {
-            /* mov byte [rax], dl */
-            cb_emit8(cb, 0x88);
-            cb_emit8(cb, modrm(0, RDX, RAX));
-        } else if (esz == 2) {
-            /* mov word [rax], dx */
-            cb_emit8(cb, 0x66);             /* operand-size prefix */
-            cb_emit8(cb, 0x89);
-            cb_emit8(cb, modrm(0, RDX, RAX));
-        } else if (esz <= 4) {
-            /* mov dword [rax], edx */
-            cb_emit8(cb, 0x89);
-            cb_emit8(cb, modrm(0, RDX, RAX));
-        } else {
-            /* mov qword [rax], rdx */
-            cb_emit8(cb, rex(1, RDX, 0, RAX));
-            cb_emit8(cb, 0x89);
-            cb_emit8(cb, modrm(0, RDX, RAX));
-        }
-
-        break;
-    }
-
-    /* â”€â”€ FIELD_LOAD: dest = *(base + offset), width-aware â”€â”€ */
-    case IR_FIELD_LOAD: {
-        /* src1 = base, src2 = oper_imm(field_offset),
-         * extra = member size | 0x100 if unsigned */
-        bool is_unsig = (ins->extra & 0x100) != 0;
-        int esz = (ins->extra & 0xFF) ? (ins->extra & 0xFF) : 8;
-
-        if (ins->src1.kind == OPER_STACK)
-            emit_lea_rbp(cb, RAX, ins->src1.stack_off);
-        else
-            load_oper(ctx, RAX, &ins->src1);
-
-        int foff = (int)ins->src2.imm;
-        if (foff != 0) {
-            emit_load_imm(cb, RCX, foff);
-            emit_alu_rr64(cb, 0x01, RAX, RCX);  /* add rax, rcx */
-        }
-
-        /* Width-aware load from [rax] */
-        if (esz == 1) {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, is_unsig ? 0xB6 : 0xBE);  /* movzx / movsx byte */
-            cb_emit8(cb, modrm(0, RAX, RAX));
-        } else if (esz == 2) {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, is_unsig ? 0xB7 : 0xBF);  /* movzx / movsx word */
-            cb_emit8(cb, modrm(0, RAX, RAX));
-        } else if (esz <= 4) {
-            if (is_unsig) {
-                /* mov eax, [rax] â€” auto zero-extends to rax */
-                cb_emit8(cb, 0x8B);
-                cb_emit8(cb, modrm(0, RAX, RAX));
-            } else {
-                /* movsxd rax, dword [rax] */
-                cb_emit8(cb, rex(1, RAX, 0, RAX));
-                cb_emit8(cb, 0x63);
-                cb_emit8(cb, modrm(0, RAX, RAX));
-            }
-        } else {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x8B);
-            cb_emit8(cb, modrm(0, RAX, RAX));  /* mov rax, [rax] */
-        }
-
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
-        break;
-    }
-
-    /* â”€â”€ FIELD_STORE: *(base + offset) = val, width-aware â”€â”€ */
-    case IR_FIELD_STORE: {
-        /* dest = base, src1 = oper_imm(field_offset), src2 = value,
-         * extra = member size */
-        int esz = ins->extra ? ins->extra : 8;
-
-        if (ins->dest.kind == OPER_STACK)
-            emit_lea_rbp(cb, RAX, ins->dest.stack_off);
-        else
-            load_oper(ctx, RAX, &ins->dest);
-
-        int foff = (int)ins->src1.imm;
-        if (foff != 0) {
-            emit_load_imm(cb, RDX, foff);
-            emit_alu_rr64(cb, 0x01, RAX, RDX);  /* add rax, rdx */
-        }
-
-        load_oper(ctx, RCX, &ins->src2);  /* value */
-
-        /* Width-aware store: [rax] = rcx */
-        if (esz == 1) {
-            cb_emit8(cb, 0x88);
-            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov byte [rax], cl */
-        } else if (esz == 2) {
-            cb_emit8(cb, 0x66);                 /* operand-size prefix */
-            cb_emit8(cb, 0x89);
-            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov word [rax], cx */
-        } else if (esz <= 4) {
-            cb_emit8(cb, 0x89);
-            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov dword [rax], ecx */
-        } else {
-            cb_emit8(cb, rex(1, RCX, 0, RAX));
-            cb_emit8(cb, 0x89);
-            cb_emit8(cb, modrm(0, RCX, RAX));  /* mov qword [rax], rcx */
-        }
-        break;
-    }
-
-    /* â”€â”€ LEA: dest = address of stack slot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_LEA:
-        if (ins->src1.kind == OPER_STACK)
-            emit_lea_rbp(cb, RAX, ins->src1.stack_off);
-        else
-            load_oper(ctx, RAX, &ins->src1);
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
+    case IR_INDEX_LOAD: case IR_INDEX_STORE: case IR_FIELD_LOAD:
+    case IR_FIELD_STORE: case IR_LEA: case IR_MEMCPY:
+    case IR_STORE_IND:
+        gen_memory(ctx, ins);
         break;
 
-    /* â”€â”€ MEMCPY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_MEMCPY: {
-        /* dest = dst_addr (temp), src1 = src_addr (temp),
-         * src2.imm = byte count, extra: 0=runtime, 1=compile */
-        load_oper(ctx, RCX, &ins->dest);   /* arg0: dst */
-        load_oper(ctx, RDX, &ins->src1);   /* arg1: src */
-        emit_load_imm(cb, R8, ins->src2.imm); /* arg2: count */
-        if (ins->extra) {
-            /* copy.compile â€” inline byte-copy loop (no call overhead) */
-            /* test r8, r8 */
-            cb_emit8(cb, 0x4D); cb_emit8(cb, 0x85); cb_emit8(cb, 0xC0);
-            /* jz skip (patch offset below) */
-            cb_emit8(cb, 0x74);
-            int jz_patch = cb->len;
-            cb_emit8(cb, 0x00); /* placeholder */
-            /* loop: movzx eax, byte [rdx] */
-            int loop_top = cb->len;
-            cb_emit8(cb, 0x0F); cb_emit8(cb, 0xB6); cb_emit8(cb, 0x02);
-            /* mov [rcx], al */
-            cb_emit8(cb, 0x88); cb_emit8(cb, 0x01);
-            /* inc rcx */
-            cb_emit8(cb, 0x48); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC1);
-            /* inc rdx */
-            cb_emit8(cb, 0x48); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC2);
-            /* dec r8 */
-            cb_emit8(cb, 0x49); cb_emit8(cb, 0xFF); cb_emit8(cb, 0xC8);
-            /* jnz loop_top */
-            cb_emit8(cb, 0x75);
-            cb_emit8(cb, (uint8_t)(loop_top - (cb->len + 1)));
-            /* patch jz to skip past loop */
-            cb->data[jz_patch] = (uint8_t)(cb->len - (jz_patch + 1));
-        } else {
-            /* copy.runtime â€” REP MOVSB via runtime stub */
-            /* Shadow space is pre-allocated in the frame */
-            emit_call_sym(ctx, RT_MEMCPY);
-        }
+    case IR_SEXT: case IR_ZEXT: case IR_TRUNC:
+        gen_convert(ctx, ins);
         break;
-    }
-
-    /* â”€â”€ STORE_IND: *dest = src1 (store through pointer) â”€â”€ */
-    case IR_STORE_IND: {
-        /* dest = address (temp), src1 = value (temp), extra = size */
-        load_oper(ctx, RAX, &ins->dest);   /* address */
-        load_oper(ctx, RCX, &ins->src1);   /* value */
-        int sz = ins->extra;
-        if (sz == 1) {
-            cb_emit8(cb, 0x88);                     /* mov [rax], cl */
-            cb_emit8(cb, modrm(0, RCX, RAX));
-        } else if (sz == 2) {
-            cb_emit8(cb, 0x66);                     /* operand prefix */
-            cb_emit8(cb, 0x89);                     /* mov [rax], cx */
-            cb_emit8(cb, modrm(0, RCX, RAX));
-        } else if (sz == 4) {
-            cb_emit8(cb, 0x89);                     /* mov [rax], ecx */
-            cb_emit8(cb, modrm(0, RCX, RAX));
-        } else {
-            cb_emit8(cb, rex(1, RCX, 0, RAX));      /* REX.W */
-            cb_emit8(cb, 0x89);                     /* mov [rax], rcx */
-            cb_emit8(cb, modrm(0, RCX, RAX));
-        }
-        break;
-    }
-
-    /* â”€â”€ Sign extend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_SEXT: {
-        load_oper(ctx, RAX, &ins->src1);
-        int src_sz = ins->src1.size;
-        if (src_sz == 1) {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, 0xBE);                 /* movsx rax, al    */
-            cb_emit8(cb, modrm(3, RAX, RAX));
-        } else if (src_sz == 2) {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, 0xBF);                 /* movsx rax, ax    */
-            cb_emit8(cb, modrm(3, RAX, RAX));
-        } else if (src_sz == 4) {
-            cb_emit8(cb, rex(1, RAX, 0, RAX));
-            cb_emit8(cb, 0x63);                 /* movsxd rax, eax  */
-            cb_emit8(cb, modrm(3, RAX, RAX));
-        }
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
-        break;
-    }
-
-    /* â”€â”€ Zero extend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_ZEXT: {
-        load_oper(ctx, RAX, &ins->src1);
-        int src_sz = ins->src1.size;
-        if (src_sz == 1) {
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, 0xB6);                 /* movzx eax, al    */
-            cb_emit8(cb, modrm(3, RAX, RAX));
-        } else if (src_sz == 2) {
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, 0xB7);                 /* movzx eax, ax    */
-            cb_emit8(cb, modrm(3, RAX, RAX));
-        } else if (src_sz == 4) {
-            cb_emit8(cb, 0x89);                 /* mov eax, eax     */
-            cb_emit8(cb, modrm(3, RAX, RAX));   /* clears upper 32  */
-        }
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
-        break;
-    }
-
-    /* â”€â”€ Truncate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    case IR_TRUNC: {
-        load_oper(ctx, RAX, &ins->src1);
-        int dst_sz = ins->dest.size;
-        if (dst_sz == 1) {
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, 0xB6);                 /* movzx eax, al    */
-            cb_emit8(cb, modrm(3, RAX, RAX));
-        } else if (dst_sz == 2) {
-            cb_emit8(cb, 0x0F);
-            cb_emit8(cb, 0xB7);                 /* movzx eax, ax    */
-            cb_emit8(cb, modrm(3, RAX, RAX));
-        } else if (dst_sz == 4) {
-            cb_emit8(cb, 0x89);                 /* mov eax, eax     */
-            cb_emit8(cb, modrm(3, RAX, RAX));   /* clears upper 32  */
-        }
-        if (ins->dest.kind == OPER_TEMP)
-            store_temp(ctx, ins->dest.temp_id, RAX, ins->dest.size);
-        break;
-    }
 
     /* â”€â”€ String concat: dest = str_concat(src1, src2) â”€â”€â”€â”€â”€ */
     case IR_STR_CONCAT:
@@ -2132,7 +2250,7 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
     if (need_post_flush)
         src_flush();
 
-    return 1;
+    return result;
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -2140,22 +2258,21 @@ static int gen_instr(X64Ctx *ctx, const IRFunc *fn, int idx)
  * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /*
- * Emit function epilogue: restore callee-saved registers, then
- * mov rsp, rbp; pop rbp; ret.
- * Used by IR_RET, IR_RET_VOID, and the implicit safety-net epilogue.
+ * Emit function epilogue: tear down RSP-relative frame, restore
+ * callee-saved registers via POP (reverse order), then RET.
  */
 static void emit_epilogue(X64Ctx *ctx)
 {
     CodeBuf *cb = &ctx->code;
 
-    /* Restore callee-saved registers (reverse order) */
-    for (int i = ctx->callee_save_count - 1; i >= 0; i--) {
-        int off = -(ctx->callee_save_base + (i + 1) * 8);
-        emit_load_rbp64(cb, ctx->callee_save_regs[i], off);
-    }
+    /* Deallocate the local frame */
+    if (ctx->frame_size > 0)
+        emit_add_rsp_imm32(cb, ctx->frame_size);
 
-    emit_mov_reg_reg64(cb, RSP, RBP);
-    emit_pop(cb, RBP);
+    /* Restore callee-saved registers (reverse push order) */
+    for (int i = ctx->callee_save_count - 1; i >= 0; i--)
+        emit_pop(cb, ctx->callee_save_regs[i]);
+
     emit_ret(cb);
 }
 
@@ -2166,7 +2283,7 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     /* Record function start */
     if (ctx->func_count >= ctx->func_cap) {
         ctx->func_cap = ctx->func_cap ? ctx->func_cap * 2 : 16;
-        ctx->funcs = (X64Func *)realloc(ctx->funcs,
+        ctx->funcs = (X64Func *)xrealloc(ctx->funcs,
                                         ctx->func_cap * sizeof(X64Func));
     }
     X64Func *xf = &ctx->funcs[ctx->func_count++];
@@ -2472,10 +2589,12 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
     }
 
     /* â”€â”€ Prologue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-    emit_push(cb, RBP);
-    emit_mov_reg_reg64(cb, RBP, RSP);
-    if (frame > 0)
-        emit_sub_rsp_imm32(cb, frame);
+    /* Push callee-saved registers (part of frame) */
+    for (int i = 0; i < ctx->callee_save_count; i++)
+        emit_push(cb, ctx->callee_save_regs[i]);
+
+    if (ctx->frame_size > 0)
+        emit_sub_rsp_imm32(cb, ctx->frame_size);
 
     /* â”€â”€ Post-prologue fast path (branch-target case) â”€â”€â”€â”€â”€â”€
      * CMP + Jcc emitted after prologue; the fast return itself
@@ -2487,12 +2606,6 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
             emit_cmp_reg_imm32(cb, sw_preg, sw_fv);
         }
         sw_patch = emit_jcc_rel32(cb, sw_bcc);
-    }
-
-    /* Save callee-saved registers to their stack slots */
-    for (int i = 0; i < ctx->callee_save_count; i++) {
-        int off = -(ctx->callee_save_base + (i + 1) * 8);
-        emit_store_rbp64(cb, off, ctx->callee_save_regs[i]);
     }
 
     /* Spill incoming register parameters to their stack slots.
@@ -2558,7 +2671,7 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
                 param_src_size[p] = li->src1.size;
                 param_is_zx[p]    = (li->extra != 0);
             }
-            /* Conflict check: if an optimised param's dest_reg equals
+            /* Conflict check 1: if an optimised param's dest_reg equals
              * another param's ABI source reg, disable the former to
              * avoid clobbering before the source is consumed. */
             for (int p = 0; p < n; p++) {
@@ -2567,7 +2680,32 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
                     if (q == p) continue;
                     if (param_dest[p] == win64_arg_regs[q]) {
                         param_skip[p] = false;
+                        param_skip_ir[p] = -1;
                         break;
+                    }
+                }
+            }
+            /* Conflict check 2: the allocator may assign the same
+             * physical register to non-overlapping temps.  If any
+             * instruction before the param's LOAD_VAR defines a temp
+             * in the same physical register, keeping the param in that
+             * register is unsafe because the intervening def clobbers
+             * the param value.  Fall back to a stack spill. */
+            for (int p = 0; p < n; p++) {
+                if (!param_skip[p]) continue;
+                int dreg = param_dest[p];
+                int lir  = param_skip_ir[p];
+                int load_temp = fn->instrs[lir].dest.temp_id;
+                for (int j = 0; j < lir; j++) {
+                    const IRInstr *ins = &fn->instrs[j];
+                    if (ins->dest.kind == OPER_TEMP &&
+                        ins->dest.temp_id != load_temp) {
+                        int tr = temp_phys(ctx, ins->dest.temp_id);
+                        if (tr == dreg) {
+                            param_skip[p] = false;
+                            param_skip_ir[p] = -1;
+                            break;
+                        }
                     }
                 }
             }
@@ -2581,9 +2719,9 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
             if (fn->param_info[i].is_field) {
                 /* Save the pointer (8 bytes) to the local slot.
                  * The slot is field_size bytes wide, so 8 bytes is fine. */
-                emit_store_rbp64(cb, off, win64_arg_regs[i]);
+                emit_store_rbp64(cb, ctx->frame_size + off, win64_arg_regs[i]);
             } else {
-                emit_store_rbp_sz(cb, off, win64_arg_regs[i], size);
+                emit_store_rbp_sz(cb, ctx->frame_size + off, win64_arg_regs[i], size);
             }
         }
 
@@ -2648,29 +2786,31 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
             int off = fn->param_info[i].offset;
             int fsz = fn->param_info[i].field_size;
             /* Load the saved pointer into RDX (src) */
-            emit_load_rbp64(cb, RDX, off);
-            emit_lea_rbp(cb, RCX, off);             /* dst */
+            emit_load_rbp64(cb, RDX, ctx->frame_size + off);
+            emit_lea_rbp(cb, RCX, ctx->frame_size + off);             /* dst */
             emit_load_imm(cb, R8, fsz);             /* count */
             /* Shadow space is pre-allocated in the frame */
             emit_call_sym(ctx, RT_MEMCPY);
         }
 
-        /* Args 5..N: caller placed them at [old_rsp + 8 + (i-4)*8].
-         * After push rbp, that's [rbp + 16 + (i-4)*8].             */
+        /* Args 5..N: caller placed them at [old_rsp + (i-4)*8 + 8].
+         * After callee-save PUSHes + SUB RSP, that is at
+         * [RSP + frame_size + callee_save_count*8 + 8 + (i-4)*8]. */
         for (int i = 4; i < fn->param_count; i++) {
-            int caller_off = 16 + (i - 4) * 8;
+            int caller_off = ctx->frame_size + ctx->callee_save_count * 8
+                           + 8 + (i - 4) * 8;
             emit_load_rbp64(cb, RAX, caller_off);
             int off  = fn->param_info[i].offset;
             int size = fn->param_info[i].size;
             if (fn->param_info[i].is_field) {
                 int fsz = fn->param_info[i].field_size;
                 emit_mov_reg_reg64(cb, RDX, RAX);     /* src ptr */
-                emit_lea_rbp(cb, RCX, off);           /* dst */
+                emit_lea_rbp(cb, RCX, ctx->frame_size + off);           /* dst */
                 emit_load_imm(cb, R8, fsz);           /* count */
                 /* Shadow space is pre-allocated in the frame */
                 emit_call_sym(ctx, RT_MEMCPY);
             } else {
-                emit_store_rbp_sz(cb, off, RAX, size);
+                emit_store_rbp_sz(cb, ctx->frame_size + off, RAX, size);
             }
         }
     }
@@ -2690,9 +2830,9 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
 
     /* â”€â”€ Identify loop header labels (back-edge targets) for alignment â”€â”€ */
     int lbl_count = max_lbl + 2;  /* +1 for epilogue, +1 for size */
-    bool *loop_headers = (bool *)calloc((size_t)lbl_count, sizeof(bool));
+    bool *loop_headers = (bool *)xcalloc((size_t)lbl_count, sizeof(bool));
     {
-        bool *label_seen = (bool *)calloc((size_t)lbl_count, sizeof(bool));
+        bool *label_seen = (bool *)xcalloc((size_t)lbl_count, sizeof(bool));
         for (int i = 0; i < fn->instr_count; i++) {
             const IRInstr *ins = &fn->instrs[i];
             if (ins->op == IR_LABEL)
@@ -2738,8 +2878,11 @@ static void gen_function(X64Ctx *ctx, const IRFunc *fn)
         uint32_t fast_ret_pos = cb_pos(cb);
         if (sw_has_retval)
             emit_load_imm(cb, RAX, sw_retval);
-        emit_mov_reg_reg64(cb, RSP, RBP);
-        emit_pop(cb, RBP);
+        /* Tear down RSP-relative frame (same as epilogue) */
+        if (ctx->frame_size > 0)
+            emit_add_rsp_imm32(cb, ctx->frame_size);
+        for (int i = ctx->callee_save_count - 1; i >= 0; i--)
+            emit_pop(cb, ctx->callee_save_regs[i]);
         emit_ret(cb);
         /* Patch the Jcc rel32 to point here */
         cb_patch32(&ctx->code, sw_patch,
@@ -2836,13 +2979,13 @@ void x64_codegen(X64Ctx *ctx, const IRProgram *ir, Arena *arena)
 
     /* Prepare label table */
     ctx->label_cap     = 256;
-    ctx->label_offsets = (int *)malloc(ctx->label_cap * sizeof(int));
+    ctx->label_offsets = (int *)xmalloc(ctx->label_cap * sizeof(int));
     for (int i = 0; i < ctx->label_cap; i++)
         ctx->label_offsets[i] = -1;
 
     /* Build string table in .rdata */
     ctx->string_count = ir->str_count;
-    ctx->strings = (X64String *)malloc(ir->str_count * sizeof(X64String));
+    ctx->strings = (X64String *)xmalloc(ir->str_count * sizeof(X64String));
     for (int i = 0; i < ir->str_count; i++) {
         ctx->strings[i].data = ir->strings[i];
         ctx->strings[i].rdata_offset = rdata_add_string(ctx, ir->strings[i]);

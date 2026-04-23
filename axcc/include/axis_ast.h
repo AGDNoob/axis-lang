@@ -363,4 +363,10 @@ typedef struct {
     SrcLoc         loc;
 } ASTProgram;
 
+/* ═════════════════════════════════════════════════════════════
+ * AST Dump (pretty-print to file)
+ * ═════════════════════════════════════════════════════════════ */
+
+void ast_dump(const ASTProgram *prog, FILE *out);
+
 #endif /* AXIS_AST_H */

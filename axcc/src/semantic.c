@@ -24,6 +24,7 @@ static void        analyze_stmt(Semantic *s, ASTStmt *st);
 static void        analyze_function(Semantic *s, ASTFunction *func);
 static void        check_block_dead_code(Semantic *s, ASTStmt **stmts, int count);
 static int         calc_field_size(Semantic *s, ASTFieldDef *fd);
+static bool        block_always_returns(ASTStmt **stmts, int count);
 
 /* ═════════════════════════════════════════════════════════════
  * Error reporting
@@ -38,6 +39,10 @@ static void sem_error(Semantic *s, SrcLoc loc,
                  fmt, ap);
     va_end(ap);
     s->error_count++;
+    if (s->error_count >= 20) {
+        diag_simple(DIAG_ERROR, "too many errors, aborting");
+        exit(1);
+    }
     if (s->check_mode) {
         longjmp(s->err_jmp, 1);
     }
@@ -249,7 +254,7 @@ static int calc_field_size(Semantic *s, ASTFieldDef *fd)
  * ═════════════════════════════════════════════════════════════ */
 
 static Symbol *define_symbol(Semantic *s, const char *name,
-                             const char *type_name, bool mutable,
+                             const char *type_name, bool is_mutable,
                              bool is_param, bool is_update,
                              ASTTypeNode *array_type, SrcLoc loc)
 {
@@ -286,7 +291,7 @@ static Symbol *define_symbol(Semantic *s, const char *name,
     Symbol *sym = ARENA_NEW(s->arena, Symbol);
     sym->name        = name;
     sym->type_name   = type_name;
-    sym->mutable     = mutable;
+    sym->is_mutable  = is_mutable;
     sym->stack_offset = offset;
     sym->is_param    = is_param;
     sym->is_update   = is_update;
@@ -302,7 +307,7 @@ static Symbol *define_symbol(Semantic *s, const char *name,
 }
 
 static Symbol *define_array_symbol(Semantic *s, const char *name,
-                                   ASTTypeNode *arr_type, bool mutable,
+                                   ASTTypeNode *arr_type, bool is_mutable,
                                    int total_size, SrcLoc loc)
 {
     s->stack_offset = align_up(s->stack_offset, 8);
@@ -311,7 +316,7 @@ static Symbol *define_array_symbol(Semantic *s, const char *name,
     Symbol *sym = ARENA_NEW(s->arena, Symbol);
     sym->name        = name;
     sym->type_name   = "array";
-    sym->mutable     = mutable;
+    sym->is_mutable  = is_mutable;
     sym->stack_offset = -s->stack_offset;
     sym->is_param    = false;
     sym->is_update   = false;
@@ -476,6 +481,8 @@ static const char *analyze_binop(Semantic *s, ASTExpr *e)
     if (is_logical_op(op)) {
         if (strcmp(lt, "bool") != 0)
             sem_error(s, e->loc, "Logical operator requires 'bool' operand, got '%s'", lt);
+        if (strcmp(rt, "bool") != 0)
+            sem_error(s, e->loc, "Logical operator requires 'bool' operand, got '%s'", rt);
         e->inferred_type = "bool";
         return "bool";
     }
@@ -539,7 +546,7 @@ static const char *analyze_call(Semantic *s, ASTExpr *e)
             else {
                 Symbol *sym = lookup_var(s, e->call.args[i]->ident.name,
                                          e->call.args[i]->loc);
-                if (!sym->mutable)
+                if (!sym->is_mutable)
                     sem_error(s, e->call.args[i]->loc,
                               "Argument %d to '%s': variable '%s' must be "
                               "mutable for 'update' parameter",
@@ -896,7 +903,7 @@ static void analyze_array_vardecl(Semantic *s, ASTStmt *vd)
 static void analyze_vardecl(Semantic *s, ASTStmt *vd)
 {
     const char *decl_type = type_name_of_node(vd->var_decl.type_node);
-    bool mutable = !vd->var_decl.is_const;
+    bool is_mutable = !vd->var_decl.is_const;
 
     /* const requires initializer (fields/enums have implicit defaults) */
     if (vd->var_decl.is_const && !vd->var_decl.value
@@ -916,7 +923,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
     /* Field type */
     if (find_field_def(s, decl_type)) {
         Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
-                                    mutable, false, false, NULL, vd->loc);
+                                    is_mutable, false, false, NULL, vd->loc);
         vd->var_decl.stack_offset = sym->stack_offset;
         return;
     }
@@ -931,7 +938,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
                           vd->var_decl.name, decl_type, vt);
         }
         Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
-                                    mutable, false, false, NULL, vd->loc);
+                                    is_mutable, false, false, NULL, vd->loc);
         vd->var_decl.stack_offset = sym->stack_offset;
         return;
     }
@@ -949,7 +956,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
                 analyze_expr(s, vd->var_decl.value->input.prompt);
 
             Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
-                                        mutable, false, false, NULL, vd->loc);
+                                        is_mutable, false, false, NULL, vd->loc);
             sym->is_input = true;
 
             /* Allocate 8 bytes for per-variable input flag */
@@ -975,7 +982,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
         /* Automatic alias: plain variable reference shares stack slot.
          * Only valid when the new variable is const; a mutable alias
          * would share the slot and corrupt the source on reassignment. */
-        if (vd->var_decl.value->kind == EXPR_IDENT && !mutable) {
+        if (vd->var_decl.value->kind == EXPR_IDENT && !is_mutable) {
             const char *src_name = vd->var_decl.value->ident.name;
             Symbol *src = lookup_var(s, src_name, vd->loc);
 
@@ -984,7 +991,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
                           "Type mismatch in alias '%s': expected %s, got %s",
                           vd->var_decl.name, decl_type, vt);
 
-            if (vd->var_decl.is_const && src->mutable)
+            if (vd->var_decl.is_const && src->is_mutable)
                 sem_error(s, vd->loc,
                           "Cannot declare const alias of mutable variable '%s'",
                           src_name);
@@ -992,7 +999,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
             Symbol *sym = ARENA_NEW(s->arena, Symbol);
             sym->name         = vd->var_decl.name;
             sym->type_name    = decl_type;
-            sym->mutable      = false; /* alias is always const here */
+            sym->is_mutable   = false; /* alias is always const here */
             sym->stack_offset = src->stack_offset;
             sym->is_param     = false;
             sym->is_update    = false;
@@ -1015,7 +1022,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
     }
 
     Symbol *sym = define_symbol(s, vd->var_decl.name, decl_type,
-                                mutable, false, false, NULL, vd->loc);
+                                is_mutable, false, false, NULL, vd->loc);
     vd->var_decl.stack_offset = sym->stack_offset;
 }
 
@@ -1024,7 +1031,7 @@ static void analyze_vardecl(Semantic *s, ASTStmt *vd)
 static void analyze_assignment(Semantic *s, ASTStmt *a)
 {
     Symbol *sym = lookup_var(s, a->assign.name, a->loc);
-    if (!sym->mutable)
+    if (!sym->is_mutable)
         sem_error(s, a->loc,
                   "Cannot assign to immutable variable: %s", a->assign.name);
     const char *target = sym->type_name;
@@ -1056,7 +1063,7 @@ static void analyze_index_assignment(Semantic *s, ASTStmt *a)
 {
     if (a->index_assign.array->kind == EXPR_IDENT) {
         Symbol *sym = lookup_var(s, a->index_assign.array->ident.name, a->loc);
-        if (!sym->mutable)
+        if (!sym->is_mutable)
             sem_error(s, a->loc,
                       "Cannot modify elements of immutable array: %s",
                       sym->name);
@@ -1075,7 +1082,7 @@ static void analyze_field_assignment(Semantic *s, ASTStmt *a)
 {
     if (a->field_assign.object->kind == EXPR_IDENT) {
         Symbol *sym = lookup_var(s, a->field_assign.object->ident.name, a->loc);
-        if (!sym->mutable)
+        if (!sym->is_mutable)
             sem_error(s, a->loc,
                       "Cannot modify fields of immutable variable: %s",
                       sym->name);
@@ -1097,9 +1104,29 @@ static void analyze_compound_assignment(Semantic *s, ASTStmt *ca)
     if (ca->compound_assign.target->kind == EXPR_IDENT) {
         Symbol *sym = lookup_var(s, ca->compound_assign.target->ident.name,
                                  ca->loc);
-        if (!sym->mutable)
+        if (!sym->is_mutable)
             sem_error(s, ca->loc,
                       "Cannot assign to immutable variable: %s", sym->name);
+    }
+    if (ca->compound_assign.target->kind == EXPR_FIELD_ACCESS) {
+        ASTExpr *obj = ca->compound_assign.target->field_access.object;
+        if (obj->kind == EXPR_IDENT) {
+            Symbol *sym = lookup_var(s, obj->ident.name, ca->loc);
+            if (!sym->is_mutable)
+                sem_error(s, ca->loc,
+                          "Cannot modify fields of immutable variable: %s",
+                          sym->name);
+        }
+    }
+    if (ca->compound_assign.target->kind == EXPR_INDEX) {
+        ASTExpr *arr = ca->compound_assign.target->index.array;
+        if (arr->kind == EXPR_IDENT) {
+            Symbol *sym = lookup_var(s, arr->ident.name, ca->loc);
+            if (!sym->is_mutable)
+                sem_error(s, ca->loc,
+                          "Cannot modify elements of immutable variable: %s",
+                          sym->name);
+        }
     }
 
     if (!is_integer_type(tt))
@@ -1307,7 +1334,6 @@ static void analyze_match(Semantic *s, ASTStmt *m)
                                 m->loc.line, m->loc.col,
                                 "match on enum '%s' missing variant '%s'",
                                 vt, ed->variants[v].name);
-                    break;  /* one warning is enough */
                 }
             }
         }
@@ -1321,6 +1347,45 @@ static void analyze_write(Semantic *s, ASTStmt *w)
 }
 
 
+
+/* ── Return-path completeness check ─────────────────────── */
+
+static bool stmt_always_returns(ASTStmt *st)
+{
+    switch (st->kind) {
+    case STMT_RETURN:
+        return true;
+    case STMT_IF:
+        /* Both branches must exist and both must return. */
+        if (!st->if_stmt.else_body) return false;
+        return block_always_returns(st->if_stmt.body, st->if_stmt.body_count)
+            && block_always_returns(st->if_stmt.else_body, st->if_stmt.else_count);
+    case STMT_MATCH:
+        /* All arms must return, and a wildcard arm must exist
+         * (otherwise the match may not be exhaustive). */
+        {
+            bool has_wildcard = false;
+            for (int i = 0; i < st->match.arm_count; i++) {
+                if (st->match.arms[i].is_wildcard) has_wildcard = true;
+                if (!block_always_returns(st->match.arms[i].body,
+                                          st->match.arms[i].body_count))
+                    return false;
+            }
+            return has_wildcard;
+        }
+    default:
+        return false;
+    }
+}
+
+static bool block_always_returns(ASTStmt **stmts, int count)
+{
+    for (int i = 0; i < count; i++) {
+        if (stmt_always_returns(stmts[i]))
+            return true;
+    }
+    return false;
+}
 
 /* ── Dead-code check for a statement block ──────────────── */
 
@@ -1351,7 +1416,7 @@ static void analyze_update_cast(Semantic *s, ASTStmt *st)
     if (!sym)
         sem_error(s, st->loc, "undefined variable '%s'", name);
 
-    if (!sym->mutable)
+    if (!sym->is_mutable)
         sem_error(s, st->loc,
                   "cannot cast const variable '%s'", name);
 
@@ -1502,7 +1567,7 @@ static void analyze_function(Semantic *s, ASTFunction *func)
         Symbol *sym = ARENA_NEW(s->arena, Symbol);
         sym->name        = p->name;
         sym->type_name   = ptype;
-        sym->mutable     = is_mut;
+        sym->is_mutable     = is_mut;
         sym->stack_offset = offset;
         sym->is_param    = true;
         sym->is_update   = p->is_update;
@@ -1522,6 +1587,15 @@ static void analyze_function(Semantic *s, ASTFunction *func)
     check_block_dead_code(s, func->body, func->body_count);
     for (int i = 0; i < func->body_count; i++)
         analyze_stmt(s, func->body[i]);
+
+    /* Return-path completeness: non-void functions must return on all paths */
+    if (func->return_type &&
+        !block_always_returns(func->body, func->body_count))
+    {
+        sem_error(s, func->loc,
+                  "not all code paths in function '%s' return a value",
+                  func->name);
+    }
 
     func->stack_size = align_up(s->stack_offset, 16);
     exit_scope(s);
