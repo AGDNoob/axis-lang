@@ -5,7 +5,7 @@
 # ============================================================
 set -u
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 AXIS="$ROOT/axcc/axis"
 TEST_DIR="$ROOT/code/tests"
 

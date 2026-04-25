@@ -60,7 +60,7 @@ jobs:
       - name: Build axcc
         shell: cmd
         working-directory: axcc
-        run: mingw32-make CC=gcc
+        run: mingw32-make CC=gcc SHELL=cmd
 
       - name: Stage artifact
         shell: pwsh

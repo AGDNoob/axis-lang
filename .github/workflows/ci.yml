@@ -58,7 +58,7 @@ jobs:
         shell: cmd
         working-directory: axcc
         run: |
-          mingw32-make CC=gcc
+          mingw32-make CC=gcc SHELL=cmd
           dir axis.exe
 
       - name: Smoke test (compile sample to ELF)
