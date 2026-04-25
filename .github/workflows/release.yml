@@ -28,8 +28,7 @@ jobs:
         run: make -j$(nproc)
 
       - name: Run tests
-        working-directory: axcc
-        run: bash tests/run_all.sh
+        run: bash .github/scripts/run_tests.sh
 
       - name: Stage artifact
         run: |
@@ -52,19 +51,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up MinGW
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
+      - name: Install MinGW
+        shell: pwsh
+        run: |
+          choco install mingw -y --no-progress
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Build axcc
-        shell: msys2 {0}
+        shell: cmd
         working-directory: axcc
-        run: mingw32-make CC=gcc -j$(nproc)
+        run: mingw32-make CC=gcc
 
       - name: Stage artifact
         shell: pwsh
