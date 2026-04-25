@@ -65,7 +65,7 @@ jobs:
         shell: cmd
         working-directory: axcc
         run: |
-          axis.exe ..\code\examples\01_hello_world.axis -o hello --elf
+          axis.exe build ..\code\examples\01_hello_world.axis -o hello --elf
           dir hello
 
   # ============================================================
