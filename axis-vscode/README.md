@@ -1,5 +1,89 @@
 # AXIS Language Support for VS Code
 
+Syntax highlighting, snippets, IntelliSense and a built-in linter for the
+[AXIS programming language](https://github.com/AGDNoob/axis-lang).
+
+> Requires the `axis` compiler on `PATH` (or set `axis.compilerPath`).
+> Get it from the [AXIS releases page](https://github.com/AGDNoob/axis-lang/releases).
+
+## Features
+
+### Syntax Highlighting
+
+- **Keywords** — `func`, `return`, `when`, `else`, `while`, `loop`, `repeat`, `break`, `stop`, `continue`, `skip`, `match`, `for`, `in`, `syscall`
+- **Labels** — `@label` on loops, plus `stop @label` / `skip @label`
+- **Type definitions** — `field`, `enum` with type name + underlying type coloring
+- **Modifiers** — `update`, `copy`, `const`
+- **Cast operator** — `as` (e.g. `x as i64`)
+- **Logical operators** — `and`, `or`, `not`
+- **Built-in types** — `i8`–`i64`, `u8`–`u64`, `bool`, `str`, `ptr`, `void`
+- **Array types** — `(i32; 5)`, `(Vec2; 3)` etc.
+- **Mode declarations** — `mode script`, `mode compile`
+- **Copy expressions** — `copy.runtime`, `copy.compile`
+- **Built-in functions** — `write`, `writeln`, `input`, `range`, and the `{var}_input_failed()` helper
+- **Variable declarations** — `name: type` colored (both built-in and user-defined types)
+- **Function definitions** — `func name(params) -> type:` with parameter highlighting
+- **Numbers** — Decimal, Hex (`0xFF`), Binary (`0b1010`), `_` separators
+- **Strings** — Double-quoted with escape sequences
+- **Comments** — `//` and `#` line comments
+
+### Editing Support
+
+- Indentation-based folding (Python-style)
+- Auto-indent after colon-terminated lines
+- Bracket matching with colorised pairs
+- Auto-closing brackets and quotes
+- Toggle line comments with `Ctrl+/`
+
+### Snippets
+
+Type a prefix and press `Tab`:
+
+| Prefix | Expands to |
+| ------ | ---------- |
+| `func` | Function definition |
+| `main` | `func main() -> i32:` template |
+| `var` | Variable declaration with type |
+| `when` / `whene` | Conditional / if-else block |
+| `while` / `repeat` / `for` | Loops |
+| `match` | Match with arms + wildcard |
+| `field` / `enum` | Type definitions |
+| `wl` / `wr` | `writeln(...)` / `write(...)` |
+| `arr` | Array declaration |
+| `compile` / `script` | Full mode template |
+| `input` | `input(...)` with cast |
+| `lbl` | Labeled loop (`@outer`) |
+
+### Linter
+
+Runs `axis check` in the background and surfaces errors inline, in the
+**Problems** panel, and as squiggles. Triggers on open, save, and (debounced)
+while typing.
+
+Commands: **AXIS: Check current file**, **AXIS: Clear all diagnostics**.
+
+### IntelliSense
+
+- Completion for keywords, primitive types, built-ins (`write`, `writeln`,
+  `input`, `range`, `syscall`) and block snippets.
+- Hover documentation with code examples.
+
+## Configuration
+
+| Setting | Default | Purpose |
+| ------- | ------- | ------- |
+| `axis.compilerPath` | `""` (auto-detect) | Path to `axis` / `axis.exe`. When empty, looks for `<workspace>/axcc/axis` first, then `PATH`. |
+| `axis.useWsl` | `false` | On Windows, invoke the compiler through `wsl`. Paths are translated automatically. |
+| `axis.enableLinter` | `true` | Turn the linter on/off. |
+| `axis.lintOnType` | `true` | Re-lint while typing. Disable to lint only on save. |
+| `axis.lintDelay` | `500` | Debounce interval (ms) for lint-on-type. |
+| `axis.checkArgs` | `[]` | Extra arguments appended after `check`. |
+
+## License
+
+MIT — see the [AXIS repository](https://github.com/AGDNoob/axis-lang) for source and issues.
+# AXIS Language Support for VS Code
+
 VS Code extension for the AXIS programming language (v1.3.0).
 
 ## Features
