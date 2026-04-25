@@ -1,6 +1,6 @@
 {
   "name": "axis-language",
-  "displayName": "AXIS Language Support",
+  "displayName": "AXIS Programming Language (axcc)",
   "description": "Syntax highlighting, linting and IntelliSense for AXIS v1.3.0.",
   "version": "1.3.0",
   "publisher": "axis-lang",
