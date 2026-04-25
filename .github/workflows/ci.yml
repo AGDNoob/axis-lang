@@ -65,8 +65,8 @@ jobs:
         shell: cmd
         working-directory: axcc
         run: |
-          axis.exe build ..\code\examples\01_hello_world.axis -o hello --elf
-          dir hello
+          axis.exe build ..\code\tests\t001_add_basic.axis -o smoke --elf
+          dir smoke
 
   # ============================================================
   # VS Code Extension: TypeScript compile
