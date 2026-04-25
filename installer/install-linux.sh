@@ -128,7 +128,17 @@ build_from_source() {
     trap 'rm -rf "$tmpdir"' EXIT
 
     info "Cloning repository..."
-    git clone --depth 1 "https://github.com/${REPO}.git" "$tmpdir/axis-lang" 2>&1 | tail -1
+    # Sparse-checkout: only fetch the axcc/ directory.
+    # The VS Code extension lives in axis-vscode/ and is published on the
+    # Marketplace (axis-lang.axis-language), so we don't need it locally.
+    git clone --depth 1 --filter=blob:none --no-checkout \
+        "https://github.com/${REPO}.git" "$tmpdir/axis-lang" 2>&1 | tail -1
+    (
+        cd "$tmpdir/axis-lang"
+        git sparse-checkout init --cone
+        git sparse-checkout set axcc
+        git checkout
+    ) 2>&1 | tail -1
 
     info "Compiling..."
     cd "$tmpdir/axis-lang/axcc"

@@ -65,6 +65,21 @@ make CC=gcc
 
 This produces `axis.exe` (Windows) or `axis` (Linux).
 
+### VS Code Extension
+
+Syntax highlighting, snippets and a built-in linter (`axis check`) are available
+on the Visual Studio Marketplace:
+
+[**AXIS Programming Language (axcc)** — marketplace.visualstudio.com](https://marketplace.visualstudio.com/items?itemName=axis-lang.axis-language)
+
+Install it directly from inside VS Code:
+
+```bash
+code --install-extension axis-lang.axis-language
+```
+
+Or search for **"AXIS"** in the Extensions sidebar (`Ctrl+Shift+X`).
+
 ## Usage
 
 ```bash
