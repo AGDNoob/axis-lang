@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ============================================================
+  # Linux: full build + 1500-test suite (300 tests x 5 opt levels)
+  # ============================================================
+  linux-build-test:
+    name: Linux build & test (${{ matrix.cc }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang
+
+      - name: Build axcc
+        working-directory: axcc
+        env:
+          CC: ${{ matrix.cc }}
+        run: make -j$(nproc)
+
+      - name: Print compiler version
+        working-directory: axcc
+        run: ./axis --version || ./axis -v || true
+
+      - name: Run full test suite (O0..Os)
+        working-directory: axcc
+        run: bash tests/run_all.sh
+
+  # ============================================================
+  # Windows: build axcc with MinGW (smoke only — emits ELF, can't run natively)
+  # ============================================================
+  windows-build:
+    name: Windows build (MinGW)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+
+      - name: Build axcc (axis.exe)
+        shell: msys2 {0}
+        working-directory: axcc
+        run: |
+          mingw32-make CC=gcc -j$(nproc)
+          ls -la axis.exe
+
+      - name: Smoke test (compile sample to ELF)
+        shell: msys2 {0}
+        working-directory: axcc
+        run: |
+          ./axis.exe ../code/examples/01_hello_world.axis -o /tmp/hello --elf
+          file /tmp/hello || true
+
+  # ============================================================
+  # VS Code Extension: TypeScript compile
+  # ============================================================
+  vscode-extension:
+    name: VS Code extension build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: axis-vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: axis-vscode
+        run: npm ci
+
+      - name: Type check
+        working-directory: axis-vscode
+        run: npm run lint
+
+      - name: Compile
+        working-directory: axis-vscode
+        run: npm run compile
+
+      - name: Package .vsix
+        working-directory: axis-vscode
+        run: |
+          npm install --no-save @vscode/vsce
+          npx vsce package --no-dependencies
+
+      - name: Upload .vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: axis-vscode-extension
+          path: axis-vscode/*.vsix
+          if-no-files-found: error

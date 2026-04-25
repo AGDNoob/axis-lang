@@ -1,0 +1,200 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.4.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # ============================================================
+  # Build Linux ELF binary
+  # ============================================================
+  build-linux:
+    name: Build Linux binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build axcc
+        working-directory: axcc
+        run: make -j$(nproc)
+
+      - name: Run tests
+        working-directory: axcc
+        run: bash tests/run_all.sh
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          cp axcc/axis dist/axis-linux-x86_64
+          chmod +x dist/axis-linux-x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: axis-linux
+          path: dist/axis-linux-x86_64
+          if-no-files-found: error
+
+  # ============================================================
+  # Build Windows axis.exe
+  # ============================================================
+  build-windows:
+    name: Build Windows binary
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+
+      - name: Build axcc
+        shell: msys2 {0}
+        working-directory: axcc
+        run: mingw32-make CC=gcc -j$(nproc)
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item axcc/axis.exe dist/axis-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: axis-windows
+          path: dist/axis-windows-x86_64.exe
+          if-no-files-found: error
+
+  # ============================================================
+  # Build NSIS installer (depends on Windows binary)
+  # ============================================================
+  build-installer:
+    name: Build NSIS installer
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download axis.exe
+        uses: actions/download-artifact@v4
+        with:
+          name: axis-windows
+          path: artifacts
+
+      - name: Place axis.exe where NSIS expects it
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path axcc | Out-Null
+          Copy-Item artifacts/axis-windows-x86_64.exe axcc/axis.exe -Force
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        working-directory: installer
+        run: |
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /V2 axis-installer.nsi
+          Get-Item axis-installer.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: axis-installer
+          path: installer/axis-installer.exe
+          if-no-files-found: error
+
+  # ============================================================
+  # Build VS Code extension .vsix
+  # ============================================================
+  build-extension:
+    name: Build VS Code extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: axis-vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: axis-vscode
+        run: npm ci
+
+      - name: Compile
+        working-directory: axis-vscode
+        run: npm run compile
+
+      - name: Package .vsix
+        working-directory: axis-vscode
+        run: |
+          npm install --no-save @vscode/vsce
+          npx vsce package --no-dependencies
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: axis-vsix
+          path: axis-vscode/*.vsix
+          if-no-files-found: error
+
+  # ============================================================
+  # Publish: collect all artifacts and attach to release
+  # ============================================================
+  publish:
+    name: Publish release
+    needs: [build-linux, build-windows, build-installer, build-extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( \
+              -name 'axis-linux-x86_64' -o \
+              -name 'axis-windows-x86_64.exe' -o \
+              -name 'axis-installer.exe' -o \
+              -name '*.vsix' \
+            \) -exec cp {} release/ \;
+          ls -la release
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            release/axis-linux-x86_64
+            release/axis-windows-x86_64.exe
+            release/axis-installer.exe
+            release/*.vsix
+          fail_on_unmatched_files: true
+          generate_release_notes: false
