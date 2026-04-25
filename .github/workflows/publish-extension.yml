@@ -1,0 +1,115 @@
+name: Publish VS Code Extension
+
+# Triggers:
+#   - push to main that touches axis-vscode/** (auto-publish on extension changes)
+#   - manual dispatch (with optional version bump)
+#
+# Required repository secret:
+#   VSCE_PAT  Azure DevOps Personal Access Token with scope "Marketplace > Manage".
+#             Create at https://dev.azure.com/  (User settings -> Personal access tokens).
+#             Publisher 'axis-lang' must already exist at https://marketplace.visualstudio.com/manage.
+#
+# The job is a no-op (skipped) if VSCE_PAT is not configured, so the workflow never
+# fails just because the secret is missing — it simply waits for the secret to be added.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'axis-vscode/**'
+      - '.github/workflows/publish-extension.yml'
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump (none|patch|minor|major)'
+        required: false
+        default: 'none'
+        type: choice
+        options: [none, patch, minor, major]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-extension
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to VS Marketplace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check VSCE_PAT secret presence
+        id: gate
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::warning::VSCE_PAT secret is not set — skipping publish. Add it under Settings → Secrets → Actions."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.publish == 'true'
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.publish == 'true'
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: axis-vscode/package-lock.json
+
+      - name: Install dependencies
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: axis-vscode
+        run: npm ci
+
+      - name: Type check & compile
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: axis-vscode
+        run: |
+          npm run lint
+          npm run compile
+
+      - name: Bump version (manual dispatch)
+        if: steps.gate.outputs.publish == 'true' && github.event_name == 'workflow_dispatch' && github.event.inputs.version_bump != 'none'
+        working-directory: axis-vscode
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "${{ github.event.inputs.version_bump }}" --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "NEW_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
+          cd ..
+          git add axis-vscode/package.json axis-vscode/package-lock.json
+          git commit -m "chore(extension): bump version to v$NEW_VERSION"
+          git push origin HEAD:main
+
+      - name: Publish to Marketplace
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: axis-vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          npm install --no-save @vscode/vsce
+          # --skip-duplicate makes re-runs idempotent: if the version is already
+          # published, vsce exits 0 instead of failing.
+          npx vsce publish --no-dependencies --skip-duplicate -p "$VSCE_PAT"
+
+      - name: Package .vsix (artifact backup)
+        if: steps.gate.outputs.publish == 'true'
+        working-directory: axis-vscode
+        run: npx vsce package --no-dependencies
+
+      - name: Upload .vsix artifact
+        if: steps.gate.outputs.publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: axis-vscode-extension-published
+          path: axis-vscode/*.vsix
+          if-no-files-found: error
